@@ -1,12 +1,12 @@
 # Design: end-to-end encrypted collaboration rooms
 
-Status: proposal for review. Nothing here is implemented. Date: 2026-11-18. Author: design agent for the drafftink rewrite.
+Status: proposal for review. Nothing here is implemented. Date: 2026-11-18; section 19 (private instance) and the phase table were added 2026-11-22. Author: design agent for the drafftink rewrite.
 
 This document designs encrypted rooms for drafft.ink. The room key lives in the URL fragment, so no server ever sees it. The demo server is one Cloudflare Durable Object per room on the Workers Free plan. The same relay core also runs in `drafftink-headless serve`.
 
 Facts about Cloudflare and crypto crates were read from the linked pages on 2026-11-18. "Unverified" marks anything I could not confirm. Day estimates are my own.
 
-Contents: 1 Summary, 2 What exists today, 3 Excalidraw in short, 4 Threat model, 5 Keys, 6 Crypto, 7 Wire protocol v2, 8 Sync and catch-up, 9 Images, 10 Retention, expiry and reseed, 11 Abuse and cost control, 12 Native and mobile, 13 Command layer, 14 Crates and hosts, 15 Testing, 16 Phases and effort, 17 Risks and surprises, 18 Open questions, 19 Sources.
+Contents: 1 Summary, 2 What exists today, 3 Excalidraw in short, 4 Threat model, 5 Keys, 6 Crypto, 7 Wire protocol v2, 8 Sync and catch-up, 9 Images, 10 Retention, expiry and reseed, 11 Abuse and cost control, 12 Native and mobile, 13 Command layer, 14 Crates and hosts, 15 Testing, 16 Phases and effort, 17 Risks and surprises, 18 Open questions, 19 Private instance (canvas.patwie.com), 20 Sources.
 
 ---
 
@@ -22,6 +22,7 @@ Contents: 1 Summary, 2 What exists today, 3 Excalidraw in short, 4 Threat model,
 | 4 | Images as separate encrypted files | Plain HTTP `PUT`/`GET` through the Worker. No chunking anywhere (sources in section 7.4). `MAX_IMAGE_BYTES = 4 MiB`, `MAX_ROOM_IMAGE_BYTES = 50 MiB`. |
 | 5 | Retention | `ROOM_TTL = 48 h` after the last visit (a join). Edits do not move it. A DO alarm deletes the room. Rule for a connected person at the deadline: section 10. |
 | 6 | Commands | `collab.*` stays the only door. Two arguments and one command are new (section 13). |
+| 7 | Private instance (2026-11-22) | A second deployment on your own account at `canvas.patwie.com`: Google sign-in through Cloudflare Access for an email allow-list, rooms never expire, images in R2, the Worker re-checks the Access JWT, desktop and agents use an Access service token. Same code, a different `[env.private]`. Section 19. |
 
 **The most important design choices**
 
@@ -124,6 +125,8 @@ A member holds the key, so the cryptography does not limit them. In v1 a member 
 - **Keep a room alive** by rejoining every 47 hours. Intended: a visit is a visit.
 
 ### 4.4 Accepted, and out of scope
+
+The private instance (section 19) adds a layer in front of all of this (only allow-listed Google accounts can connect) and one more thing Cloudflare sees (the email of each connection); 19.7 lists both.
 
 - No key rotation or revocation in v1. To remove a person, start a new room.
 - No forward secrecy and no post-compromise security. A leaked link exposes the whole room, including stored history.
@@ -266,13 +269,14 @@ Client to relay:
 | 0x12 | `Presence` | `record` (kind 3) | Unreliable lane. Never stored. Rate-limited. |
 | 0x13 | `Catchup` | `after_seq u64` | Ask for records after a point (gap repair). |
 | 0x14 | `Direct` | `to opt [16]`, `record` (kind 4) | Peer-to-peer state request or reply. `to = none` broadcasts. |
+| 0x15 | `DeleteRoom` | | Member only. Accepted only by a host with `ALLOW_DELETE_ROOM` (the private instance, 19.8). |
 | 0x07 | `Leave` | | |
 
 Relay to client:
 
 | Tag | Message | Fields |
 |---|---|---|
-| 0x81 | `Joined` | `protocol_version`, `room_state u8` (0 existing, 1 created), `head_seq u64`, `snapshot_seq u64`, `log_records u32`, `log_bytes u32`, `expires_at_ms u64`, `peers` (client ids only), `limits` |
+| 0x81 | `Joined` | `protocol_version`, `room_state u8` (0 existing, 1 created), `head_seq u64`, `snapshot_seq u64`, `log_records u32`, `log_bytes u32`, `expires_at_ms u64` (0 = never expires), `peers` (client ids only), `limits` |
 | 0x82 | `Catchup` | `snapshot opt {covers_seq, record}`, `records list {seq u64, from [16], ctr u64, record}`, `head_seq u64`, `more bool` |
 | 0x83 | `Record` | `seq u64`, `from [16]`, `ctr u64`, `record` (live fan-out; not echoed to the sender) |
 | 0x84 | `Ack` | `ctr u64`, `seq u64` (the record is sequenced **and stored**) |
@@ -498,6 +502,8 @@ A second port beside `Transport`: `BlobTransport { put, get, head, list }`, with
 
   A rule I considered and rejected: "if anyone is connected at the deadline, extend by 48 h". It makes the cap soft and lets one forgotten tab keep a room alive for ever.
 
+On the private instance (section 19) `ROOM_TTL` is unset: no deadline, no alarm, no deletion. Only `collab.delete_room` removes a room there. Everything in this section is the demo's rule.
+
 ### 10.2 State machine (in `drafftink-relay`)
 
 State: `deadline_ms`, `expiring: bool`. Inputs: `Joined(now)`, `SocketClosed(now, live_count)`, `Wake(now)`. Output: `next_wake_ms` and `Delete`.
@@ -624,6 +630,7 @@ A browser's `WebSocket` does not expose the HTTP status of a failed upgrade; it 
   - Desktop: `drafftink --room-link-file FILE`, or `DRAFFTINK_ROOM_LINK`, or standard input. **No flag takes the link itself**, for the same reason as the token (`docs/collab.md`, "The access token": arguments are visible to every user of the machine). An OS URL handler (`drafftink://room/<id>,<key>`, and `https://drafft.ink/#room=...` as a universal link) passes the URL to the app; this is user-initiated and short-lived, which I accept. Phase 1 builds the file, variable and paste-box paths; URL handlers are a packaging item (`docs/packaging.md`).
   - Mobile: the web app on a phone is the web path. A native mobile shell, if any, uses the universal link and the same crates. The fragment reaches an app that is opened by universal link (the OS passes the full URL). I did not verify this on iOS or Android.
 - **Key storage.** Native: the workspace record in the app data folder, like the document (Q2). No keychain in v1.
+- **Private instance.** A native client of `canvas.patwie.com` sends an Access service token as headers on the WebSocket handshake and on image requests. The browser uses the Access cookie. See 19.6.
 - **`drafftink-headless`** as a client (headless MCP, `run`) joins sealed rooms with the same link via env or file, so agents can work in an encrypted room. The room link is a capability: an agent that has it can read the room. `collab.status` shows the room id and never the key.
 - **wasm size.** XChaCha, HKDF and SHA-256 add about 32 KB to the wasm (my build, without `wasm-opt`). `cargo xtask size` budgets in `perf/budgets.json` need a bump of that order.
 
@@ -655,6 +662,16 @@ Collab actions stay commands. The collab family is `docs/commands.md` section 2.
 
 A new registration **fact**, `secret_output: bool`, marks commands whose output may hold a key (`collab.share_link`). `engine.recent` hides it. A registry test fails when a registration omits the field, as AGENTS.md requires for facts.
 
+Added by the private instance (19.6, 19.8):
+
+| Command | Args | Refusals | Effect |
+|---|---|---|---|
+| `collab.set_access` | `server?`, `client_id`, `client_secret` | `bad_args` (empty or over-long, value not repeated), `port_unavailable` (no `Secrets` port, as in the web build) | Stores an Access service token for that server origin in the `Secrets` port. NoUndo, never in a batch, both values in `secret_args`. |
+| `collab.clear_access` | `server?` | `not_found` | Removes it. |
+| `collab.delete_room` | `confirm: bool = false` | `not_in_room`, `not_confirmed`: "This deletes the room and all its pictures for everyone. Run it again with confirm=true.", `not_allowed`: "This server does not allow deleting rooms." | Sends `DeleteRoom` (member only). Only hosts that set `ALLOW_DELETE_ROOM` accept it (the private instance). |
+
+`collab.status` also shows `access: "service_token" | "browser" | "none"` (never a value).
+
 ### 13.3 Not commands
 
 Sealing, uploading, downloading, compaction, retention, the crash fence and presence budgeting are inside the sealed client and `collab_poll`, like the v1 sync. They change no document by themselves except `apply_remote`, which already is not a command.
@@ -682,11 +699,12 @@ L7  apps/drafftink-worker   host: Worker + Durable Object around `relay`; DO SQL
 ```
 
 - `seal` and `relay` need entries in `cargo xtask layers` and `cargo xtask wasm`. `relay` depends on `protocol` and `seal`'s header type only. It must not depend on Loro, tokio, or the clock.
-- **`RelayStore` is synchronous.** Durable Object SQLite is synchronous (`sql.exec`), and the tokio host can run the same calls on its room task. A synchronous trait keeps the core simple and testable. Methods: `load_meta`, `append_segment`, `read_since`, `put_snapshot_cas`, `delete_all`. `BlobStore` is separate: `put`, `get`, `list`, `total_bytes`. Demo: DO SQLite for both. Later: R2/S3 for blobs behind the same trait, with the private domain and a 2-day lifecycle rule, and a persistent `RelayStore` for self-hosters (filesystem and SQLite exist today for v1 and are reused).
+- **`RelayStore` is synchronous.** Durable Object SQLite is synchronous (`sql.exec`), and the tokio host can run the same calls on its room task. A synchronous trait keeps the core simple and testable. Methods: `load_meta`, `append_segment`, `read_since`, `put_snapshot_cas`, `delete_all`. `BlobStore` is separate: `put`, `get`, `list`, `total_bytes`. Demo: DO SQLite for both. The private instance puts blobs in R2 behind the same trait (19.8). Later: S3 for self-hosters, R2 for the demo with a 2-day lifecycle rule as a backstop (R2 lifecycle rules count whole days and run within about 24 hours, so the alarm stays the primary deletion), and a persistent `RelayStore` for self-hosters (filesystem and SQLite exist today for v1 and are reused).
 - **Worker language.** Phase 3 starts with a spike: workers-rs 0.9.0 (marked Latest on GitHub, 11 Nov, Rust shown as Beta in the docs) supports SQLite-backed Durable Objects, the Hibernation API handlers and `serializeAttachment` (https://github.com/cloudflare/workers-rs). If it is awkward, the fallback is a thin TypeScript Durable Object that calls the Rust `relay` core compiled to wasm. Either way the rules live in the one core. The Worker bundle limit is 64 MiB uncompressed on Free and Paid (https://developers.cloudflare.com/workers/platform/limits/), and the relay has no Loro, so the old worry about Loro's startup time and 128 MB in the isolate does not arise.
 - **Hibernation.** A room with people present stays awake (presence flows). An empty room, or one whose people are idle and quiet, hibernates and costs no duration. Per-socket state (`client_id`, `last_heard_ms`, personal rate) goes in `serializeAttachment` (16 KiB max per socket). The segment buffer is flushed before the object can go idle.
 - **Static site.** The Worker serves the web app with static assets (free, unlimited) and takes only `/r/*` and `/api/*` first (`run_worker_first` with patterns). So the app still loads when the Worker quota is spent, and everything is same-origin (no CORS, readable error statuses).
 - **`drafftink-headless serve`** serves sealed rooms on `/r/<id>/ws` and `/r/<id>/f/<name>` next to the v1 `/ws`, and a flag `--no-plaintext-rooms` refuses v1 rooms (Q4). `--room-ttl` and `--room-grace` configure retention (off by default).
+- **Two deployments, one Worker codebase.** `[env.demo]` and `[env.private]` in `apps/drafftink-worker/wrangler.toml` differ only in configuration: TTL, blob store, Access check, limits, allowed origins (19.8).
 - The v1 plaintext server stays for self-hosters who want server-side validation, MCP agents without keys, and persistence they trust.
 
 ---
@@ -724,14 +742,15 @@ Days are engineer-days including tests and docs. They are estimates, not measure
 
 | Phase | Content | Days |
 |---|---|---|
-| **0. Spike** (1-2 days, before phase 3) | A DO with SQLite, hibernation, an alarm, a `ping`/`pong` auto-response and a 4 MiB `PUT` under `wrangler dev`. Answers: `deleteAll` vs alarm, the CPU limit on Free, the error seen at the daily limit, `CF-Connecting-IP` inside the object, workers-rs vs TypeScript shell. | 2 |
+| **0. Spike** (1-2 days, before phase 3; one more day for the private-account part, counted in 3P) | A DO with SQLite, hibernation, an alarm, a `ping`/`pong` auto-response and a 4 MiB `PUT` under `wrangler dev`. Answers: `deleteAll` vs alarm, the CPU limit on Free, the error seen at the daily limit, `CF-Connecting-IP` inside the object, workers-rs vs TypeScript shell. | 2 |
 | **1. Crypto and sealed protocol, tested against `serve`** | `seal` crate and vectors (3). Protocol v2 types and codec with strict decoding tests (3). `relay` core with membership, seq, segments, CAS, presence budget, retention state machine, memory store (5). Server host: v2 route in `drafftink-headless serve`, filesystem and SQLite stores, `--room-ttl` (3). Sealed client: join, catch-up, live, `relay_vv`, offline merge, compaction, presence, peer fallback, crash fence (7). Engine: link parsing, `collab.*` changes, `share_link`, `secret_output`, status, workspace schema 2 with Loro snapshot and room binding, startup matching (4). UI strings and dialog paste box (1). Test suites of section 15 for these parts (4). | 30 |
 | **2. Images as files** | Loro schema 2 and migration (1). `FilePolicy::External`, blob cache namespace, deferred display (3). Relay HTTP image routes and quotas in core and `serve` (2). `BlobTransport` native, web, loopback (2). Uploader, downloader with retries and lazy fetch (2). Extraction on join, export refusals and `missing_images` (2). Limits as constants, refusals, docs (1). Tests (2). | 15 |
 | **3. Cloudflare Worker and Durable Object** | Worker router, membership precheck, static assets, `/api/status` (2). DO host around the core with hibernation, attachments, SQLite store, alarm (4). Image routes and the 8 MB row rule (1). Quota-error mapping and plain texts (1). `Registry` object (1). Miniflare tests for retention and blind storage (2). | 11 |
+| **3P. Private instance** (new, 2026-11-22) | Access JWT check in the Worker, R2 `BlobStore`, persistent mode and `DeleteRoom`, service-token support in native clients, per-environment config and deploy workflows, runbook, spike on the real account. Details and day counts in 19.13. Can start once phase 3 serves a room; ships before or alongside phase 4. | 11.5 |
 | **4. drafft.ink deploy** | `wrangler.toml` (SQLite migration `new_sqlite_classes`), domain route, secrets (Turnstile secret), `Referrer-Policy`, CI deploy, spend limits set in the dashboard, Turnstile widget, runbook and status page, a smoke test against production (3). | 3 |
-| **Later** | Persistent rooms for self-hosters (reuse `RelayStore`, 1-2). R2 or S3 blob store with a 2-day lifecycle on a private domain (3-4). Paid plan: change the plan, raise `MAX_PEERS_PER_ROOM` and the presence budget (1). Read-only links with signatures (5-8). Padding (1). A "restore point" from the previous snapshot (3). Web Worker import to remove the poison crash (4-6). Cron sweep after a spend-cap block (1). | |
+| **Later** | Persistent rooms for self-hosters (reuse `RelayStore`, 1-2). R2 for the demo with a 2-day lifecycle backstop, and an S3 `BlobStore` for self-hosters (2; the R2 store itself is built in 3P). Paid plan: change the plan, raise `MAX_PEERS_PER_ROOM` and the presence budget (1). Read-only links with signatures (5-8). Padding (1). A "restore point" from the previous snapshot (3). Web Worker import to remove the poison crash (4-6). Cron sweep after a spend-cap block (1). | |
 
-Total for phases 0 to 4: about **61 days**. Phase 1 alone gives a working, tested encrypted room on `drafftink-headless serve`.
+Total for phases 0 to 4: about **61 days**. With the private instance (phase 3P) the total is about **73 days**. Phase 1 alone gives a working, tested encrypted room on `drafftink-headless serve`. Suggested order: 0, 1, 2, 3, **3P**, 4. If the private instance goes first, the `Registry` and Turnstile work (about 3 days) waits for the public demo.
 
 ---
 
@@ -749,6 +768,7 @@ Total for phases 0 to 4: about **61 days**. Phase 1 alone gives a working, teste
 10. **`deleteAll()` and the alarm.** The docs are silent. The spike checks it. I always call `deleteAlarm()` first.
 11. **workers-rs is labelled Beta** in the Cloudflare docs. The TypeScript shell is the fallback.
 12. **No chunking is needed.** I checked each limit (32 MiB message, 100 MB request body, 8 MB row). If the user lowers nothing, there is no chunking path to build or test.
+13. **Private instance (section 19), the risky parts:** the Access cookie on the WebSocket upgrade, service-token headers on an upgrade, and session expiry on an open socket are not stated in the Access docs; Zero Trust Free needs a payment card; R2, D1 and Access cannot be capped by Spend management; `workers.dev` URLs bypass hostname-based Access; and Cloudflare sees the email of every connection. See 19.12.
 
 ---
 
@@ -762,10 +782,296 @@ Total for phases 0 to 4: about **61 days**. Phase 1 alone gives a working, teste
 6. **The 60-second grace and the 1-hour recheck** (10.1). Fine, or different values?
 7. **Demo capacity guard.** Is the `Registry` object (and a global cap of 2,000 rooms or 4 GB) acceptable before launch, and Turnstile on room creation?
 8. **Worker language.** Rust with workers-rs if the spike allows, TypeScript shell with the Rust core otherwise?
+9. **Second email list in the Worker** (`ACCESS_ALLOWED_EMAILS`, 19.5)? It catches a policy widened to "Everyone", at the cost of two lists to maintain. Default: off.
+10. **Service token for native clients** over `cloudflared access login` (19.6)? One token per device.
+11. **`collab.delete_room`** on the private instance (19.8)? It is the only way a room is ever removed there.
+12. **Access session length**: 7 days instead of the 24-hour default (19.3 step 7)?
+13. **Private instance plan:** stay on Workers Free for now, or start on the $5 paid plan so that daily limits never lock you out?
 
 ---
 
-## 19. Sources
+## 19. Private instance (canvas.patwie.com)
+
+Added 2026-11-22. A second deployment of the same code, on the user's own Cloudflare account at `canvas.patwie.com`. It serves the same web app as drafft.ink plus the relay, same-origin. Rooms never expire. Only Google accounts on an allow-list can reach it, through Cloudflare Access. End-to-end encryption stays on, so Cloudflare still sees only ciphertext.
+
+Facts in this section were read from the linked pages on 2026-11-22. "Unverified" marks anything I could not confirm in the docs. The **spike in phase 0 must test** the unverified points that decide the design (19.12).
+
+### 19.1 Overview
+
+```text
+browser ──https──> canvas.patwie.com ──> [ Cloudflare Access: Google sign-in, Emails allow-list ]
+                                              │ only signed-in, allowed requests pass
+                                              v
+                                         Worker "private"
+                                           ├─ static assets (the web app, free, no Worker run)
+                                           ├─ /api/status                         (Worker)
+                                           ├─ /r/<room>/ws   ──> Durable Object "Room"  (SQLite: records, snapshot, image manifest)
+                                           └─ /r/<room>/f/<name> ──> R2 bucket (sealed images, private)
+
+desktop / headless / MCP ──https+wss, headers CF-Access-Client-Id / -Secret──> same hostname, same checks
+```
+
+What differs from the demo is configuration, not code (19.8): no `ROOM_TTL`, images in R2, Access check on, no Turnstile, no `Registry`, larger limits.
+
+### 19.2 Is a database (D1) needed? No.
+
+- **Rooms already have a persistent database.** Each room is a Durable Object with its own private SQLite database (`ctx.storage.sql`). It survives restarts and deploys. With `ROOM_TTL` off nothing deletes it. The relay's `RelayStore` (records, one snapshot, image manifest) lives there. See https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/ (SQL API, key-value API and alarms live on the same object) and https://developers.cloudflare.com/workers/platform/storage-options/ ("choose Durable Object storage for per-room or per-user state").
+- **The room needs no cross-room query.** The Worker finds a room by id (`idFromName(room_id)`). A Durable Object "can only read and modify keys associated with that Object" (https://developers.cloudflare.com/durable-objects/platform/pricing/ and the storage-options page).
+- **Images go in R2** because a Durable Object holds at most 10 GB and an image is a plain blob that needs no SQL.
+- **Where D1 would make sense later.** D1 is a managed SQLite database for relational data and ad-hoc SQL across all rows (https://developers.cloudflare.com/workers/platform/storage-options/). Free plan: 5 million rows read and 100,000 rows written per day, 5 GB total, 10 databases, 500 MB per database (https://developers.cloudflare.com/d1/platform/limits/). It fits:
+  1. **A per-user room list** ("My rooms"), keyed by the Access email, shared across devices. **E2E catch:** a list entry that contains the room link would hand the key to Cloudflare. An entry may hold only a room id, a last-visit time, and an opaque blob **sealed on the client** with a key the server never has. Otherwise the list stays local, as it is today (the workspace record, 8.7). So D1 is useful here only with extra client work, and I recommend not building it now.
+  2. **An admin overview** (rooms, bytes, last visit) with SQL. A Durable Object cannot answer "all rooms", and an index table in D1 can. The `Registry` object of 11.4 can hold simple counters instead.
+  3. **Invites or per-room ACLs** if rooms ever get owners. That is a product decision outside this design.
+- If D1 is added, it is a binding in the `private` environment and a new `RoomIndex` trait in the Worker host. The relay core does not change.
+
+### 19.3 One-time setup the user does by hand
+
+Plain words, in this order. Menu names in Cloudflare move; the linked page names them. Estimated time: about 1.5 hours, most of it DNS and Google consoles.
+
+**Step 0. Prerequisites.** A Cloudflare account that belongs to you (this will be the *private* account, see 19.11), a payment card (Zero Trust needs one even on the free plan, R2 very likely does), and access to the registrar where `patwie.com` is registered.
+
+**Step 1. Put the `patwie.com` zone on Cloudflare.**
+1. Dashboard: Add a domain, `patwie.com`, Free plan. Cloudflare scans your existing DNS records. **Check the imported list line by line** (mail `MX`, `TXT` for SPF/DKIM, your other sub-domains). Anything missing stops working after the switch.
+2. At the registrar, change the nameservers to the two Cloudflare gives you. Wait until the zone shows "Active".
+3. Why: a Workers Custom Domain needs "an active Cloudflare zone" in the same account, and cannot be created on a hostname that already has a `CNAME` record (https://developers.cloudflare.com/workers/configuration/routing/custom-domains/). So `canvas.patwie.com` must have no existing record. Cloudflare creates the DNS record and the certificate itself.
+
+**Step 2. The Worker and its custom domain.** Nothing to click. The first `wrangler deploy --env private` (19.9) creates the Worker `drafftink-relay-private` and binds it to `canvas.patwie.com` because the config says `routes = [{ pattern = "canvas.patwie.com", custom_domain = true }]`. Do the first deploy yourself with `wrangler login` (it uses your full login, not a scoped token). Turn **off** `workers.dev` and preview URLs for this Worker (`workers_dev = false`, `preview_urls = false`), so the only way in is the protected hostname.
+
+**Step 3. R2 bucket (images).**
+1. Dashboard: R2 object storage. Enable R2 (checkout flow; the docs say you need "an R2 subscription", https://developers.cloudflare.com/r2/get-started/; the free allowance is 10 GB-month storage, 1 million Class A and 10 million Class B operations a month, free egress, https://developers.cloudflare.com/r2/pricing/). Whether a card is required is not stated in the docs, a community thread says yes (unverified).
+2. Create the bucket `drafftink-private-blobs`. Leave it **private**: do not enable the `r2.dev` URL and do not attach a public custom domain. Buckets are private by default (https://developers.cloudflare.com/r2/buckets/public-buckets/).
+3. **Lifecycle rule: leave it off.** Rooms never expire, so an age rule would delete pictures of live rooms. It is useful only as a backstop if you later set a `ROOM_TTL`: then add a rule of `TTL + 2 days` (`wrangler r2 bucket lifecycle add drafftink-private-blobs --expire-days N`). Rules count whole days and run "typically within 24 hours" of the expiry time (https://developers.cloudflare.com/r2/buckets/object-lifecycles/), so a lifecycle rule can only be a backstop for the demo's 48-hour rule too, never the primary deletion.
+
+**Step 4. Zero Trust (Cloudflare Access), free plan.**
+1. Dashboard: Zero Trust. Choose a **team name**. Your team domain becomes `<team>.cloudflareaccess.com`. Choose it with care: if the organization is ever deleted the name stays locked (https://developers.cloudflare.com/cloudflare-one/faq/getting-started-faq/).
+2. Choose the **Free** plan and enter payment details. The setup page says the step is "still needed but you will not be charged" on Free (https://developers.cloudflare.com/cloudflare-one/setup/). The Free plan is **up to 50 users** (https://blog.cloudflare.com/teams-plans; I could not load the official pricing page, so treat the exact number as unverified). A "user" is a seat that stays used once a person logs in, until you remove them, not a monthly count (https://developers.cloudflare.com/cloudflare-one/team-and-resources/users/seat-management/). **Service tokens do not use seats.** A community thread reports consent to overage charges at checkout and no documented hard $0 cap (unverified): keep the allow-list well under 50.
+
+**Step 5. Google OAuth client (Google Cloud Console).** Steps follow https://developers.cloudflare.com/cloudflare-one/integrations/identity-providers/google/.
+1. Create a project. APIs & Services, OAuth consent screen: audience **External**, app name, support email, contact email.
+2. Credentials, Create OAuth client, type **Web application**.
+3. Authorized JavaScript origin: `https://<team>.cloudflareaccess.com`. Authorized redirect URI: `https://<team>.cloudflareaccess.com/cdn-cgi/access/callback`.
+4. Copy the client ID and client secret.
+5. Publishing status: **Testing** is enough to start if you add every allowed email as a "test user" (Google caps test users at 100). Google says apps that request only `openid`, `email` and `profile` are not limited to the test list (https://developers.google.com/identity/protocols/oauth2/production-readiness/overview). I did not confirm that Cloudflare asks for only those scopes (unverified). If sign-in is refused for someone, add them as a test user, or publish the app.
+
+**Step 6. Google as a login method in Zero Trust.** Zero Trust: Integrations, Identity providers, Add new, Google. Paste the client ID as "App ID" and the secret. Use the **Test** button. (The older path "Settings, Authentication" no longer exists.)
+
+**Step 7. The Access application with the Emails policy.** Zero Trust: Access controls, Applications, Add an application, **Self-hosted**: https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/self-hosted-public-app/.
+1. Public hostname: `canvas.patwie.com`, no path, so it covers the whole host: pages, `/r/*` WebSockets, image requests, `/api/*`.
+2. Accepted login method: Google only, with "instant authentication" on.
+3. Policy 1: action **Allow**, rule **Include: Emails** with your list (up to 1,000 emails per rule). Nothing else (no "Everyone", no email domain).
+4. Policy 2 (for the desktop app and agents, step 8): action **Service Auth**, Include: the service token(s). A service token is let in only by a **Service Auth** policy, not by Allow (https://developers.cloudflare.com/cloudflare-one/access-controls/service-credentials/service-tokens/). One application may hold both policies.
+5. Session duration: the default is 24 hours (range: immediate to 1 month). I suggest 7 days for a private whiteboard. A person signs in again when it ends (19.6).
+6. Copy the application's **AUD tag** (Additional settings). It is a config value for the Worker (19.5).
+7. Do **not** use the "Protect this Worker" shortcut. Worker-level Access policies do not support WebSockets; the upgrade returns 403 (https://developers.cloudflare.com/workers/configuration/cloudflare-access/). Hostname-based Access, as above, is the supported way.
+
+**Step 8. Service tokens (only if you use the desktop app, headless or MCP).** Zero Trust: Access controls, Service credentials, Service tokens, Create. One token per device or agent, so one can be revoked alone. Copy the **Client ID** and the **Client Secret** at once (the secret is shown once). The default life is one year (set at creation; a non-expiring option is unverified). Add each token to Policy 2. New organizations (created on or after 2026-10-05) have "strict service token authentication" on, which means a service-token request is judged only by Service Auth policies (same service-tokens page), so Policy 2 is required, not optional. Up to 50 tokens per account (https://developers.cloudflare.com/cloudflare-one/account-limits/).
+
+**Step 9. Spending caps and alerts.** Dashboard: Billing, Spend management: set a limit for **Workers** and one for **Durable Objects** (https://developers.cloudflare.com/billing/manage/spend-management/). **R2, D1 and Access cannot be capped there**: the page says a Workers limit does not include "Durable Objects, Workers AI, Workers KV, R2, or other products", and only Workers and Durable Objects have limits. For R2 use Notifications (usage alerts), and a Budget alert (Billing, Billable Usage; for pay-as-you-go accounts, email only, never blocks, https://developers.cloudflare.com/billing/manage/budget-alerts/). R2 cost at your scale is cents: $0.015 per GB-month after 10 GB free.
+
+**Step 10. Give the Worker its config and deploy** (19.9): set `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD`, run the first deploy, then the smoke test (19.10 list).
+
+### 19.4 Does the Access cookie cover the WebSocket and the image requests? (the sources)
+
+- **Access in front of a Worker custom domain** is supported and documented: "every request is checked before your Worker runs. Approved visitors are let through, while everyone else is shown a login page or blocked" (https://developers.cloudflare.com/workers/configuration/cloudflare-access/). Hostname-based Access takes precedence over Worker-level Access (same page).
+- **Same-origin cookie.** Access sets the `CF_Authorization` cookie on the application's hostname (https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/). The page is `canvas.patwie.com`, and so are `fetch('/r/<id>/f/<name>')` and `new WebSocket('wss://canvas.patwie.com/r/<id>/ws')`, so the browser sends the cookie on all of them. For the WebSocket upgrade this follows from RFC 6455 section 4.1: the client request "MAY include any other header fields, for example, cookies" (https://www.rfc-editor.org/rfc/rfc6455), and an upgrade is an ordinary HTTP request that Access checks like any other. **The Access docs do not say this in so many words about WebSockets** (unverified). The phase 0 spike tests it with a real login. The reason the design is same-origin is to avoid the CORS cookie problems described in https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/cors/.
+- **Not the same as Worker-level Access.** Only the hostname-based application is used (step 7.7).
+- **A caveat for private browser windows:** they may block the cookie and break XHR (authorization-cookie page).
+
+### 19.5 Defence in depth: the Worker validates the Access JWT too
+
+Access is the gate. The Worker is the second lock, so a misconfigured Access application (deleted, wrong hostname, a policy set to "Everyone", `workers.dev` left on) cannot open the instance. This is a Cloudflare recommendation too: validate the JWT in the origin (https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/).
+
+**Which requests.** The Worker runs first for `/r/*` and `/api/*` (`run_worker_first` patterns). The static app files are the public open-source build, so they need no Worker check (and they do not use Worker quota). Every WebSocket upgrade and every image request is checked.
+
+**What it checks** (`Cf-Access-Jwt-Assertion` header; the cookie is the fallback):
+
+| Check | Value |
+|---|---|
+| Signature | RS256, key chosen by the token's `kid` from `https://<team>.cloudflareaccess.com/cdn-cgi/access/certs` (the `keys` array, not `public_cert`) |
+| `iss` | `https://<team>.cloudflareaccess.com` (config `ACCESS_TEAM_DOMAIN`) |
+| `aud` | contains the application's AUD tag (config `ACCESS_AUD`) |
+| `exp`, `nbf` | `exp` in the future, `nbf` not in the future |
+| Algorithm | only `RS256`. `none`, `HS256` and others are refused (no algorithm confusion). |
+| Identity present | `email` (a person) **or** `common_name` (a service token). Neither: refused. |
+
+Notes from the docs: the signing keys rotate every 6 weeks and the previous key stays valid for 7 days. Match on `kid`, cache the key set, and refetch on an unknown `kid` (the docs give no TTL; I use one hour and at most one refetch per minute). The service-token JWT has `common_name` equal to the client id and no `email` (https://developers.cloudflare.com/cloudflare-one/access-controls/service-credentials/service-tokens/). The AUD tag stays the same unless the application is recreated.
+
+**How, in the Worker.** There is no Rust sample in the Cloudflare docs. I propose a small pure module `access_jwt` in `apps/drafftink-worker`: parse the three parts, check the header and claims against injected `now`, `team`, `aud` and a key set, and verify the RS256 signature through Web Crypto `SubtleCrypto.verify` (`RSASSA-PKCS1-v1_5`, SHA-256) rather than an RSA crate in wasm, so the signature check takes microseconds, not milliseconds, inside the Free plan's 10 ms CPU limit. Because the claims logic is pure, it is unit-tested natively with fixture keys (19.10). `ctx.access` / `getIdentity()` is not a replacement: it is not available to Workers that serve static assets, and it is undefined when Access did not authenticate the request (https://developers.cloudflare.com/workers/configuration/cloudflare-access/). Using `ctx.access` additionally is allowed but not relied on.
+
+**Optional second list.** Access's allow-list is the single source of truth. A copy in the Worker (`ACCESS_ALLOWED_EMAILS`, secret) would catch a policy widened to "Everyone". It also doubles the lists to maintain. Default: off. Open question Q9.
+
+**Refusal.** A request without a valid assertion gets HTTP `401` and a small JSON body with a plain message, never a redirect and never silence:
+- no header: `{"error":"access_required","message":"This server is only open to signed-in, approved users. Open https://canvas.patwie.com in your browser and sign in with Google. In the desktop app, enter the access token for this server in Preferences."}`
+- bad signature, wrong audience or expired: `{"error":"access_invalid","message":"Your sign-in is not valid for this server or has expired. Reload the page and sign in again."}`
+- no `Cf-Access-*` and an `Origin` that is not ours: refused before parsing.
+The Worker logs the reason code, never the token, never the email.
+
+**Identity stays out of the room.** After the check the Worker **strips** `Cf-Access-Jwt-Assertion`, `Cf-Access-Authenticated-User-Email`, `CF-Access-Client-*` and the `CF_Authorization` cookie from the request before it calls the Durable Object or R2. The relay therefore never sees who connected. Cloudflare itself still can (19.7).
+
+### 19.6 Native, desktop, MCP and headless clients: an Access service token
+
+These clients cannot do the Google login in a browser. I considered two ways and pick the first.
+
+| | Service token (**chosen**) | `cloudflared access login` |
+|---|---|---|
+| How it works | Client ID and secret sent as headers `CF-Access-Client-Id` and `CF-Access-Client-Secret` on every request, including the WebSocket handshake. Access policy action **Service Auth**. | The `cloudflared` program opens a browser, the person signs in, `cloudflared access token -app=<url>` prints a JWT, sent as header `cf-access-token` (https://developers.cloudflare.com/cloudflare-one/tutorials/cli/). |
+| Unattended use (MCP server, `drafftink-headless run`, CI, a laptop closed overnight) | Works | No. A new browser login is needed when the session ends. |
+| Extra software | None | The `cloudflared` binary on every machine. |
+| Cost | No seat (service tokens do not use seats) | One seat per person (already used for the browser). |
+| Identity | A **machine**, not a person: the origin sees `common_name` (the client id), no email | The person's email |
+| Revoke and rotate | Per token: rotate the secret (the client id stays, the old secret can live 1 hour to 30 days), or revoke at once. Expires in one year by default; Cloudflare alerts a week before. | By removing the person, or session expiry |
+| Rust support | Plain headers on tungstenite and an HTTP client. Fully ours. | Shelling out. The login flow is not documented for re-implementation (unverified). |
+
+**Why the token.** The desktop app, the headless MCP server and scripts must work without a person at a browser, and plain headers are the least code and the fewest moving parts. The disadvantage (a machine identity and a secret on disk) is real, so the rules below apply. The `cloudflared` route stays an alternative for a person who wants an identity on the desktop and does not mind the extra binary. **Managed OAuth** (authorization code with PKCE, tokens refreshed by the client, https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/managed-oauth/) would give native clients a per-person login without a secret on disk, but it needs a client that implements RFC 8707 and a loopback redirect. It is the right later upgrade and is not designed here.
+
+**How it works in the app.**
+- A new port `Secrets` (native: the OS credential store through the `keyring` crate if it is available on the platform, else a `0600` file in the app data folder; headless: a file or environment variable). It holds `AccessCredentials {client_id, client_secret}` **per server origin**.
+- **Preferences** has, per server, "Access token for this server" with two fields and "Remove". It calls the commands below. It is entered once.
+- The transports add the two headers to the WebSocket handshake (tungstenite takes arbitrary request headers) and to each blob request (`BlobTransport`). Rules, all tested:
+  - Sent **only** to the stored origin over `https`/`wss`, never to another host, and never over plain `ws://` to a non-loopback host (the existing `UrlPolicy`).
+  - **Redirects are not followed** with these headers. A `302` to `*.cloudflareaccess.com` means the token was refused, and is reported as `access_denied` (19.6, texts).
+  - The secret has no `Display`, `Debug` prints `AccessCredentials(<hidden>)`, and it is held in a zeroizing buffer, like `AuthToken` and `RoomKey`.
+- **Not in settings.** Like the v1 token and the room key (`docs/collab.md`, "The access token"): a setting would be readable by `settings.get`, written to disk in the clear and echoed. The credential store is the only place, and `collab.status` shows `access: "service_token" | "none"`, never a value.
+- **Not in links.** A room link never contains it. The link is a room capability. Access is a server capability. They travel separately.
+- **Headless and MCP:** `DRAFFTINK_ACCESS_CLIENT_ID` and `DRAFFTINK_ACCESS_CLIENT_SECRET_FILE` (a file path; no flag takes the secret itself, as for the room link in section 12), or the credential store.
+- **A browser** never uses the token. It uses the cookie.
+
+**Commands** (collab family): `collab.set_access {server?, client_id, client_secret}` and `collab.clear_access {server?}`. NoUndo, never in a batch, both `secret_args` (the ring shows `"<hidden>"`). Refusals: `bad_args` for an empty or over-long value (without repeating it), `port_unavailable` when there is no `Secrets` port (the web build, where the browser holds the cookie). `server` defaults to the chosen server.
+
+**Texts the person sees** (plain words, from `Problem`s with the action `AskAdmin` or `UpdateApp`):
+- No credentials and a `401`/`302` from Access: "This server is private. Open Preferences, Collaboration, and enter the access token for `canvas.patwie.com`. The server's owner can create one."
+- Refused token: "The server did not accept the access token. It may have expired or been revoked. Ask the server's owner for a new one."
+- Browser, expired session: "Your sign-in has expired. Reload the page to sign in again. Your drawing is saved on this device."
+
+**Expired sessions in the browser.** The default reaction of Access to an expired session is a `302` to `<team>.cloudflareaccess.com`. For `fetch` that is a cross-origin redirect and fails as a CORS error. The fix in the docs: send the header `X-Requested-With: XMLHttpRequest`, and Access returns `401` instead (https://developers.cloudflare.com/cloudflare-one/access-controls/access-settings/session-management/, "AJAX"). The web `BlobTransport` and the `/api/status` probe send it. The WebSocket cannot carry a custom header, so a failed upgrade is classified by the probe, as in 11.6: `/api/status` with that header returns `401` (Access) or the Worker's own `401` JSON (a missing or bad assertion), and the two give different texts. An already open WebSocket after the session ends: the docs do not say; Access checks each HTTP request and an upgrade is one request, so the open socket most likely stays up until it drops (unverified). The reconnect then fails and shows "Your sign-in has expired". Spike item.
+
+### 19.7 Threat model changes
+
+**What Access adds.**
+- Only allow-listed Google accounts, and holders of a listed service token, reach the Worker **at all**. A stranger who learns a room id, a room link or the hostname gets a login page. This is a layer in front of the room key, not a replacement: a signed-in, allow-listed person who has never seen a room link still cannot read or join it.
+- It limits the denial-of-service surface: flooding, junk uploads and room creation need an account on the list. A malicious room member (4.3) must now also be an allowed user (or a holder of a service token).
+- It leaves an attacker who knows only a room id unable even to ask the relay a question.
+
+**What Cloudflare (and Google) still see, now in addition to 4.1.**
+- **Email identities of everyone who connects.** Access sees who logs in and when. The Worker sees the verified JWT (with the email, or the service token's client id) on every WebSocket upgrade and image request before it strips the headers. So Cloudflare can link "this email was connected to room id X at this time", and from the DO's socket count, "these people were in the room together". The relay code stores and logs none of it (19.5), but Cloudflare can see it in its own logs and analytics. **The room's content stays sealed.** If linking people to rooms matters, do not use this instance for that room.
+- **Google** sees that the person signed in to Cloudflare Access for this team (the OAuth redirect), not the rooms.
+- **Service-token holders** appear as machines (`common_name`), not people.
+- The R2 bucket holds sealed images under keyed names; its operations log shows object keys (`r/<room>/<name>`), sizes and times, but not content (as before).
+
+**Accepted, as before.** Removing a person from the allow-list stops them connecting, but does not take back a link they hold or a copy they saved. There is still no key revocation (5.4). Access does not tell members apart: anyone on the list who has the link is a member.
+
+### 19.8 Configuration: one codebase, two environments
+
+`apps/drafftink-worker/wrangler.toml` has `[env.demo]` and `[env.private]`. **Bindings and `vars` are not inherited, so each environment repeats them** (https://developers.cloudflare.com/workers/wrangler/environments/). Each environment deploys as its own Worker (`drafftink-relay-demo`, `drafftink-relay-private`) and has its own Durable Object namespace and storage (https://developers.cloudflare.com/durable-objects/reference/environments/). The code reads only these settings:
+
+| Setting | `demo` (drafft.ink) | `private` (canvas.patwie.com) |
+|---|---|---|
+| Account | the demo account | the private account (19.11) |
+| Route | custom domain `drafft.ink` | custom domain `canvas.patwie.com` |
+| `workers_dev`, preview URLs | off | **off** |
+| `ROOM_TTL_SECS` | `172800` (48 h) | unset: **no expiry**, no alarm, `Joined.expires_at_ms = 0` |
+| `ROOM_LEAVE_GRACE_SECS` | 60 | not used |
+| `BLOB_STORE` | `do` (the room's SQLite) | `r2`, binding `BLOBS` to bucket `drafftink-private-blobs` |
+| `ACCESS_REQUIRED` | false | **true**, with `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD` |
+| Turnstile on room creation | on (secret `TURNSTILE_SECRET`) | off (Access already gates creation) |
+| `Registry` object and `MAX_ROOMS_DEMO`, `MAX_DEMO_BYTES` | on | off |
+| `ALLOWED_ORIGINS` (WebSocket `Origin` check) | `https://drafft.ink` | `https://canvas.patwie.com` |
+| `MAX_ROOM_STATE_BYTES` | 32 MiB | 256 MiB (a room's database has a 10 GB limit) |
+| `MAX_ROOM_IMAGE_BYTES`, `MAX_ROOM_IMAGES` | 50 MiB, 200 | 500 MiB, 2,000 |
+| `MAX_IMAGE_BYTES` | 4 MiB | 4 MiB (same: it is the sealed-file limit the clients know) |
+| `MAX_PEERS_PER_ROOM`, `ROOM_PRESENCE_BUDGET` | 64, 40 msg/s | 64, 40 msg/s |
+| Status texts | free-plan "daily limit" texts | the same code; the text names the owner |
+| Migration | `new_sqlite_classes = ["Room", "Registry"]` | `new_sqlite_classes = ["Room"]` |
+
+Limits are named constants in `drafftink-protocol` with the **ceilings**; an environment may only lower or, within the ceilings, raise them, and announces its values in `Joined.limits`, so a client never hard-codes a host's numbers. Durable Object classes must be SQLite-backed on Free (https://developers.cloudflare.com/durable-objects/platform/pricing/). Wrangler can declare them with `[[migrations]]` and `new_sqlite_classes`, or with the newer `exports` map (https://developers.cloudflare.com/durable-objects/reference/durable-objects-migrations/); the second cannot be reverted after the first deploy, so I use the legacy `[[migrations]]` until the spike confirms the new form works with workers-rs. The account is chosen by `CLOUDFLARE_ACCOUNT_ID` and the token, not by the file (whether a per-environment account id can be pinned is unverified).
+
+**Web app build.** One build for both. `collab.server_url` defaults to `/ws` on the web, "this page's server" (`docs/commands.md` settings), and the v2 client derives `/r/<id>/ws` and `/r/<id>/f/<name>` from the page origin. So **the web app needs no server URL for either deployment**, and no `ALLOWED_ORIGINS` surprises. The static files are the same `web-dist`, uploaded as the Worker's assets in each environment.
+
+**R2 as the blob store.** The `BlobStore` trait of section 14 gets an R2 implementation in the Worker host. Layout: key `r/<room_id>/<name>`. The per-room quotas stay in the room's Durable Object:
+- *Upload:* the Worker checks Access, the JWT and the membership token, then forwards the request to the room's Durable Object. The object checks the size limits and the quotas (`MAX_ROOM_IMAGE_BYTES`, `MAX_ROOM_IMAGES`, from its manifest table) and streams the body to R2 with its own `BLOBS` binding, then records `{name, size}`. One object request per upload.
+- *Download:* after the membership check the Worker reads R2 directly and streams the object. No object is woken. Class B operation only.
+- *List:* from the object's manifest (no R2 list call).
+- *Streams:* the R2 docs warn that buffering a large body hits the 128 MB Worker memory limit, so bodies are streamed (https://developers.cloudflare.com/r2/api/workers/workers-api-usage/). Whether workers-rs `Bucket::put` accepts a stream is unverified; the TypeScript shell does. R2 allows one write per second to the same key (the 429 case); the client's upload of the same name is serialized.
+- *Delete a room.* Rooms never expire, so storage would only grow. I add a member-only `DeleteRoom` message (tag 0x15) and command `collab.delete_room {confirm: bool = false}` (refusal `not_confirmed`: "This deletes the room and all its pictures for everyone. Run it again with confirm=true."), enabled by `ALLOW_DELETE_ROOM` in the private environment. The object lists `r/<room>/` in R2, deletes the objects (deletes are free, https://developers.cloudflare.com/r2/pricing/), then runs `deleteAlarm()` and `deleteAll()`. This is the only deletion path with `ROOM_TTL` off.
+- R2 cost: first 10 GB-month free, then $0.015 per GB-month; free egress.
+
+### 19.9 Deploy
+
+**Manual:** `wrangler deploy --env private` from `apps/drafftink-worker` (and `--env demo` against the other account). Secrets per environment: `wrangler secret put ACCESS_AUD --env private` (and the others; secrets are per environment too).
+
+**GitHub Actions**, separate from the demo deploy: two workflow files, `.github/workflows/deploy-private.yml` and `deploy-demo.yml`. Each uses `cloudflare/wrangler-action` with its own secrets (https://developers.cloudflare.com/workers/ci-cd/external-cicd/github-actions/). They run on a manual trigger (`workflow_dispatch`) and on a version tag, **never on every push**, because a deploy disconnects open WebSockets. The private workflow is protected by a GitHub Environment `private` with a required reviewer, so a pull request from a fork cannot reach its secrets. Secrets: `PRIVATE_CLOUDFLARE_API_TOKEN` and `PRIVATE_CLOUDFLARE_ACCOUNT_ID`, distinct from the `DEMO_` pair.
+
+**The API token** (an *Account API token*, not your global key), created in the **private** account. Start from the "Edit Cloudflare Workers" template, then remove what is not needed (https://developers.cloudflare.com/fundamentals/api/reference/template/):
+
+| Scope | Permission (dashboard name) | Why |
+|---|---|---|
+| Account | Workers Scripts: Edit | upload the Worker, apply the Durable Object migration |
+| Account | Workers R2 Storage: Edit | bucket binding on deploy (and the one-time `lifecycle` command if ever used) |
+| Account | Account Settings: Read | wrangler looks up the account |
+| Zone (`patwie.com` only) | Workers Routes: Edit | the route / custom domain |
+| User | User Details: Read, Memberships: Read | in the template; wrangler uses them to find the account |
+| Zone (`patwie.com` only), **only if the deploy fails without it** | DNS: Edit | a custom domain creates a DNS record and a certificate; the docs do not list the permission it needs (unverified) |
+
+Remove from the template: Workers KV Storage Edit, Workers Tail Read (unless you want `wrangler tail` from CI). Scope the token to the **one account** and the **one zone**. Do the first deploy by hand with `wrangler login`; if the CI deploy later fails on the route, add the DNS permission. **No** Zero Trust, Billing or R2 object permissions are needed. Access is configured by you in the dashboard (steps 4 to 8), not by CI. The token is created for a person to rotate yearly.
+
+### 19.10 Tests added by the private instance
+
+| Area | Tests |
+|---|---|
+| `access_jwt` (pure, native) | Valid token passes. Wrong `aud`, wrong `iss`, expired `exp`, future `nbf`, unknown `kid` (one refetch, then refuse), `alg: none`, `HS256` signed with the public key (algorithm confusion), a missing identity claim, a truncated or oversize token, a service-token JWT with `common_name` and no email: each refused with the expected code and text. Key rotation: both keys in the set verify. |
+| Worker routing | Without a valid assertion, `/r/*` and `/api/*` give `401` JSON and **do not call** the Durable Object or R2 (test double counts calls). With one, the headers and cookie are stripped before the object sees the request. A request on a `workers.dev`-style host without the assertion is refused (backstop test). |
+| Service token (native) | The headers are on the WebSocket handshake and every blob request, only to the stored origin, never to another host, never over `ws://` to a non-loopback host, never after a redirect. The secret is absent from every log line, `Debug`, the ring, `collab.status`, refusals and links (copy of `tests/logging.rs`). `collab.set_access` and `clear_access` round trip. A `302` from Access gives `access_denied`. |
+| Persistent room | With `ROOM_TTL` off: no alarm is ever set, `Joined.expires_at_ms = 0`, a room survives a simulated 400 days with nobody connected, and a restart of the object, and still opens. `DeleteRoom` removes the state, the alarm and every R2 object under the prefix, and nothing else. |
+| R2 blobs | The blind-storage test of section 15 also searches the persisted R2 objects (miniflare) for the marker. Quota is enforced by the object, not by R2. Download needs no object call. A failed R2 write leaves no manifest row. |
+| Limits per environment | `Joined.limits` carries the environment's values. A client obeys them (a 3 MiB image is fine at 4 MiB, refused when the host announces 2 MiB). |
+| Setup smoke test (manual checklist, runbook) | Signed out: the hostname shows the Google login. Signed in with an allowed email: the app loads, a room opens, a picture uploads and loads on a second device. An email that is not on the list is refused by Access. `workers.dev` URL is dead. A service-token client connects, a token with no Service Auth policy is refused. After deleting the Access application the Worker still answers `401`. |
+
+### 19.11 Keep the demo on a different Cloudflare account
+
+Spending limits are **account-wide per product** and cannot target one Worker or namespace (https://developers.cloudflare.com/billing/manage/spend-management/). The Free plan's daily limits are **per account** too: 100,000 Workers requests a day, which "resets at midnight UTC" and then gives error 1027 (https://developers.cloudflare.com/workers/platform/limits/), and the Durable Objects limits of 11.1 (the pricing page presents them as plan limits; "per account" is implied, not worded that way). So if both instances share one account:
+
+- a busy day on the public demo would use up the daily quota and **lock you out of your own private instance**, and
+- one spending cap would have to serve a public, abuse-prone service and a private one.
+
+Put **the demo on its own account** (`drafft.ink`, Workers Free, its own caps) and **the private instance on your own account** (`canvas.patwie.com`, own caps, own Zero Trust organization, own R2). Two accounts mean two API tokens and two sets of GitHub secrets, as in 19.9. The private account may stay on Workers Free for a few people; if its daily limits ever bite, switching to the paid plan is again a plan change, not a code change.
+
+### 19.12 Risks, unverified points and spike items for the private instance
+
+1. **Cookie and the WebSocket upgrade** are not stated together in the Access docs (19.4). If the browser did not send the cookie, the instance would not work. RFC 6455 says cookies are allowed on the handshake, and I expect it to work. Spike item 1, with a real login.
+2. **Service-token headers on a WebSocket upgrade** are not documented (19.6). Native clients can set handshake headers, so I expect it to work. Spike item 2.
+3. **Open WebSocket after the Access session expires** is not documented; I expect the socket to live until it drops. Spike item 3.
+4. **Whether Access-blocked requests count against Workers requests** is not stated. Likely not (the Worker never runs), unverified.
+5. **R2 needs a payment method** (likely yes; not stated outright). **Zero Trust Free needs one** (stated). A community thread says the Zero Trust checkout asks consent to overage and that no hard $0 cap is documented (unverified).
+6. **R2, D1 and Access cannot be capped** by Spend management. Only Workers and Durable Objects can. Use alerts, not caps, for R2.
+7. **`workers.dev` and preview URLs** bypass hostname-based Access. They are turned off in the config and the Worker's JWT check is the backstop. Do not skip either.
+8. **Email identities are visible to Cloudflare** in the logs of this deployment (19.7). This is the price of the allow-list.
+9. **Google "Testing" status** limits sign-ins to 100 listed test users unless only basic scopes are requested (unverified for Cloudflare's flow). Add emails as test users, or publish.
+10. **Custom-domain deploy permissions** are undocumented (19.9). The first deploy is by hand; add DNS Edit only if CI needs it.
+11. **Team name lock-in.** A deleted Zero Trust organization keeps its team name locked.
+12. **workers-rs and R2 streaming** `put` with a stream body is unverified. The TypeScript shell is the fallback (Q8).
+
+### 19.13 Effort and where it fits
+
+The private instance reuses phases 1 to 3 completely: the relay core (retention off is a configuration of the same state machine), the sealed protocol, images as files behind `BlobStore`, and the Worker with its Durable Object. It needs this extra work, **phase 3P**, which can start as soon as phase 3 has the Worker and Durable Object serving a room, and ships **before or alongside phase 4**:
+
+| Item | Days |
+|---|---|
+| Spike additions on the real private account (needs your login): Access with a WebSocket and the cookie, service-token upgrade, session expiry, `X-Requested-With` 401, custom-domain deploy | 1 |
+| `access_jwt` module, JWKS cache, Worker pre-check on `/r/*` and `/api/*`, header stripping, refusal texts, tests | 2 |
+| R2 `BlobStore` in the Worker (streaming upload through the object, direct download, quotas, manifest) with tests | 2 |
+| Persistent mode: `ROOM_TTL` unset path, `expires_at_ms = 0`, `DeleteRoom` message and `collab.delete_room` | 1.5 |
+| Service-token support: `Secrets` port (keyring and file), `collab.set_access` and `clear_access`, headers on WebSocket and blob requests, redirect and host rules, Preferences panel, env/file for headless, redaction tests | 3 |
+| Per-environment `wrangler.toml`, `[env.private]`, constants as variables, the two GitHub workflows, token scopes | 1 |
+| Runbook `docs/private-instance.md`: the setup steps of 19.3, smoke-test checklist | 1 |
+| **Total phase 3P** | **11.5** |
+
+New overall total: phases 0 to 4 as before (**61 days**), plus phase 3P (**11.5**), plus 1 day more in phase 0 (counted in 3P): about **73 days**. If the private instance goes first, phase 4 shrinks by a day or two (no Turnstile, no `Registry` needed for it), and the `Registry` and Turnstile work (about 2 days of phase 3 and 1 of phase 4) can wait until the public demo is deployed.
+
+Suggested order: 0 (spike, with a private-account part) → 1 → 2 → 3 (Worker, Durable Object, DO-backed images) → **3P (private instance live for you)** → 4 (public demo deploy, Turnstile, `Registry`, caps).
+
+---
+
+## 20. Sources
 
 Cloudflare (read 2026-11-18):
 - Durable Objects pricing and Free limits: https://developers.cloudflare.com/durable-objects/platform/pricing/
@@ -781,6 +1087,22 @@ Cloudflare (read 2026-11-18):
 - Turnstile: https://developers.cloudflare.com/turnstile/plans/, https://developers.cloudflare.com/turnstile/get-started/server-side-validation/
 - Custom domains: https://developers.cloudflare.com/workers/configuration/routing/custom-domains/
 - workers-rs: https://github.com/cloudflare/workers-rs (0.9.0)
+
+Cloudflare, added 2026-11-22 for the private instance:
+- Workers with Access (hostname-based, WebSocket limitation): https://developers.cloudflare.com/workers/configuration/cloudflare-access/
+- Self-hosted Access application: https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/self-hosted-public-app/
+- Authorization cookie and CORS: https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/ , https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/cors/
+- Validating the JWT: https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/
+- Session management (AJAX 401): https://developers.cloudflare.com/cloudflare-one/access-controls/access-settings/session-management/
+- Service tokens: https://developers.cloudflare.com/cloudflare-one/access-controls/service-credentials/service-tokens/ ; managed OAuth: https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/managed-oauth/ ; `cloudflared` CLI: https://developers.cloudflare.com/cloudflare-one/tutorials/cli/
+- Google identity provider: https://developers.cloudflare.com/cloudflare-one/integrations/identity-providers/google/ ; Google production readiness: https://developers.google.com/identity/protocols/oauth2/production-readiness/overview
+- Zero Trust setup, FAQ, seats, limits: https://developers.cloudflare.com/cloudflare-one/setup/ , https://developers.cloudflare.com/cloudflare-one/faq/getting-started-faq/ , https://developers.cloudflare.com/cloudflare-one/team-and-resources/users/seat-management/ , https://developers.cloudflare.com/cloudflare-one/account-limits/ , https://blog.cloudflare.com/teams-plans
+- R2: https://developers.cloudflare.com/r2/pricing/ , https://developers.cloudflare.com/r2/get-started/ , https://developers.cloudflare.com/r2/api/workers/workers-api-usage/ , https://developers.cloudflare.com/r2/buckets/object-lifecycles/ , https://developers.cloudflare.com/r2/buckets/public-buckets/ , https://developers.cloudflare.com/r2/platform/limits/
+- D1 and storage choice: https://developers.cloudflare.com/d1/platform/limits/ , https://developers.cloudflare.com/workers/platform/storage-options/
+- Spend management and budget alerts: https://developers.cloudflare.com/billing/manage/spend-management/ , https://developers.cloudflare.com/billing/manage/budget-alerts/
+- Wrangler environments, Durable Object environments and migrations: https://developers.cloudflare.com/workers/wrangler/environments/ , https://developers.cloudflare.com/durable-objects/reference/environments/ , https://developers.cloudflare.com/durable-objects/reference/durable-objects-migrations/
+- GitHub Actions and token permissions: https://developers.cloudflare.com/workers/ci-cd/external-cicd/github-actions/ , https://developers.cloudflare.com/fundamentals/api/reference/template/ , https://developers.cloudflare.com/fundamentals/api/reference/permissions/
+- WebSocket handshake may carry cookies: https://www.rfc-editor.org/rfc/rfc6455 section 4.1
 
 Crypto:
 - NIST SP 800-38D (2^32 random-IV invocations): https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38d.pdf
