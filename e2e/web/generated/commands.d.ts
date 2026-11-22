@@ -937,6 +937,8 @@ export namespace ClipboardPasteStyle {
 
 /** Chooses the collaboration server and, when a room is given, joins it. Returns at once; the connection comes up in the background. */
 export namespace CollabConnect {
+  /** What to do when the encrypted room the link names does not exist: it expired, or the link is incomplete. */
+  type A_IfMissing = "refuse" | "restore" | "create";
   /** What to do with the content a tab already has when it joins a room. */
   type A_OnLocal = "refuse" | "merge" | "discard";
   /**
@@ -946,9 +948,18 @@ export namespace CollabConnect {
   type A_TokenArg = string;
   /** Arguments of `collab.connect`. */
   export type Args = {
+    /**
+     * What to do when an encrypted room does not exist (it expired): `refuse` (the default), `restore` it from this
+     * tab's copy, or `create` an empty one.
+     */
+    if_missing?: A_IfMissing;
     /** What to do with content this tab already has when `room` is given. */
     on_local?: A_OnLocal;
-    /** The room to join at once. Omit it to only choose the server. */
+    /**
+     * The room to join at once: the name of a plaintext room, or an encrypted room's link
+     * (`https://drafft.ink/#room=<id>,<key>`) or `<id>,<key>`. The link holds the key, so it is never recorded or
+     * shown. Omit it to only choose the server.
+     */
     room?: string | null;
     /**
      * The access token, when the server asks for one. Kept with the server for the next `collab.join_room`.
@@ -971,7 +982,12 @@ export namespace CollabConnect {
     created?: string[];
     /** Ids of elements the command removed. */
     deleted?: string[];
-    /** `#room=<id>&server=<url>`, when a room was given. */
+    /** True when the room is end-to-end encrypted. */
+    e2e: boolean;
+    /**
+     * `#room=<id>&server=<url>`, when a plaintext room was given. An encrypted room has no link here: it would
+     * hold the key. Use `collab.share_link`.
+     */
     link?: string | null;
     /** The room, when one was given. */
     room?: string | null;
@@ -1036,6 +1052,8 @@ export namespace CollabFollow {
 
 /** Binds a room to the active tab and starts syncing it. Omit the room to create a random one. */
 export namespace CollabJoinRoom {
+  /** What to do when the encrypted room the link names does not exist: it expired, or the link is incomplete. */
+  type A_IfMissing = "refuse" | "restore" | "create";
   /** What to do with the content a tab already has when it joins a room. */
   type A_OnLocal = "refuse" | "merge" | "discard";
   /**
@@ -1045,9 +1063,18 @@ export namespace CollabJoinRoom {
   type A_TokenArg = string;
   /** Arguments of `collab.join_room`. */
   export type Args = {
+    /**
+     * What to do when an encrypted room does not exist (it expired): `refuse` (the default), `restore` it from this
+     * tab's copy, or `create` an empty one.
+     */
+    if_missing?: A_IfMissing;
     /** What to do with content this tab already has. */
     on_local?: A_OnLocal;
-    /** The room: 1 to 64 characters, letters, digits, `-` and `_`. Omit it to create a random one. */
+    /**
+     * The room: a plain name (1 to 64 characters, letters, digits, `-` and `_`) for a plaintext room, or an
+     * encrypted room's link or `<id>,<key>`. Omit it to create a new encrypted room with a fresh key. The link holds
+     * the key, so it is never recorded or shown.
+     */
     room?: string | null;
     /**
      * The access token for this room. Omit it to use the one given to `collab.connect`. It is never recorded,
@@ -1063,9 +1090,14 @@ export namespace CollabJoinRoom {
     created?: string[];
     /** Ids of elements the command removed. */
     deleted?: string[];
-    /** `#room=<id>&server=<url>`: send it to somebody to invite them. */
-    link: string;
-    /** The room. */
+    /** True when the room is end-to-end encrypted. */
+    e2e: boolean;
+    /**
+     * `#room=<id>&server=<url>` for a plaintext room: send it to somebody to invite them. An encrypted room has no
+     * link here, because the link holds the key. Use `collab.share_link`.
+     */
+    link?: string | null;
+    /** The room: its name, or the id of an encrypted room (never the key). */
     room: string;
     /** The tab bound to the room. */
     tab: string;
@@ -1186,12 +1218,63 @@ export namespace CollabSetUser {
   };
 }
 
+/** Copies the link of the end-to-end encrypted room of this tab to the clipboard. The link holds the room key; it is returned only with reveal=true. */
+export namespace CollabShareLink {
+  /** Arguments of `collab.share_link`. */
+  export type Args = {
+    /** Put the link on the clipboard. Default true. */
+    copy?: boolean;
+    /**
+     * Also return the link in the output. Default false: the link holds the room key, so it stays out of logs and
+     * transcripts unless asked for.
+     */
+    reveal?: boolean;
+  };
+  /** Output of `collab.share_link`. */
+  export type Output = {
+    /** Always false: nothing on this screen changes. */
+    changed: boolean;
+    /** True when the link is on the clipboard. */
+    copied: boolean;
+    /** Ids of elements the command made. */
+    created?: string[];
+    /** Ids of elements the command removed. */
+    deleted?: string[];
+    /** The link, only when `reveal` was set. It holds the room key. */
+    link?: string | null;
+    /** The label of the undo step the command pushed. */
+    undo_label?: string;
+    /** Non-fatal notes. */
+    warnings?: string[];
+    [key: string]: unknown;
+  };
+}
+
 /** Reports the connection, the room, the people in it with their pointers, and whether a room is still loading. */
 export namespace CollabStatus {
   /** An argument struct with no fields, for commands that take none. */
   export type Args = Record<string, never>;
   /** Where the connection to the server is. */
   type O_ConnectionState = "disconnected" | "ready" | "connecting" | "connected" | "error";
+  /** Where the pictures of an encrypted room stand. All zero for a plaintext room, which embeds them. */
+  type O_ImagesView = {
+    /** Pictures being fetched from the room. */
+    downloading: number;
+    /** Pictures that will not be transferred: refused uploads, damaged downloads. */
+    failed: number;
+    /** Bytes the room's pictures take on the server (sealed), as the server last reported. */
+    room_image_bytes: number;
+    /** Pictures the room holds, as the server last reported. */
+    room_images: number;
+    /** Pictures being sent to the room. */
+    uploading: number;
+    /**
+     * Pictures waiting for a free slot, a retry time, or the room's list (a picture whose upload has not finished
+     * yet is retried every few seconds).
+     */
+    waiting: number;
+    [key: string]: unknown;
+  };
   /** A point of this user's own laser trail. */
   type O_LaserDot = {
     /** Milliseconds since the point was recorded. */
@@ -1221,6 +1304,13 @@ export namespace CollabStatus {
     done: number;
     phase: "importing";
     /** All items of the room. */
+    total: number;
+    [key: string]: unknown;
+  } | {
+    /** Pictures of the visible area that are here. */
+    done: number;
+    phase: "images";
+    /** Pictures the visible area shows. */
     total: number;
     [key: string]: unknown;
   };
@@ -1262,8 +1352,19 @@ export namespace CollabStatus {
     created?: string[];
     /** Ids of elements the command removed. */
     deleted?: string[];
+    /** True for an end-to-end encrypted room: the server cannot read it. `room` is its id, never its key. */
+    e2e: boolean;
     /** Why sharing stopped, in `Error` state. */
     error?: string | null;
+    /**
+     * When the server deletes the room if nobody visits, in milliseconds since the epoch. Absent: never, or not
+     * known.
+     */
+    expires_at_ms?: number | null;
+    /** The room is past its time limit and is deleted when the last person leaves. */
+    expiring: boolean;
+    /** Where the pictures of an encrypted room stand. */
+    images: O_ImagesView;
     /** This user's laser trail. */
     laser: O_LaserDot[];
     /** Present while the room is not yet usable. */
@@ -1738,6 +1839,8 @@ export namespace DocExport {
   };
   /** The only word `to` accepts besides a file. */
   type A_InlineWord = "inline";
+  /** What an export does with a picture of a room that this device cannot get. */
+  type A_MissingImages = "refuse" | "placeholder";
   /** An element reference in arguments: an id, or `"@name"` for the name set with `element.set_name`. */
   type A_Ref = string;
   /** Arguments of `doc.export`. */
@@ -1754,6 +1857,12 @@ export namespace DocExport {
     frame?: A_Ref | null;
     /** The elements, for scope `ids`. */
     ids?: A_Ref[] | null;
+    /**
+     * Only in an encrypted room, for pictures this device does not hold yet. `refuse` (default): the export is
+     * refused with `images_pending` while they download, or `images_unavailable` when they cannot be loaded.
+     * `placeholder`: export anyway; they show as empty frames and the output says how many (`images_missing`).
+     */
+    missing_images?: A_MissingImages;
     /** World units around the content, 0 to 1000. Default: the setting `export.padding`. */
     padding?: number | null;
     /** PNG and SVG size factor, 0.25 to 4. Default: the setting `export.scale`. */
@@ -1807,6 +1916,11 @@ export namespace DocExport {
     format: O_ExportFormat;
     /** Height in pixels (PNG). */
     height?: number | null;
+    /**
+     * Pictures of an encrypted room that were left out because this device does not hold them
+     * (`missing_images: "placeholder"`). Absent when none.
+     */
+    images_missing: number;
     /** Its media type. */
     mime: string;
     /** Where it was written, for a file. */
@@ -2267,6 +2381,12 @@ export namespace DocSave {
     deleted?: string[];
     /** The format written. */
     format: O_SaveFormat;
+    /**
+     * Pictures of an encrypted room that are not in the file because this device does not hold them yet. The
+     * file opens with empty frames for them. Absent when none; the pictures are asked for, so a later save has
+     * them.
+     */
+    images_missing: number;
     /** Where the document was written. */
     saved_to: O_FileRef;
     /** The label of the undo step the command pushed. */
@@ -4671,6 +4791,12 @@ export namespace ImageInsert {
     offset?: number;
     /** Select the new elements. */
     select?: boolean;
+    /**
+     * In a shared (encrypted) room a picture can be at most 4 MB. With `shrink` a larger picture is stored as a
+     * smaller copy (scaled down, a JPEG unless it has transparency) and the output says `shrunk`; without it
+     * the picture is refused with `image_too_large`. Outside a room it changes nothing.
+     */
+    shrink?: boolean;
   };
   /** One inserted picture. */
   type O_Inserted = {
@@ -8416,6 +8542,7 @@ export interface CommandTable {
   "collab.leave_room": { args: CollabLeaveRoom.Args; output: CollabLeaveRoom.Output };
   "collab.set_pointer": { args: CollabSetPointer.Args; output: CollabSetPointer.Output };
   "collab.set_user": { args: CollabSetUser.Args; output: CollabSetUser.Output };
+  "collab.share_link": { args: CollabShareLink.Args; output: CollabShareLink.Output };
   "collab.status": { args: CollabStatus.Args; output: CollabStatus.Output };
   "diagram.create": { args: DiagramCreate.Args; output: DiagramCreate.Output };
   "diagram.extend": { args: DiagramExtend.Args; output: DiagramExtend.Output };
@@ -8566,7 +8693,7 @@ export interface CommandTable {
 export type CommandId = keyof CommandTable;
 
 /** Commands whose arguments may all be left out. */
-export type OptionalArgsId = "arrow.delete_point" | "arrow.edit_points" | "arrow.reroute" | "arrow.swap_heads" | "clipboard.copy" | "clipboard.copy_as" | "clipboard.copy_style" | "clipboard.cut" | "clipboard.paste" | "clipboard.paste_style" | "collab.connect" | "collab.disconnect" | "collab.follow" | "collab.join_room" | "collab.leave_room" | "collab.set_pointer" | "collab.set_user" | "collab.status" | "doc.autosave" | "doc.clear" | "doc.export" | "doc.inspect" | "doc.list" | "doc.new" | "doc.outline" | "doc.save" | "doc.show_intro" | "element.convert" | "element.create_sticky" | "element.delete" | "element.duplicate" | "element.lock" | "element.move" | "element.open_link" | "element.query" | "element.set_bounds" | "element.set_link" | "element.unlock_all" | "engine.commands" | "engine.recent" | "engine.state" | "frame.remove" | "frame.select_children" | "frame.unwrap" | "frame.wrap" | "gesture.cancel" | "gesture.end" | "group.create" | "group.enter" | "group.exit" | "group.set_name" | "group.ungroup" | "highlight.apply" | "history.clear" | "history.redo" | "history.state" | "history.undo" | "image.crop" | "image.crop_begin" | "image.crop_end" | "image.paint" | "image.paint_begin" | "image.paint_brush" | "image.paint_end" | "image.reset_crop" | "image.reset_paint" | "layout.apply" | "library.add" | "library.export" | "library.list" | "library.remove" | "perf.stats" | "selection.all" | "selection.clear" | "selection.get" | "selection.select" | "settings.get" | "settings.reset" | "style.get" | "style.list_themes" | "tab.close" | "tab.duplicate" | "tab.list" | "tab.new" | "text.edit_begin" | "text.edit_end" | "text.format" | "text.wrap_in_container" | "tool.cancel" | "tool.hold" | "tool.lock" | "tool.release" | "tool.set_arrow" | "tool.set_marker" | "version.list" | "view.center" | "view.get" | "view.screenshot" | "view.set" | "view.set_view_only" | "view.zoom_at" | "view.zoom_in" | "view.zoom_out" | "view.zoom_reset" | "view.zoom_to_fit";
+export type OptionalArgsId = "arrow.delete_point" | "arrow.edit_points" | "arrow.reroute" | "arrow.swap_heads" | "clipboard.copy" | "clipboard.copy_as" | "clipboard.copy_style" | "clipboard.cut" | "clipboard.paste" | "clipboard.paste_style" | "collab.connect" | "collab.disconnect" | "collab.follow" | "collab.join_room" | "collab.leave_room" | "collab.set_pointer" | "collab.set_user" | "collab.share_link" | "collab.status" | "doc.autosave" | "doc.clear" | "doc.export" | "doc.inspect" | "doc.list" | "doc.new" | "doc.outline" | "doc.save" | "doc.show_intro" | "element.convert" | "element.create_sticky" | "element.delete" | "element.duplicate" | "element.lock" | "element.move" | "element.open_link" | "element.query" | "element.set_bounds" | "element.set_link" | "element.unlock_all" | "engine.commands" | "engine.recent" | "engine.state" | "frame.remove" | "frame.select_children" | "frame.unwrap" | "frame.wrap" | "gesture.cancel" | "gesture.end" | "group.create" | "group.enter" | "group.exit" | "group.set_name" | "group.ungroup" | "highlight.apply" | "history.clear" | "history.redo" | "history.state" | "history.undo" | "image.crop" | "image.crop_begin" | "image.crop_end" | "image.paint" | "image.paint_begin" | "image.paint_brush" | "image.paint_end" | "image.reset_crop" | "image.reset_paint" | "layout.apply" | "library.add" | "library.export" | "library.list" | "library.remove" | "perf.stats" | "selection.all" | "selection.clear" | "selection.get" | "selection.select" | "settings.get" | "settings.reset" | "style.get" | "style.list_themes" | "tab.close" | "tab.duplicate" | "tab.list" | "tab.new" | "text.edit_begin" | "text.edit_end" | "text.format" | "text.wrap_in_container" | "tool.cancel" | "tool.hold" | "tool.lock" | "tool.release" | "tool.set_arrow" | "tool.set_marker" | "version.list" | "view.center" | "view.get" | "view.screenshot" | "view.set" | "view.set_view_only" | "view.zoom_at" | "view.zoom_in" | "view.zoom_out" | "view.zoom_reset" | "view.zoom_to_fit";
 
 /** The registry size when the types were made; a spec can compare it with `commands()`. */
-export declare const COMMAND_COUNT: 174;
+export declare const COMMAND_COUNT: 175;

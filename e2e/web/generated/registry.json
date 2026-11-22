@@ -1,5 +1,5 @@
 {
- "count": 174,
+ "count": 175,
  "families": [
   "arrange",
   "arrow",
@@ -57,6 +57,7 @@
   "collab.leave_room",
   "collab.set_pointer",
   "collab.set_user",
+  "collab.share_link",
   "collab.status",
   "diagram.create",
   "diagram.extend",
