@@ -5,7 +5,7 @@
 //! commands that need it refuse with `port_unavailable`. Nothing here awaits: the shell resolves anything
 //! asynchronous before it calls a command.
 
-use drafftink_collab::Transport;
+use drafftink_collab::{BlobTransport, Transport};
 use drafftink_scene::{Color, Document, ElementId, IdSource};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -240,6 +240,12 @@ pub trait Renderer {
 pub trait Net {
     /// A new transport for one connection. It is dropped when the connection ends.
     fn open_transport(&mut self) -> Result<Box<dyn Transport>, PortError>;
+
+    /// A new transport for the pictures of one encrypted room: plain HTTP requests to the relay's image routes.
+    /// The default is a shell without HTTP, so rooms work and pictures do not.
+    fn open_blob_transport(&mut self) -> Result<Box<dyn BlobTransport>, PortError> {
+        Err(PortError::Unsupported("this shell cannot fetch pictures over HTTP".to_owned()))
+    }
 
     /// 128 random bits for client ids, room names and reconnect jitter. The engine has no random source of
     /// its own.
@@ -516,7 +522,7 @@ pub mod fake {
         ClipKind, ClipPayload, Clipboard, Clock, FileRef, Files, Net, Ns, PortError, Ports, RenderRequest, Renderer,
         SceneView, Storage, StoredInfo, WriteOutcome,
     };
-    use drafftink_collab::{LoopbackServer, Transport, loopback};
+    use drafftink_collab::{BlobTransport, LoopbackBlobServer, LoopbackServer, Transport, loopback, loopback_blobs};
     use drafftink_scene::{Rng64, SeqIds, SplitMix64};
 
     fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -750,6 +756,7 @@ pub mod fake {
 
     struct NetState {
         servers: Vec<Arc<LoopbackServer>>,
+        blob_servers: Vec<Arc<LoopbackBlobServer>>,
         rng: SplitMix64,
         origin: Option<String>,
         fail_open: bool,
@@ -777,6 +784,7 @@ pub mod fake {
             Self {
                 state: Arc::new(Mutex::new(NetState {
                     servers: Vec::new(),
+                    blob_servers: Vec::new(),
                     rng: SplitMix64::new(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15)),
                     origin: None,
                     fail_open: false,
@@ -787,6 +795,11 @@ pub mod fake {
         /// The server ends of every connection opened so far, oldest first.
         pub fn servers(&self) -> Vec<Arc<LoopbackServer>> {
             lock(&self.state).servers.clone()
+        }
+
+        /// The server ends of every picture transport opened so far, oldest first.
+        pub fn blob_servers(&self) -> Vec<Arc<LoopbackBlobServer>> {
+            lock(&self.state).blob_servers.clone()
         }
 
         /// The server end of the newest connection.
@@ -814,6 +827,12 @@ pub mod fake {
             let (transport, server) = loopback();
             server.set_auto_accept(true);
             st.servers.push(Arc::new(server));
+            Ok(Box::new(transport))
+        }
+
+        fn open_blob_transport(&mut self) -> Result<Box<dyn BlobTransport>, PortError> {
+            let (transport, server) = loopback_blobs();
+            lock(&self.state).blob_servers.push(Arc::new(server));
             Ok(Box::new(transport))
         }
 

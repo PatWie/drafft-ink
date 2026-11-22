@@ -1,7 +1,7 @@
 //! [`WebNet`]: the engine's `Net` port in a browser. It opens `WebSocket`s and knows the address of the
 //! server that delivered the page.
 
-use drafftink_collab::{Transport, WakeFn, WebTransport};
+use drafftink_collab::{BlobTransport, Transport, WakeFn, WebBlobTransport, WebTransport};
 use drafftink_engine::PortError;
 use drafftink_engine::ports::Net;
 
@@ -31,6 +31,10 @@ impl WebNet {
 impl Net for WebNet {
     fn open_transport(&mut self) -> Result<Box<dyn Transport>, PortError> {
         Ok(Box::new(WebTransport::new(std::sync::Arc::clone(&self.wake))))
+    }
+
+    fn open_blob_transport(&mut self) -> Result<Box<dyn BlobTransport>, PortError> {
+        Ok(Box::new(WebBlobTransport::new(std::sync::Arc::clone(&self.wake))))
     }
 
     fn random(&mut self) -> u128 {
