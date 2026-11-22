@@ -9,7 +9,9 @@ use super::cache::{Entry, Pending};
 use super::dom::js_error;
 
 const DB_NAME: &str = "drafftink";
-const DB_VERSION: u32 = 1;
+/// Version 1 of a database with this name belongs to the old app, which made only a `documents` store. Opening at
+/// version 2 runs the upgrade there too, so `kv` exists for everyone. The old store is left untouched.
+const DB_VERSION: u32 = 2;
 const STORE: &str = "kv";
 
 /// Why IndexedDB could not be used.
@@ -54,15 +56,46 @@ pub(crate) async fn open() -> Result<IdbDatabase, IdbError> {
         let request = request.clone();
         Closure::once_into_js(move || {
             if let Ok(db) = request.result().and_then(|r| r.dyn_into::<IdbDatabase>()) {
-                // The store exists after the first run; a second create would throw, so ignore the result.
+                // The store exists after an earlier upgrade; a second create would throw, so ignore the result.
                 let _ = db.create_object_store(STORE);
             }
         })
     };
     request.set_onupgradeneeded(Some(upgrade.unchecked_ref()));
-    let db = finished(&request).await?;
-    db.dyn_into::<IdbDatabase>().map_err(|e| failed(&e))
+    // Another tab holding an older version blocks the upgrade until it closes. Fail at once instead of keeping
+    // the app from starting; the user sees the memory-only notice with this reason.
+    let blocked = Promise::new(&mut |_resolve, reject| {
+        let on_blocked = Closure::once_into_js(move || {
+            let _ = reject.call1(&JsValue::NULL, &JsValue::from_str(BLOCKED));
+        });
+        request.set_onblocked(Some(on_blocked.unchecked_ref()));
+    });
+    let opened = Promise::new(&mut |resolve, reject| {
+        let request = request.clone();
+        wasm_bindgen_futures::spawn_local(async move {
+            match finished(&request).await {
+                Ok(db) => drop(resolve.call1(&JsValue::NULL, &db)),
+                Err(e) => drop(reject.call1(&JsValue::NULL, &JsValue::from_str(&e.to_string()))),
+            }
+        });
+    });
+    let db = JsFuture::from(Promise::race(&Array::of2(&opened, &blocked)))
+        .await
+        .map_err(|e| failed(&e))?
+        .dyn_into::<IdbDatabase>()
+        .map_err(|e| failed(&e))?;
+    // Let a newer build in another tab upgrade the database: close ours when it asks.
+    let close = {
+        let db = db.clone();
+        Closure::<dyn FnMut()>::new(move || db.close())
+    };
+    db.set_onversionchange(Some(close.as_ref().unchecked_ref()));
+    close.forget();
+    Ok(db)
 }
+
+/// The reason given when an older drafft.ink tab keeps the database from being upgraded.
+const BLOCKED: &str = "another drafft.ink tab uses an older version of the browser storage; close it and reload";
 
 fn record(entry: &Entry) -> Result<JsValue, IdbError> {
     let object = Object::new();
