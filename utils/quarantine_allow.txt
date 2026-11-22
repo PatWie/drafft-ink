@@ -16,3 +16,12 @@
 # Reviewed: a patch release of the 3.x line we already use, no API change. Remove this line once 3.9.0 is 7 days old
 # (2026-11-12).
 rmcp==3.9.0
+
+# url 2.5.9 (published 2026-11-20) fixes RUSTSEC-2026-0592: `Url::origin()` recursed once per nested `blob:` prefix and
+# overflowed the stack, and `cargo deny` fails on 2.5.8. form_urlencoded 1.2.3 is released with it (same repo).
+# Reviewed the source diff against 2.5.8 / 1.2.2: URL Standard fixes in origin.rs and parser.rs (blob origin only for
+# http/https/file, percent-encode sets, file-host and double-dot handling), a panic in form_urlencoded's serializer
+# replaced by clamping; no new dependencies, no build script, no new unsafe. Remove both lines once they are 7 days old
+# (2026-11-27).
+url==2.5.9
+form_urlencoded==1.2.3
