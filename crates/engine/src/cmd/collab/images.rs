@@ -28,8 +28,7 @@ pub(crate) fn megabytes(bytes: u64) -> String {
 }
 
 /// What an encrypted room tab holds and allows. The commands that need pictures (`image.insert`, `doc.export`,
-/// `doc.save`) read it; until they do, the compiler sees no user.
-#[allow(dead_code)]
+/// `doc.save`) read it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RoomImages {
     /// Pictures in the document (manifests).
@@ -48,7 +47,6 @@ pub(crate) struct RoomImages {
     pub max_room_images: u32,
 }
 
-#[allow(dead_code)]
 impl RoomImages {
     /// True when one more picture of `size` bytes still fits the room's totals.
     pub(crate) fn has_room_for(&self, size: usize) -> bool {
@@ -57,7 +55,6 @@ impl RoomImages {
     }
 }
 
-#[allow(dead_code)]
 impl Session {
     /// The pictures of the active tab when it is an encrypted room, `None` otherwise.
     pub(crate) fn room_images(&self) -> Option<RoomImages> {
@@ -104,7 +101,6 @@ impl Session {
     }
 }
 
-#[allow(dead_code)]
 impl Session {
     /// Reads the pictures `ids` from the local blob cache into the active tab. Returns how many were taken. The
     /// cache holds what this device downloaded or inserted, so an export works offline for every picture it has

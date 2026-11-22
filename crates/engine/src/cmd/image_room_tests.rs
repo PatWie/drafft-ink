@@ -40,7 +40,11 @@ impl Room {
 
     /// The given sessions.
     pub(crate) fn of(c: Vec<(Session, Fakes)>) -> Self {
-        Self { relay: FakeRelay::new(RelayConfig::self_host()), c }
+        // The relay answers no picture request: a session that joins holds the manifests and not the bytes, which is
+        // what these tests are about. The glue that moves pictures has its own tests (`collab_pictures_tests`).
+        let mut relay = FakeRelay::new(RelayConfig::self_host());
+        relay.hold_blobs(true);
+        Self { relay, c }
     }
 
     /// The session `i`.

@@ -49,6 +49,34 @@ fn insert(s: &mut Session, bytes: &[u8], at: [f64; 2]) -> (String, FileId) {
     (image["id"].as_str().expect("an element id").to_owned(), file)
 }
 
+/// Puts a picture into the document without the command's gate, as a peer that ignores the room's limits would.
+fn insert_ungated(s: &mut Session, bytes: &[u8], at: [f64; 2]) {
+    let (id, entry) = drafftink_scene::FileEntry::new("image/png", bytes.to_vec());
+    let element = s.ports.ids.element_id();
+    s.tab_mut()
+        .doc
+        .edit::<(), drafftink_scene::StoreError>(|tx| {
+            use drafftink_scene::SceneTx;
+            tx.put_file(entry)?;
+            let z = tx.next_top_index().map_err(drafftink_scene::StoreError::backend)?;
+            let mut e = drafftink_scene::Element::new(
+                element,
+                drafftink_scene::ElementKind::Image(drafftink_scene::ImageData {
+                    file_id: Some(id),
+                    natural_width: 30,
+                    natural_height: 30,
+                    crop: None,
+                    paint: Default::default(),
+                }),
+                z,
+            );
+            e.transform = drafftink_scene::Transform::new(at[0], at[1], 30.0, 30.0);
+            tx.insert(e)
+        })
+        .expect("the picture is inserted");
+    s.tab_mut().doc.commit_untracked().expect("the commit is written");
+}
+
 fn has_bytes(s: &Session, id: &FileId) -> bool {
     s.store().file(id).is_some()
 }
@@ -432,7 +460,7 @@ fn a_picture_the_room_refuses_raises_a_notice_in_plain_words() {
     config.limits.max_image_bytes = 1000;
     let mut w = World::with_config(1, config);
     w.create(0);
-    insert(w.s(0), &noise_png(60, 30, 30), [0.0, 0.0]);
+    insert_ungated(w.s(0), &noise_png(60, 30, 30), [0.0, 0.0]);
     w.settle();
     let told = notices(w.s(0));
     assert!(told.iter().any(|t| t.contains("Pictures in a shared room can be at most") && t.contains("insert it again")), "{told:?}");
@@ -442,9 +470,9 @@ fn a_picture_the_room_refuses_raises_a_notice_in_plain_words() {
     config.limits.max_room_images = 1;
     let mut w = World::with_config(1, config);
     w.create(0);
-    insert(w.s(0), &noise_png(61, 30, 30), [0.0, 0.0]);
+    insert_ungated(w.s(0), &noise_png(61, 30, 30), [0.0, 0.0]);
     w.settle();
-    insert(w.s(0), &noise_png(62, 30, 30), [200.0, 0.0]);
+    insert_ungated(w.s(0), &noise_png(62, 30, 30), [200.0, 0.0]);
     w.settle();
     let told = notices(w.s(0));
     assert!(told.iter().any(|t| t.contains("This room already holds") && t.contains("start a new room")), "{told:?}");
