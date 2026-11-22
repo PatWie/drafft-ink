@@ -13,14 +13,15 @@ use crate::color::Color;
 use crate::derived::DerivedIndex;
 use crate::document::{DocMeta, Document, FileEntry};
 use crate::element::Element;
-use crate::id::{ElementId, FileId};
-use crate::limits::{MAX_ELEMENTS, MAX_FILE_BYTES, MAX_FILES};
+use crate::id::{ElementId, FileId, VersionId};
+use crate::limits::{MAX_ELEMENTS, MAX_FILE_BYTES, MAX_FILES, MAX_VERSIONS_STORED};
 use crate::shared::SharedDocument;
 use crate::store::{
     Change, ChangeKind, ChangeSet, Fields, FileRejection, SceneRead, SceneStore, SceneTx, StoreError, SubscriptionId,
-    load_document,
+    VersionRejection, load_document,
 };
 use crate::validate::{is_image_media_type, is_valid_name, validate_element};
+use crate::version::{NamedVersion, normalize_version_name};
 use crate::zindex::ZIndex;
 
 type Callback = Box<dyn FnMut(&ChangeSet)>;
@@ -36,6 +37,7 @@ pub struct MemoryStore {
     live: usize,
     meta: DocMeta,
     files: BTreeMap<FileId, FileEntry>,
+    versions: BTreeMap<VersionId, NamedVersion>,
     derived: DerivedIndex,
     revision: u64,
     subscribers: Vec<(SubscriptionId, Callback)>,
@@ -90,6 +92,7 @@ impl MemoryStore {
             background: self.meta.background,
             elements: self.share_all(),
             files: self.files.clone(),
+            versions: self.versions().cloned().collect(),
         }
     }
 
@@ -142,6 +145,16 @@ impl SceneRead for MemoryStore {
         self.files.iter()
     }
 
+    fn version(&self, id: &VersionId) -> Option<&NamedVersion> {
+        self.versions.get(id)
+    }
+
+    fn versions(&self) -> impl Iterator<Item = &NamedVersion> {
+        let mut all: Vec<&NamedVersion> = self.versions.values().collect();
+        all.sort_by(|a, b| (a.created_ms, &a.id).cmp(&(b.created_ms, &b.id)));
+        all.into_iter()
+    }
+
     fn top_z(&self) -> Option<ZIndex> {
         self.order.last_key_value().map(|((z, _), _)| z.clone())
     }
@@ -172,7 +185,14 @@ impl SceneStore for MemoryStore {
     type Tx<'a> = MemoryTx<'a>;
 
     fn begin(&mut self) -> MemoryTx<'_> {
-        MemoryTx { store: self, touched: HashMap::new(), meta: None, files: HashMap::new(), done: false }
+        MemoryTx {
+            store: self,
+            touched: HashMap::new(),
+            meta: None,
+            files: HashMap::new(),
+            versions: HashMap::new(),
+            done: false,
+        }
     }
 
     fn revision(&self) -> u64 {
@@ -204,6 +224,8 @@ pub struct MemoryTx<'a> {
     touched: HashMap<ElementId, Option<Arc<Element>>>,
     meta: Option<DocMeta>,
     files: HashMap<FileId, Option<FileEntry>>,
+    /// First value of every touched named version (`None`: it did not exist).
+    versions: HashMap<VersionId, Option<NamedVersion>>,
     done: bool,
 }
 
@@ -228,6 +250,12 @@ impl SceneRead for MemoryTx<'_> {
     }
     fn files(&self) -> impl Iterator<Item = (&FileId, &FileEntry)> {
         self.store.files()
+    }
+    fn version(&self, id: &VersionId) -> Option<&NamedVersion> {
+        self.store.version(id)
+    }
+    fn versions(&self) -> impl Iterator<Item = &NamedVersion> {
+        self.store.versions()
     }
     fn top_z(&self) -> Option<ZIndex> {
         self.store.top_z()
@@ -265,6 +293,16 @@ impl MemoryTx<'_> {
                 }
                 None => {
                     self.store.files.remove(&id);
+                }
+            }
+        }
+        for (id, orig) in std::mem::take(&mut self.versions) {
+            match orig {
+                Some(v) => {
+                    self.store.versions.insert(id, v);
+                }
+                None => {
+                    self.store.versions.remove(&id);
                 }
             }
         }
@@ -363,6 +401,35 @@ impl SceneTx for MemoryTx<'_> {
         }
     }
 
+    fn put_version(&mut self, version: NamedVersion) -> Result<(), StoreError> {
+        version.check()?;
+        if !self.store.versions.contains_key(&version.id) && self.store.versions.len() >= MAX_VERSIONS_STORED {
+            return Err(VersionRejection::TooMany { max: MAX_VERSIONS_STORED }.into());
+        }
+        let old = self.store.versions.insert(version.id.clone(), version.clone());
+        self.versions.entry(version.id).or_insert(old);
+        Ok(())
+    }
+
+    fn rename_version(&mut self, id: &VersionId, name: &str) -> Result<(), StoreError> {
+        let name = normalize_version_name(name)?;
+        let slot = self.store.versions.get_mut(id).ok_or_else(|| VersionRejection::NotFound(id.clone()))?;
+        let old = slot.clone();
+        slot.name = name;
+        self.versions.entry(id.clone()).or_insert(Some(old));
+        Ok(())
+    }
+
+    fn remove_version(&mut self, id: &VersionId) -> bool {
+        match self.store.versions.remove(id) {
+            Some(old) => {
+                self.versions.entry(id.clone()).or_insert(Some(old));
+                true
+            }
+            None => false,
+        }
+    }
+
     fn commit(mut self) -> Result<ChangeSet, StoreError> {
         self.done = true;
         let mut elements = Vec::new();
@@ -394,7 +461,13 @@ impl SceneTx for MemoryTx<'_> {
             .map(|(id, _)| id)
             .collect();
         files.sort();
-        let mut cs = ChangeSet { revision: 0, elements, meta, files };
+        let mut versions: Vec<VersionId> = std::mem::take(&mut self.versions)
+            .into_iter()
+            .filter(|(id, orig)| orig.as_ref() != self.store.versions.get(id))
+            .map(|(id, _)| id)
+            .collect();
+        versions.sort();
+        let mut cs = ChangeSet { revision: 0, elements, meta, files, versions };
         if cs.is_empty() {
             return Ok(cs);
         }

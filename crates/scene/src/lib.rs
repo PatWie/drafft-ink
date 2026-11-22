@@ -30,6 +30,7 @@ mod shared;
 mod store;
 mod style;
 mod validate;
+mod version;
 mod visibility;
 pub mod words;
 mod zindex;
@@ -39,7 +40,9 @@ pub mod conformance;
 
 pub use color::Color;
 pub use derived::DerivedIndex;
-pub use document::{DocMeta, Document, DocumentError, FORMAT_NAME, FileEntry, SCHEMA_VERSION, json_schema};
+pub use document::{
+    BASE_SCHEMA_VERSION, DocMeta, Document, DocumentError, FORMAT_NAME, FileEntry, SCHEMA_VERSION, json_schema,
+};
 pub use element::{
     BindMode, Binding, Brush, CharStyle, Crop, DEFAULT_HEAD_SIZE, Element, ElementKind, FixedSegment, FrameData,
     FreehandData, Head, ImageData, Kind, LinearData, LinearKind, MathData, ParseKindError, PathType, PressureMode,
@@ -47,6 +50,7 @@ pub use element::{
 };
 pub use id::{
     ElementId, FileId, GroupId, IdError, IdSource, MAX_ID_LEN, RandomIds, Rng64, SeqIds, SplitMix64, StrokeId,
+    VersionId,
 };
 pub use label_cut::{LABEL_CUT_PADDING, LabelCut};
 pub use memory::{MemoryStore, MemoryTx};
@@ -54,7 +58,7 @@ pub use paint::{Paint, PaintMode, PaintStroke};
 pub use shared::{DocumentCheck, JsonJob, SharedDocument};
 pub use store::{
     Change, ChangeKind, ChangeSet, Fields, FileRejection, SceneRead, SceneStore, SceneTx, StoreError, SubscriptionId,
-    load_document, snapshot,
+    VersionRejection, load_document, snapshot,
 };
 pub use style::{
     FillPattern, FontFamily, FontWeight, InlineMath, Sloppiness, StrokeStyle, Style, TextAlign, TextStyle,
@@ -62,7 +66,8 @@ pub use style::{
 };
 pub use validate::{
     DocError, ElementError, Issue, Report, Severity, Validator, element_errors, is_image_media_type, is_valid_name,
-    validate_document, validate_element, validate_parts, validate_scene, validate_transform,
+    validate_document, validate_element, validate_parts, validate_scene, validate_transform, validate_versions,
 };
+pub use version::{NamedVersion, VersionError, VersionScene, normalize_version_name, sort_versions};
 pub use visibility::{fill_paints, style_shows};
 pub use zindex::{IndexError, MAX_INDEX_LEN, ZIndex};

@@ -40,8 +40,8 @@ impl Sum {
     }
 }
 
-/// The content of a document: its elements (tombstones included), its name and background, and the ids of its
-/// image files (the id is the hash of the bytes). Equal fingerprints mean equal content.
+/// The content of a document: its elements (tombstones included), its name and background, the ids of its image
+/// files (the id is the hash of the bytes) and its named versions. Equal fingerprints mean equal content.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Fingerprint {
     elements: Sum,
@@ -53,7 +53,7 @@ pub struct Fingerprint {
 #[derive(Debug, Default)]
 pub(crate) struct Pending {
     ids: BTreeSet<ElementId>,
-    /// The name, the background or the file table changed.
+    /// The name, the background, the file table or the named versions changed.
     side: bool,
 }
 
@@ -61,7 +61,7 @@ impl Pending {
     /// Notes a commit.
     pub(crate) fn record(&mut self, changes: &ChangeSet) {
         self.ids.extend(changes.ids().cloned());
-        self.side |= changes.meta || !changes.files.is_empty();
+        self.side |= changes.meta || !changes.files.is_empty() || !changes.versions.is_empty();
     }
 }
 
@@ -132,13 +132,20 @@ fn hash_element(element: &Element, buffer: &mut Vec<u8>) -> Sum {
     Sum::of(buffer)
 }
 
-/// The hash of the name, the background and the file ids.
+/// The hash of the name, the background, the file ids and the named versions (each with the hash of its scene).
 fn hash_side<R: SceneRead>(store: &R) -> Sum {
     let meta = store.meta();
     let mut text = format!("{}\n{:?}", meta.name, meta.background);
     for (id, _) in store.files() {
         text.push('\n');
         text.push_str(&id.to_string());
+    }
+    for v in store.versions() {
+        let scene = Sum::of(&v.state);
+        text.push_str(&format!(
+            "\n{}|{}|{}|{:?}|{}|{}|{}",
+            v.id, v.name, v.created_ms, v.author, v.elements, scene.0, scene.1
+        ));
     }
     Sum::of(text.as_bytes())
 }

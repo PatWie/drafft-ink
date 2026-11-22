@@ -494,6 +494,7 @@ fn shared_of(doc: &Document) -> SharedDocument {
         background: doc.background,
         elements: doc.elements.iter().cloned().map(std::sync::Arc::new).collect(),
         files: doc.files.clone(),
+        versions: doc.versions.clone(),
     }
 }
 

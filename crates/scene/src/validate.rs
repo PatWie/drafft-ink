@@ -461,6 +461,31 @@ pub enum Severity {
 /// A rule that involves more than one element, or the document.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum DocError {
+    /// A named version breaks a rule on its own.
+    #[error("version {id}: {error}")]
+    Version {
+        /// The version.
+        id: crate::id::VersionId,
+        /// The broken rule.
+        error: crate::version::VersionError,
+    },
+    /// A named version needs a picture blob that the document does not hold (restoring it shows a missing picture).
+    #[error("version {version} needs the picture {file}, which the document does not hold")]
+    VersionFileMissing {
+        /// The version.
+        version: crate::id::VersionId,
+        /// The missing blob.
+        file: FileId,
+    },
+    /// Two named versions share an id.
+    #[error("the version id {0} is used by more than one version")]
+    DuplicateVersion(crate::id::VersionId),
+    /// More named versions than a document may hold.
+    #[error("the document holds {0} named versions, which is more than it may")]
+    TooManyVersions(usize),
+    /// The stored scenes of the named versions are together over the limit.
+    #[error("the named versions hold {0} bytes together, which is more than a document may keep")]
+    VersionsTooLarge(usize),
     /// An element breaks a rule on its own.
     #[error("{0}")]
     Element(#[from] ElementError),
@@ -615,6 +640,7 @@ impl DocError {
             | DocError::BindingTargetDeleted { .. }
             | DocError::GroupSingleton(_)
             | DocError::DuplicateName { .. }
+            | DocError::VersionFileMissing { .. }
             | DocError::FileMissing(_) => Severity::Warning,
             _ => Severity::Error,
         }
@@ -692,6 +718,36 @@ pub fn validate_document(doc: &Document) -> Report {
     check_name(&doc.name, &mut report);
     let elements: Vec<&Element> = doc.elements.iter().collect();
     run(&elements, &doc.files.iter().collect::<Vec<_>>(), Order::Strict, &mut report);
+    report.issues.append(&mut validate_versions(&doc.versions).issues);
+    for v in &doc.versions {
+        for file in v.files.iter().filter(|f| !doc.files.contains_key(*f)) {
+            report.add(None, DocError::VersionFileMissing { version: v.id.clone(), file: file.clone() });
+        }
+    }
+    report
+}
+
+/// Checks the named versions of a document by their metadata: each version's name, author and stored size, that no
+/// id is used twice, and the number of versions. The stored scenes are read when a version is opened, not here.
+pub fn validate_versions(versions: &[crate::version::NamedVersion]) -> Report {
+    let mut report = Report::default();
+    if versions.len() > crate::limits::MAX_VERSIONS_STORED {
+        report.add(None, DocError::TooManyVersions(versions.len()));
+    }
+    let mut seen = HashSet::new();
+    let mut total = 0usize;
+    for v in versions {
+        if let Err(error) = v.check() {
+            report.add(None, DocError::Version { id: v.id.clone(), error });
+        }
+        if !seen.insert(&v.id) {
+            report.add(None, DocError::DuplicateVersion(v.id.clone()));
+        }
+        total = total.saturating_add(v.stored_bytes());
+    }
+    if total > crate::limits::MAX_VERSIONS_TOTAL_BYTES {
+        report.add(None, DocError::VersionsTooLarge(total));
+    }
     report
 }
 

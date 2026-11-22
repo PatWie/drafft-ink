@@ -15,9 +15,13 @@ use crate::color::Color;
 use crate::element::{Element, ElementKind};
 use crate::id::FileId;
 use crate::validate::{Report, validate_document};
+use crate::version::NamedVersion;
 
-/// The version of the native format this build writes and reads.
-pub const SCHEMA_VERSION: u32 = 1;
+/// The newest version of the native format this build reads and writes.
+pub const SCHEMA_VERSION: u32 = 2;
+/// The version a document without named versions is written as, so that builds from before named versions still
+/// open it. A document that has versions is written as [`SCHEMA_VERSION`] (`docs/design/versions.md`).
+pub const BASE_SCHEMA_VERSION: u32 = 1;
 /// Value of the `format` field of every native file.
 pub const FORMAT_NAME: &str = "drafftink";
 
@@ -71,7 +75,7 @@ impl FileEntry {
     }
 }
 
-mod b64 {
+pub(crate) mod b64 {
     use std::sync::Arc;
 
     use super::*;
@@ -111,11 +115,14 @@ fn default_background() -> Color {
 }
 
 fn current_version() -> u32 {
-    SCHEMA_VERSION
+    BASE_SCHEMA_VERSION
 }
 
 /// A whole document in the native format.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+///
+/// `Serialize` is written by hand below, because the `version` it writes depends on the content: 1 for a document
+/// without named versions, 2 for one with.
+#[derive(Debug, Clone, PartialEq, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Document {
     /// Always `"drafftink"`.
@@ -134,19 +141,45 @@ pub struct Document {
     #[serde(default)]
     pub elements: Vec<Element>,
     /// Image blobs by content hash.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(default)]
     pub files: BTreeMap<FileId, FileEntry>,
+    /// Named versions, oldest first. A file with any is written as `version` 2.
+    #[serde(default)]
+    pub versions: Vec<NamedVersion>,
+}
+
+impl Serialize for Document {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let version =
+            if self.versions.is_empty() { self.schema_version } else { self.schema_version.max(SCHEMA_VERSION) };
+        let len = 5 + usize::from(!self.files.is_empty()) + usize::from(!self.versions.is_empty());
+        let mut st = s.serialize_struct("Document", len)?;
+        st.serialize_field("format", &self.format)?;
+        st.serialize_field("version", &version)?;
+        st.serialize_field("name", &self.name)?;
+        st.serialize_field("background", &self.background)?;
+        st.serialize_field("elements", &self.elements)?;
+        if !self.files.is_empty() {
+            st.serialize_field("files", &self.files)?;
+        }
+        if !self.versions.is_empty() {
+            st.serialize_field("versions", &self.versions)?;
+        }
+        st.end()
+    }
 }
 
 impl Default for Document {
     fn default() -> Self {
         Self {
             format: FormatTag,
-            schema_version: SCHEMA_VERSION,
+            schema_version: BASE_SCHEMA_VERSION,
             name: default_name(),
             background: default_background(),
             elements: Vec::new(),
             files: BTreeMap::new(),
+            versions: Vec::new(),
         }
     }
 }
@@ -211,6 +244,16 @@ impl Document {
         }
     }
 
+    /// This document with `versions` as its named versions, and the format version that goes with them: 1 without,
+    /// [`SCHEMA_VERSION`] with. Sorted oldest first.
+    #[must_use]
+    pub fn with_versions(mut self, mut versions: Vec<NamedVersion>) -> Self {
+        crate::version::sort_versions(&mut versions);
+        self.schema_version = if versions.is_empty() { BASE_SCHEMA_VERSION } else { SCHEMA_VERSION };
+        self.versions = versions;
+        self
+    }
+
     /// An empty document.
     pub fn new() -> Self {
         Self::default()
@@ -243,12 +286,14 @@ impl Document {
         if !text.trim_start().starts_with('{') {
             return Err(DocumentError::NotAnObject);
         }
-        let doc: Document = serde_json::from_str(text).map_err(|e| DocumentError::Parse(Arc::new(e)))?;
+        let mut doc: Document = serde_json::from_str(text).map_err(|e| DocumentError::Parse(Arc::new(e)))?;
         let report = doc.validate();
         if report.has_errors() {
             return Err(DocumentError::Invalid(report));
         }
-        Ok(doc)
+        // The content decides the version, so a document equals the same document built in memory.
+        let versions = std::mem::take(&mut doc.versions);
+        Ok(doc.with_versions(versions))
     }
 
     /// Writes compact JSON. Refuses a document that breaks a rule, so that a file we write can always be read back
@@ -269,7 +314,7 @@ impl Document {
         if report.has_errors() { Err(DocumentError::Invalid(report)) } else { Ok(()) }
     }
 
-    /// Ids of image blobs that no live or deleted element refers to.
+    /// Ids of image blobs that no element and no named version refers to.
     pub fn unused_files(&self) -> Vec<FileId> {
         let used: std::collections::HashSet<&FileId> = self
             .elements
@@ -278,6 +323,7 @@ impl Document {
                 crate::element::ElementKind::Image(i) => i.file_id.as_ref(),
                 _ => None,
             })
+            .chain(self.versions.iter().flat_map(|v| v.files.iter()))
             .collect();
         self.files.keys().filter(|k| !used.contains(k)).cloned().collect()
     }

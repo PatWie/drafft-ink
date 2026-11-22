@@ -5,13 +5,15 @@ use std::collections::{BTreeSet, HashMap};
 use drafftink_scene::MemoryTx;
 use drafftink_scene::{
     Change, ChangeKind, ChangeSet, Color, DerivedIndex, DocMeta, Element, ElementId, ElementKind, Fields, FileEntry,
-    FileId, SceneRead, SceneTx, StoreError, ZIndex,
+    FileId, NamedVersion, SceneRead, SceneTx, StoreError, VersionId, ZIndex,
 };
 use loro::{CommitOptions, LoroMap, LoroValue};
 
 use crate::codec::{self, Flat};
 use crate::error::DocError;
-use crate::schema::{META_BACKGROUND, META_NAME, ROOT_ELEMENTS, ROOT_FILES, ROOT_META, SYSTEM_ORIGIN_PREFIX};
+use crate::schema::{
+    META_BACKGROUND, META_NAME, ROOT_ELEMENTS, ROOT_FILES, ROOT_META, ROOT_VERSIONS, SYSTEM_ORIGIN_PREFIX,
+};
 use crate::store::Core;
 use crate::text;
 use crate::undo::{ObservedState, UndoInfo, lock};
@@ -25,6 +27,7 @@ pub struct LoroTx<'a> {
     core: &'a mut Core,
     touched: BTreeSet<ElementId>,
     touched_files: BTreeSet<FileId>,
+    touched_versions: BTreeSet<VersionId>,
     label: Option<String>,
     info: Option<UndoInfo>,
     history: History,
@@ -48,6 +51,7 @@ impl<'a> LoroTx<'a> {
             core,
             touched: BTreeSet::new(),
             touched_files: BTreeSet::new(),
+            touched_versions: BTreeSet::new(),
             label: None,
             info: None,
             history: History::Step,
@@ -108,6 +112,12 @@ impl SceneRead for LoroTx<'_> {
     }
     fn files(&self) -> impl Iterator<Item = (&FileId, &FileEntry)> {
         self.inner.files()
+    }
+    fn version(&self, id: &VersionId) -> Option<&NamedVersion> {
+        self.inner.version(id)
+    }
+    fn versions(&self) -> impl Iterator<Item = &NamedVersion> {
+        self.inner.versions()
     }
     fn top_z(&self) -> Option<ZIndex> {
         self.inner.top_z()
@@ -178,8 +188,29 @@ impl SceneTx for LoroTx<'_> {
         removed
     }
 
+    fn put_version(&mut self, version: NamedVersion) -> Result<(), StoreError> {
+        let id = version.id.clone();
+        self.inner.put_version(version)?;
+        self.touched_versions.insert(id);
+        Ok(())
+    }
+
+    fn rename_version(&mut self, id: &VersionId, name: &str) -> Result<(), StoreError> {
+        self.inner.rename_version(id, name)?;
+        self.touched_versions.insert(id.clone());
+        Ok(())
+    }
+
+    fn remove_version(&mut self, id: &VersionId) -> bool {
+        let removed = self.inner.remove_version(id);
+        if removed {
+            self.touched_versions.insert(id.clone());
+        }
+        removed
+    }
+
     fn commit(self) -> Result<ChangeSet, StoreError> {
-        let LoroTx { inner, core, touched, touched_files, label, info, history } = self;
+        let LoroTx { inner, core, touched, touched_files, touched_versions, label, info, history } = self;
         if let Some(found) = core.blocked {
             return Err(DocError::NewerSchema { found, max: crate::schema::SCHEMA_VERSION }.into());
         }
@@ -202,6 +233,13 @@ impl SceneTx for LoroTx<'_> {
                 (id, f)
             })
             .collect();
+        let versions: Vec<(VersionId, Option<NamedVersion>)> = touched_versions
+            .into_iter()
+            .map(|id| {
+                let v = inner.version(&id).cloned();
+                (id, v)
+            })
+            .collect();
         let cs = inner.commit()?;
         if cs.is_empty() {
             return Ok(cs);
@@ -209,7 +247,8 @@ impl SceneTx for LoroTx<'_> {
         let info = info.or_else(|| {
             Some(UndoInfo { label: label.clone().unwrap_or_else(|| "edit".to_owned()), ..UndoInfo::default() })
         });
-        let commit = Commit { cs: &cs, news: &news, meta: &meta, files: &files, label, info, history };
+        let commit =
+            Commit { cs: &cs, news: &news, meta: &meta, files: &files, versions: &versions, label, info, history };
         let flag = std::rc::Rc::clone(&core.poisoned);
         let written = crate::store::guard(&flag, || core.write(&commit)).and_then(|r| r);
         if let Err(e) = written {
@@ -235,6 +274,7 @@ struct Commit<'a> {
     news: &'a [(ElementId, Option<Element>)],
     meta: &'a DocMeta,
     files: &'a [(FileId, Option<FileEntry>)],
+    versions: &'a [(VersionId, Option<NamedVersion>)],
     label: Option<String>,
     info: Option<UndoInfo>,
     history: History,
@@ -335,6 +375,27 @@ impl Core {
         }
         if !c.cs.files.is_empty() {
             self.write_files(c.files)?;
+        }
+        if !c.cs.versions.is_empty() {
+            self.write_versions(c.versions)?;
+        }
+        Ok(())
+    }
+
+    fn write_versions(&mut self, versions: &[(VersionId, Option<NamedVersion>)]) -> Result<(), DocError> {
+        let root = self.doc.get_map(ROOT_VERSIONS);
+        for (id, version) in versions {
+            match version {
+                Some(v) => {
+                    self.stats.fields_written += u64::try_from(crate::versions::write(&root, v)?).unwrap_or(u64::MAX);
+                    self.invalid_versions.remove(id);
+                }
+                None => {
+                    crate::versions::remove(&root, id)?;
+                    self.invalid_versions.remove(id);
+                    self.stats.fields_written += 1;
+                }
+            }
         }
         Ok(())
     }

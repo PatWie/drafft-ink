@@ -13,6 +13,8 @@ pub(crate) const ROOT_ELEMENTS: &str = "elements";
 pub(crate) const ROOT_META: &str = "meta";
 /// Root map: image blobs by content hash.
 pub(crate) const ROOT_FILES: &str = "files";
+/// Root map: named versions by id (`versions.rs`). A root that older builds do not know and keep as it is.
+pub(crate) const ROOT_VERSIONS: &str = "versions";
 /// Key in `meta`: schema version (integer).
 pub(crate) const META_SCHEMA: &str = "schema";
 /// Key in `meta`: document name.

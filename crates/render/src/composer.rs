@@ -214,7 +214,7 @@ impl SceneComposer {
         update_paint_index(
             index,
             store,
-            &ChangeSet { revision: revision.unwrap_or(0), elements, meta: false, files: Vec::new() },
+            &ChangeSet { revision: revision.unwrap_or(0), elements, ..ChangeSet::default() },
         );
         match (&mut self.order, revision) {
             (Some(order), Some(version)) => order.note(version, touched),

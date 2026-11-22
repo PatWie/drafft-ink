@@ -32,6 +32,7 @@
 //! - `repair`: the fixes for what a merge of concurrent remote edits leaves broken (dangling references, group
 //!   nesting), as deterministic, idempotent functions.
 //! - `convert`: changing the type of shapes, lines and arrows in place (`element.convert`).
+//! - `version`: restoring a named version as an ordinary edit (`version.restore`).
 //!
 //! Every rule reports a typed error. An element that is missing, deleted or locked is the shared
 //! [`TargetError`], held as the `Target` variant of each error enum. The errors carry plain-words text and no
@@ -70,6 +71,7 @@ mod target;
 pub mod text_bind;
 pub mod text_edit;
 pub mod transform;
+pub mod version;
 pub mod zorder;
 
 pub use copy::CopyError;

@@ -26,8 +26,9 @@ use crate::color::Color;
 use crate::derived::DerivedIndex;
 use crate::document::{DocMeta, Document, FileEntry};
 use crate::element::Element;
-use crate::id::{ElementId, FileId};
+use crate::id::{ElementId, FileId, VersionId};
 use crate::validate::{ElementError, Report};
+use crate::version::{NamedVersion, VersionError};
 use crate::zindex::ZIndex;
 
 /// The groups of fields of an element, as a set. A [`Change`] carries the fields that differ.
@@ -244,12 +245,14 @@ pub struct ChangeSet {
     pub meta: bool,
     /// Blobs added or removed, sorted.
     pub files: Vec<FileId>,
+    /// Named versions added, renamed or removed, sorted.
+    pub versions: Vec<VersionId>,
 }
 
 impl ChangeSet {
     /// True when nothing changed.
     pub fn is_empty(&self) -> bool {
-        self.elements.is_empty() && !self.meta && self.files.is_empty()
+        self.elements.is_empty() && !self.meta && self.files.is_empty() && self.versions.is_empty()
     }
 
     /// The change of one element, if it was touched.
@@ -297,6 +300,9 @@ pub enum StoreError {
     /// A blob or the table is over its limit.
     #[error("the file is rejected: {0}")]
     BadFile(#[from] FileRejection),
+    /// A named version is refused: its name, its size or the number of versions.
+    #[error("the version is rejected: {0}")]
+    BadVersion(#[from] VersionRejection),
     /// The name is empty, too long or has control characters.
     #[error("the document name must be 1 to {} characters without control characters", crate::limits::MAX_NAME_CHARS)]
     BadName,
@@ -311,13 +317,15 @@ pub enum StoreError {
 impl PartialEq for StoreError {
     fn eq(&self, other: &Self) -> bool {
         use StoreError::{
-            AlreadyExists, Backend, BadFile, BadName, IdChanged, Invalid, InvalidDocument, NotFound, TooManyElements,
+            AlreadyExists, Backend, BadFile, BadName, BadVersion, IdChanged, Invalid, InvalidDocument, NotFound,
+            TooManyElements,
         };
         match (self, other) {
             (NotFound(a), NotFound(b)) | (AlreadyExists(a), AlreadyExists(b)) | (IdChanged(a), IdChanged(b)) => a == b,
             (Invalid { id: i1, error: e1 }, Invalid { id: i2, error: e2 }) => (i1, e1) == (i2, e2),
             (TooManyElements(a), TooManyElements(b)) => a == b,
             (BadFile(a), BadFile(b)) => a == b,
+            (BadVersion(a), BadVersion(b)) => a == b,
             (BadName, BadName) => true,
             (InvalidDocument(a), InvalidDocument(b)) => a == b,
             (Backend(a), Backend(b)) => a.to_string() == b.to_string(),
@@ -355,6 +363,29 @@ pub enum FileRejection {
     },
 }
 
+/// Why a named version was refused by [`SceneTx::put_version`] or [`SceneTx::rename_version`].
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+pub enum VersionRejection {
+    /// The version itself breaks a rule (name, author, size).
+    #[error("{0}")]
+    Invalid(#[from] VersionError),
+    /// The document already holds [`MAX_VERSIONS_STORED`](crate::limits::MAX_VERSIONS_STORED) versions.
+    #[error("the document already holds {max} versions")]
+    TooMany {
+        /// The limit.
+        max: usize,
+    },
+    /// No version has this id.
+    #[error("no version has the id {0}")]
+    NotFound(VersionId),
+}
+
+impl From<VersionError> for StoreError {
+    fn from(e: VersionError) -> Self {
+        StoreError::BadVersion(VersionRejection::Invalid(e))
+    }
+}
+
 /// Handle returned by [`SceneStore::subscribe`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SubscriptionId(pub u64);
@@ -381,6 +412,12 @@ pub trait SceneRead {
 
     /// All image blobs, sorted by id.
     fn files(&self) -> impl Iterator<Item = (&FileId, &FileEntry)>;
+
+    /// A named version.
+    fn version(&self, id: &VersionId) -> Option<&NamedVersion>;
+
+    /// All named versions, oldest first (ties by id).
+    fn versions(&self) -> impl Iterator<Item = &NamedVersion>;
 
     /// The key of the topmost element (tombstones included), if any.
     fn top_z(&self) -> Option<ZIndex>;
@@ -486,6 +523,16 @@ pub trait SceneTx: SceneRead {
     /// Removes a blob. Returns false when there was none.
     fn remove_file(&mut self, id: &FileId) -> bool;
 
+    /// Stores a named version, replacing the one with the same id. Refused when the version breaks a rule or the
+    /// document would hold more than [`MAX_VERSIONS_STORED`](crate::limits::MAX_VERSIONS_STORED).
+    fn put_version(&mut self, version: NamedVersion) -> Result<(), StoreError>;
+
+    /// Changes the name of a version and nothing else (the stored scene is not rewritten).
+    fn rename_version(&mut self, id: &VersionId, name: &str) -> Result<(), StoreError>;
+
+    /// Removes a named version. Returns false when there was none.
+    fn remove_version(&mut self, id: &VersionId) -> bool;
+
     /// Makes the writes visible and returns what changed.
     fn commit(self) -> Result<ChangeSet, StoreError>
     where
@@ -509,6 +556,7 @@ pub fn snapshot<R: SceneRead>(r: &R) -> Document {
         files: r.files().map(|(id, f)| (id.clone(), f.clone())).collect(),
         ..Document::default()
     }
+    .with_versions(r.versions().cloned().collect())
 }
 
 /// Replaces the whole content of `store` with `doc` in one transaction. The document is validated first; a document
@@ -521,9 +569,16 @@ pub fn load_document<S: SceneStore>(store: &mut S, doc: &Document) -> Result<Cha
     let existing: Vec<ElementId> = store.iter_all().map(|e| e.id.clone()).collect();
     let old_files: Vec<FileId> = store.files().map(|(id, _)| id.clone()).collect();
     let keep: BTreeSet<&FileId> = doc.files.keys().collect();
+    let old_versions: Vec<VersionId> = store.versions().map(|v| v.id.clone()).collect();
     let mut tx = store.begin();
     for id in &existing {
         tx.remove(id)?;
+    }
+    for id in &old_versions {
+        tx.remove_version(id);
+    }
+    for v in &doc.versions {
+        tx.put_version(v.clone())?;
     }
     for id in old_files.iter().filter(|id| !keep.contains(id)) {
         tx.remove_file(id);

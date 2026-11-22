@@ -32,3 +32,20 @@ pub const MAX_CORNER_RADIUS: f64 = 1.0e6;
 pub const MAX_FIXED_POINT: f64 = 100.0;
 /// Tolerance when comparing a linear element's box with the bounding box of its points.
 pub const BOX_TOLERANCE: f64 = 1.0e-4;
+/// Most named versions a user can save in one document (`version.save` refuses past it). Merges of several peers'
+/// saves can exceed it; see [`MAX_VERSIONS_STORED`].
+pub const MAX_VERSIONS: usize = 50;
+/// Most named versions a document may hold when read or merged. Above [`MAX_VERSIONS`] on purpose: ten peers that each
+/// saved fifty versions must still open the file.
+pub const MAX_VERSIONS_STORED: usize = 500;
+/// Longest version name, in characters.
+pub const MAX_VERSION_NAME_CHARS: usize = 100;
+/// Longest version author, in characters.
+pub const MAX_VERSION_AUTHOR_CHARS: usize = 64;
+/// Largest stored (compressed) scene of one version, in bytes. Half of the largest update the collaboration protocol
+/// carries (`drafftink_protocol::MAX_UPDATE_BYTES`, 4 MiB), so that a save still travels as one update.
+pub const MAX_VERSION_STATE_BYTES: usize = 2 * 1024 * 1024;
+/// Largest scene of one version after decompression, in bytes. Stops decompression bombs.
+pub const MAX_VERSION_INFLATED_BYTES: usize = 256 * 1024 * 1024;
+/// Most stored bytes of all versions of one document together.
+pub const MAX_VERSIONS_TOTAL_BYTES: usize = 32 * 1024 * 1024;

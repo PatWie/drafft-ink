@@ -1,0 +1,26 @@
+{
+  "about": "Rename and delete a version, and see that versions come back after a save and an open of the document, and after the workspace is written and read again.",
+  "steps": [
+    { "harness": "load_generated", "args": { "count": 4 } },
+    { "execute": "version.save", "args": { "name": "Draft" }, "save": { "draft": "$.version.id" } },
+    { "execute": "version.save", "args": { "name": "Draft" }, "expect": [ { "path": "$.count", "eq": 2, "note": "The same name twice is allowed: versions are addressed by id." } ], "save": { "second": "$.version.id" } },
+
+    { "execute": "version.rename", "args": { "id": "{{draft}}", "name": "  First draft " }, "expect": [ { "path": "$.name", "eq": "First draft" }, { "path": "$.changed", "eq": true } ] },
+    { "execute": "version.rename", "args": { "id": "{{draft}}", "name": "First draft" }, "expect": [ { "path": "$.changed", "eq": false } ] },
+    { "execute": "version.rename", "args": { "id": "{{draft}}", "name": "   " }, "refused": "empty_name" },
+    { "execute": "version.rename", "args": { "id": "missing", "name": "x" }, "refused": "no_such_version" },
+
+    { "execute": "doc.save", "args": { "to": { "stored": "plan" } } },
+    { "execute": "doc.new", "args": {} },
+    { "assert": "version.list", "expect": [ { "path": "$.count", "eq": 0 } ] },
+    { "execute": "doc.open", "args": { "source": { "stored": "plan" } } },
+    { "assert": "version.list", "expect": [ { "path": "$.count", "eq": 2 }, { "path": "$.versions[1].name", "eq": "First draft" } ] },
+
+    { "execute": "version.delete", "args": { "id": "{{second}}" }, "expect": [ { "path": "$.count", "eq": 1 } ] },
+    { "execute": "version.delete", "args": { "id": "{{second}}" }, "refused": "no_such_version" },
+    { "assert": "history.state", "expect": [ { "path": "$.undo_depth", "eq": 0, "note": "Neither rename nor delete is an undo step." } ] },
+
+    { "execute": "doc.autosave" },
+    { "assert": "version.list", "expect": [ { "path": "$.versions[0].name", "eq": "First draft" } ] }
+  ]
+}

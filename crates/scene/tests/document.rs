@@ -112,7 +112,7 @@ fn compact_and_pretty_json_round_trip() {
 fn header_fields() {
     let v: serde_json::Value = serde_json::from_str(&sample().to_json().unwrap()).unwrap();
     assert_eq!(v["format"], "drafftink");
-    assert_eq!(v["version"], SCHEMA_VERSION);
+    assert_eq!(v["version"], BASE_SCHEMA_VERSION, "a document without named versions stays readable by older builds");
     assert_eq!(v["name"], "Sample");
     assert_eq!(v["background"], "#fafafa");
     assert!(v["files"].as_object().unwrap().values().all(|f| f["mime"] == "image/png" && f["bytes"].is_string()));
@@ -140,15 +140,18 @@ fn minimal_documents_load_with_defaults() {
     let d = Document::from_json(r#"{"format":"drafftink","version":1}"#).unwrap();
     assert_eq!((d.name.as_str(), d.background, d.elements.len()), ("Untitled", Color::WHITE, 0));
     let d = Document::from_json(r#"{"format":"drafftink"}"#).unwrap();
-    assert_eq!(d.schema_version, SCHEMA_VERSION);
+    assert_eq!(d.schema_version, BASE_SCHEMA_VERSION);
     let d = Document::from_json(r#"{}"#).unwrap();
     assert!(d.elements.is_empty(), "format defaults, so an empty object is an empty document");
 }
 
 #[test]
 fn newer_versions_are_refused_with_a_clear_message() {
-    let err = Document::from_json(r#"{"format":"drafftink","version":2,"elements":[{"future":true}]}"#).unwrap_err();
-    assert_eq!(err, DocumentError::NewerVersion { found: 2, max: 1 });
+    let newer = SCHEMA_VERSION + 1;
+    let err =
+        Document::from_json(&format!(r#"{{"format":"drafftink","version":{newer},"elements":[{{"future":true}}]}}"#))
+            .unwrap_err();
+    assert_eq!(err, DocumentError::NewerVersion { found: newer, max: SCHEMA_VERSION });
     assert!(err.to_string().contains("Update the app"));
     assert!(matches!(Document::from_json(r#"{"format":"drafftink","version":0}"#), Err(DocumentError::Invalid(_))));
 }
@@ -387,4 +390,108 @@ fn map_colors_reaches_the_background_strokes_fills_and_text_runs() {
     assert_eq!(doc.elements[0].style.fill_color, Some(Color::rgb(1, 20, 0)));
     let ElementKind::Text(t) = &doc.elements[1].kind else { panic!("text") };
     assert_eq!(t.runs[0].color, Some(Color::rgb(2, 2, 3)));
+}
+
+// ---- named versions -------------------------------------------------------------------------------------------------
+
+fn with_a_version() -> Document {
+    let mut store = MemoryStore::from_document(&sample()).unwrap();
+    let id = SeqIds::new().version_id();
+    let v = NamedVersion::capture(id, "Before review", 1_700_000_000_000, Some("Ana"), &store).unwrap();
+    let mut tx = store.begin();
+    tx.put_version(v).unwrap();
+    tx.commit().unwrap();
+    snapshot(&store)
+}
+
+#[test]
+fn a_document_with_versions_is_written_as_the_newer_format_and_reads_back() {
+    let doc = with_a_version();
+    assert_eq!(doc.schema_version, SCHEMA_VERSION);
+    let text = doc.to_json().unwrap();
+    let v: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(v["version"], SCHEMA_VERSION);
+    assert_eq!(v["versions"][0]["name"], "Before review");
+    assert!(v["versions"][0]["state"].is_string());
+    assert_eq!(Document::from_json(&text).unwrap(), doc);
+    assert_eq!(Document::from_json(&doc.to_json_pretty().unwrap()).unwrap(), doc);
+}
+
+#[test]
+fn a_document_without_versions_is_still_written_as_version_one() {
+    let text = sample().to_json().unwrap();
+    assert!(text.contains(r#""version":1"#) && !text.contains("versions"), "{text}");
+    let mut doc = with_a_version();
+    doc.versions.clear();
+    assert_eq!(
+        doc.to_json().unwrap().contains(r#""version":2"#),
+        true,
+        "the stored version field alone is not trusted"
+    );
+    let back = Document::from_json(&doc.to_json().unwrap()).unwrap();
+    assert_eq!((back.schema_version, back.versions.len()), (BASE_SCHEMA_VERSION, 0), "the content decides");
+}
+
+#[test]
+fn an_old_file_loads_with_no_versions_and_is_written_back_as_it_was() {
+    let text = r#"{"format":"drafftink","version":1,"name":"Old","elements":[]}"#;
+    let doc = Document::from_json(text).unwrap();
+    assert!(doc.versions.is_empty());
+    assert_eq!(
+        doc.to_json().unwrap(),
+        r##"{"format":"drafftink","version":1,"name":"Old","background":"#ffffff","elements":[]}"##
+    );
+}
+
+#[test]
+fn a_build_from_before_versions_refuses_a_file_with_them_by_its_version() {
+    // Such a build reads `version` first and refuses anything above 1 with "Update the app"; the file says 2.
+    let v: serde_json::Value = serde_json::from_str(&with_a_version().to_json().unwrap()).unwrap();
+    assert!(v["version"].as_u64().unwrap() > u64::from(BASE_SCHEMA_VERSION));
+}
+
+#[test]
+fn the_shared_writer_makes_the_same_text_with_versions() {
+    let doc = with_a_version();
+    let store = MemoryStore::from_document(&doc).unwrap();
+    let shared = store.share_document();
+    let mut job = JsonJob::new(shared.clone()).unwrap();
+    while !job.is_done() {
+        job.step(100).unwrap();
+    }
+    assert_eq!(String::from_utf8(job.finish().unwrap()).unwrap(), doc.to_json().unwrap());
+    shared.check().unwrap();
+}
+
+#[test]
+fn version_metadata_is_validated_and_a_missing_blob_is_a_warning() {
+    let mut doc = with_a_version();
+    doc.versions.push(doc.versions[0].clone());
+    assert!(doc.validate().errors().any(|i| matches!(i.error, DocError::DuplicateVersion(_))));
+    let mut doc = with_a_version();
+    doc.versions[0].name = " padded ".into();
+    assert!(
+        Document::from_json(&doc.to_json().unwrap_or_default()).is_err(),
+        "a name that is not in normal form is refused"
+    );
+    let mut doc = with_a_version();
+    let blob = doc.versions[0].files.first().cloned();
+    if let Some(blob) = blob {
+        doc.files.remove(&blob);
+        doc.elements.retain(|e| !matches!(&e.kind, ElementKind::Image(i) if i.file_id.as_ref() == Some(&blob)));
+        let report = doc.validate();
+        assert!(report.warnings().any(|i| matches!(i.error, DocError::VersionFileMissing { .. })), "{report:?}");
+        assert!(!report.has_errors());
+    }
+}
+
+#[test]
+fn versions_keep_their_blobs_alive() {
+    let mut doc = with_a_version();
+    let used = doc.versions[0].files.clone();
+    assert!(!used.is_empty(), "the sample has a picture");
+    doc.elements.retain(|e| !matches!(e.kind, ElementKind::Image(_)));
+    assert!(doc.unused_files().iter().all(|f| !used.contains(f)), "a version still needs its blobs");
+    doc.versions.clear();
+    assert!(used.iter().all(|f| doc.unused_files().contains(f)));
 }

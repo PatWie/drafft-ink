@@ -14,8 +14,8 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use drafftink_scene::{
-    ChangeSet, DerivedIndex, DocMeta, Document, Element, ElementId, FileEntry, FileId, MemoryStore, SceneRead,
-    SceneStore, StoreError, SubscriptionId, ZIndex, load_document,
+    ChangeSet, DerivedIndex, DocMeta, Document, Element, ElementId, FileEntry, FileId, MemoryStore, NamedVersion,
+    SceneRead, SceneStore, StoreError, SubscriptionId, VersionId, ZIndex, load_document,
 };
 use loro::{ExportMode, Frontiers, LoroDoc, UndoManager, VersionVector};
 
@@ -89,6 +89,8 @@ pub(crate) struct Core {
     pub stats: WorkStats,
     /// Elements in Loro that failed to decode or validate. They are hidden from the view.
     pub invalid: BTreeSet<ElementId>,
+    /// Named versions in Loro that failed to decode or validate. They are hidden from the view.
+    pub invalid_versions: BTreeSet<VersionId>,
     /// Elements whose view value is the fitted one (box fitted to the points) of a decode that needed it, so it
     /// differs from what Loro holds. Whatever is written next for one of them writes all its fields, or the view
     /// would keep the fitted value that Loro does not hold once the points become valid again, and peers would end
@@ -190,6 +192,7 @@ impl Core {
             next_subscription: 0,
             stats: WorkStats::default(),
             invalid: BTreeSet::new(),
+            invalid_versions: BTreeSet::new(),
             refitted: BTreeSet::new(),
             marks: VecDeque::new(),
             commit_seq: 0,
@@ -429,6 +432,7 @@ impl LoroStore {
         let fresh = opened?;
         self.core.reset_doc(fresh.doc.clone());
         self.core.invalid.clear();
+        self.core.invalid_versions.clear();
         self.core.refitted.clear();
         let cs = sync::rebuild_all(&mut self.view, &mut self.core)?;
         self.core.notify(&cs);
@@ -691,6 +695,12 @@ impl SceneRead for LoroStore {
     }
     fn files(&self) -> impl Iterator<Item = (&FileId, &FileEntry)> {
         self.view.files()
+    }
+    fn version(&self, id: &VersionId) -> Option<&NamedVersion> {
+        self.view.version(id)
+    }
+    fn versions(&self) -> impl Iterator<Item = &NamedVersion> {
+        self.view.versions()
     }
     fn top_z(&self) -> Option<ZIndex> {
         self.view.top_z()

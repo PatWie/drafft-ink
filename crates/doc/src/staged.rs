@@ -10,7 +10,7 @@ use drafftink_scene::{MemoryStore, SceneRead};
 use loro::LoroValue;
 
 use crate::error::DocError;
-use crate::schema::{ROOT_ELEMENTS, ROOT_FILES};
+use crate::schema::{ROOT_ELEMENTS, ROOT_FILES, ROOT_VERSIONS};
 use crate::store::{Core, ImportProgress};
 
 /// One thing to bring into the view.
@@ -22,6 +22,8 @@ pub(crate) enum Item {
     Element(String),
     /// The file with this id.
     File(String),
+    /// The named version with this id (also one only the view has, which is then removed).
+    Version(String),
 }
 
 /// The work that is left of a staged import.
@@ -38,6 +40,7 @@ impl Staged {
             let mut items = vec![Item::Meta];
             let elements = Keys::of(&core.doc.get_map(ROOT_ELEMENTS).get_value());
             let files = Keys::of(&core.doc.get_map(ROOT_FILES).get_value());
+            let versions = Keys::of(&core.doc.get_map(ROOT_VERSIONS).get_value());
             // What only the view has goes away.
             let gone_elements: Vec<String> =
                 view.iter_all().map(|e| e.id.to_string()).filter(|id| !elements.has(id)).collect();
@@ -47,6 +50,10 @@ impl Staged {
             items.extend(gone_elements.into_iter().map(Item::Element));
             items.extend(files.list().map(|k| Item::File(k.to_owned())));
             items.extend(gone_files.into_iter().map(Item::File));
+            let gone_versions: Vec<String> =
+                view.versions().map(|v| v.id.to_string()).filter(|id| !versions.has(id)).collect();
+            items.extend(versions.list().map(|k| Item::Version(k.to_owned())));
+            items.extend(gone_versions.into_iter().map(Item::Version));
             Staged { items, next: 0 }
         })
     }
