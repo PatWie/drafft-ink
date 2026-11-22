@@ -28,6 +28,9 @@ js-sys.workspace = true
 # The fixtures of the TypeScript tests are sealed with the real library and a known nonce (tests/fixtures.rs).
 drafftink-seal = { path = "../../crates/seal", version = "0.2.0" }
 sha2 = "0.11"
+# The smoke test (tests/smoke.rs) talks to a running `wrangler dev` with plain blocking clients.
+tungstenite = { workspace = true, features = ["handshake"] }
+ureq.workspace = true
 
 [lints]
 workspace = true
