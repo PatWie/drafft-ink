@@ -336,7 +336,8 @@ fn handle(s: &mut Session, live: &mut Live, now: u64, event: CollabEvent, rest: 
                 fatal: true,
             }));
         }
-        CollabEvent::Status(_) | CollabEvent::Presence | CollabEvent::Retention { .. } => {}
+        // Pictures of an encrypted room (`ImageEvent`) are routed by the engine's picture work, not here yet.
+        CollabEvent::Status(_) | CollabEvent::Presence | CollabEvent::Retention { .. } | CollabEvent::Image(_) => {}
     }
     Some(())
 }

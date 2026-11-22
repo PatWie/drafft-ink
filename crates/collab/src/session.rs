@@ -3,6 +3,7 @@
 
 use drafftink_doc::LoroStore;
 
+use crate::blobs::{BlobResponse, BlobTransport};
 use crate::client::{CollabEvent, Output};
 use crate::room_client::RoomClient;
 use crate::transport::{Transport, TransportError, TransportEvent};
@@ -24,6 +25,7 @@ pub struct Pump {
 pub struct CollabSession<T: Transport> {
     client: RoomClient,
     transport: T,
+    blobs: Option<Box<dyn BlobTransport>>,
 }
 
 /// The most rounds one pump runs. Each round delivers transport events, ticks and executes outputs; it stops earlier
@@ -33,7 +35,13 @@ const MAX_ROUNDS: usize = 16;
 impl<T: Transport> CollabSession<T> {
     /// Joins a client (plaintext or sealed) and a transport.
     pub fn new(client: impl Into<RoomClient>, transport: T) -> Self {
-        CollabSession { client: client.into(), transport }
+        CollabSession { client: client.into(), transport, blobs: None }
+    }
+
+    /// Gives the session a pipe for the pictures of an encrypted room. Without one, a picture request fails at once
+    /// ("pictures are not available here") and is tried again later by the client's backoff.
+    pub fn set_blobs(&mut self, blobs: Box<dyn BlobTransport>) {
+        self.blobs = Some(blobs);
     }
 
     /// The client, for reading state.
@@ -64,7 +72,15 @@ impl<T: Transport> CollabSession<T> {
                 busy = true;
                 self.client.on_event(now_ms, event, store);
             }
+            while let Some(response) = self.blobs.as_mut().and_then(|b| b.poll()) {
+                busy = true;
+                self.client.on_blob_response(now_ms, response);
+            }
             self.client.tick(now_ms, store);
+            while let Some(request) = self.client.poll_blob_request() {
+                busy = true;
+                self.send_blob_request(now_ms, request);
+            }
             while let Some(output) = self.client.poll_output() {
                 busy = true;
                 self.execute(now_ms, output, store);
@@ -76,6 +92,19 @@ impl<T: Transport> CollabSession<T> {
         }
         let redraw = !events.is_empty();
         Pump { events, next_wake_ms: self.client.next_wake_ms(), redraw }
+    }
+
+    /// Hands a picture request to the pipe. A request that cannot be sent is a failure of the network.
+    fn send_blob_request(&mut self, now_ms: u64, request: crate::blobs::BlobRequest) {
+        let id = request.id;
+        let failed = match self.blobs.as_mut() {
+            Some(blobs) => blobs.send(request).err().map(|e| e.to_string()),
+            None => Some("pictures are not available here".to_owned()),
+        };
+        if let Some(why) = failed {
+            log::debug!("collab: a picture request was not sent: {why}");
+            self.client.on_blob_response(now_ms, BlobResponse { id, result: Err(why) });
+        }
     }
 
     fn execute(&mut self, now_ms: u64, output: Output, store: &mut LoroStore) {

@@ -167,6 +167,7 @@ impl SealedClient {
         self.stable_since = Some(now_ms);
         self.presence.reset_sent();
         self.problem = None;
+        self.images.on_online(now_ms);
         self.seed_or_upload(now_ms, store);
         self.refresh_status();
     }
