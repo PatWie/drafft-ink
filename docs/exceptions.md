@@ -110,17 +110,17 @@ Rules that hold for all classes:
 | Cancel | Drop the preview. |
 | Test | `exception_E6_draw_equals_plain_command` for every kind. |
 
-### E7 Freehand and highlighter stroke
+### E7 Pencil stroke
 
 | | |
 |---|---|
-| Input | Press and drag with the freehand or highlighter tool; with a pen, pressure per sample. |
+| Input | Press and drag with the pencil (freehand tool); with a pen, pressure per sample. With Shift held the stroke goes straight from where it was when Shift went down to the pointer, turned to the angle lock (15 degrees, `snap.angle_step`), with the polar rays shown as for a line. Releasing Shift keeps that segment and the pencil carries on freehand from its end. |
 | Class | B |
 | What happens | The recognizer appends samples (position and pressure) to a buffer and draws the stroke from the buffer. The calligraphy brush (spring smoothing) and the simulated pressure (from the pointer speed, when the device has none) run on every sample (`edit/src/brush.rs`), so the preview and the stored stroke are the same points. On release it simplifies (RDP tolerance 2.0) and calls one command. |
 | Reason | Pen input arrives at 240 Hz, and a stroke may have thousands of points. The element does not exist before the release. Real pen pressure comes from the pointer event (`pointerType: pen`, `pressure`), which the old app never read. |
-| Final state | `element.create { kind: freehand, points, pressures, highlighter, simplify, from_tool: true }`. |
+| Final state | `element.create { kind: freehand, points, pressures, simplify, from_tool: true }`; the tip (round or chisel), width and opacity are the session defaults (`style.set`, `scope: defaults`). |
 | Cancel | Drop the buffer. A second finger landing cancels a one-finger stroke. |
-| Test | `exception_E7_stroke_equals_plain_command`, `exception_E7_a_brush_stroke_equals_the_plain_command_given_its_points`, and a replay of a recorded pen stroke. |
+| Test | `exception_E7_stroke_equals_plain_command`, `exception_E7_a_brush_stroke_equals_the_plain_command_given_its_points`, `exception_E7_a_chisel_stroke_equals_the_plain_command`, and a replay of a recorded pen stroke. |
 
 ### E8 Eraser
 
@@ -251,6 +251,18 @@ Rules that hold for all classes:
 | Final state | `image.paint { id, strokes: [{mode, color, size, hardness, opacity, points, pressures}] }`, run once when the pointer is released (a click: a stroke of one point). One stroke is one undo step. The editor stays open for the next stroke. |
 | Cancel | `Esc` during a drag (a second finger, window blur) drops the stroke and leaves the editor open. `Enter`, `Esc` with no drag running and a click outside the image end the editor with `image.paint_end` (the click goes on to the select tool and selects what is under it); a tool change, a change of the selection or a tab switch closes it through the session. `tool.cancel` closes it too (rung `paint_editor`). |
 | Test | `exception_E18_paint_equals_plain_command` (a drag ends in the same document, the same stroke and the same ring arguments as the plain `image.paint` with the points the drag stored), `exception_E18_a_rotated_mirrored_cropped_stroke_equals_plain_command` (the same for a turned, mirrored and cropped image). |
+
+### E19 Highlighter drag
+
+| | |
+|---|---|
+| Input | Press and drag with the highlighter tool across elements and text, release. Alt held (or the marker colour "none") removes the highlight instead. |
+| Class | B |
+| What happens | The recognizer collects the path. Per probe along it, the elements within a few pixels of the path are found as the eraser finds them, and for each text the characters the path crosses are found on the real text layout (the caret under the point, Parley's hit test, and the line boxes: `edit::highlight::CharSweep`). The overlay shows a thin trail, the outlines of the elements and bands over the characters. The document is untouched. On release it calls one command. A drag that touches nothing calls none. |
+| Reason | The highlighter creates no element. A command per probe would put a step and a CRDT delta in the history for every element passed, and a cancelled drag would have left half its work behind. |
+| Final state | `highlight.apply { color, ids, ranges: [{id, start, end}] }` (character indices), with `color: null` for removal. One undo step and one change for collaborators. |
+| Cancel | Drop the path and the preview. |
+| Test | `exception_E19_a_highlighter_drag_equals_the_plain_command`. |
 
 ## 3. Things that look like exceptions but are commands
 

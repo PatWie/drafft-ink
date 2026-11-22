@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 
 use crate::id::{ElementId, FileId, GroupId};
+use crate::marker::SpanHighlight;
 use crate::paint::Paint;
 use crate::points::{pt, pts};
 use crate::style::{Style, TextStyle};
@@ -322,9 +323,31 @@ pub enum Brush {
     Calligraphy,
 }
 
+/// The tip of a freehand pen: the shape that is swept along the stroke.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Tip {
+    /// A round tip: a pencil line with round caps.
+    #[default]
+    Round,
+    /// The flat nib of a chisel marker: wide across the nib, thin along it, flat ends, one translucent shape
+    /// that does not darken where the stroke crosses itself (`drafftink_geom::chisel`).
+    Chisel,
+}
+
+impl Tip {
+    /// True for [`Tip::Round`], the default that files leave out.
+    pub fn is_round(&self) -> bool {
+        *self == Tip::Round
+    }
+}
+
 /// Data of a freehand stroke. `points` use the same local frame as [`LinearData`].
+///
+/// Files from before the tip existed marked a marker stroke with `"highlighter": true`. That reads as
+/// [`Tip::Chisel`]: the stroke keeps its stored width and colour, and is drawn by the pencil with a chisel tip.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
+#[serde(deny_unknown_fields, from = "FreehandWire")]
 pub struct FreehandData {
     /// Sampled positions, local frame. At least 1 (a single point is a dot).
     #[serde(with = "pts")]
@@ -339,24 +362,61 @@ pub struct FreehandData {
     /// Brush shape.
     #[serde(default)]
     pub brush: Brush,
-    /// A wide, translucent marker stroke drawn under the other elements' ink.
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub highlighter: bool,
+    /// The tip of the pen.
+    #[serde(default, skip_serializing_if = "Tip::is_round")]
+    pub tip: Tip,
     /// The stroke is a closed shape and can be filled.
     #[serde(default, skip_serializing_if = "is_false")]
     pub closed: bool,
 }
 
 impl FreehandData {
-    /// A stroke with uniform width. `points` are local.
+    /// A stroke with uniform width and a round tip. `points` are local.
     pub fn new(points: Vec<Point>) -> Self {
         Self {
             points,
             pressures: Vec::new(),
             pressure_mode: PressureMode::Uniform,
             brush: Brush::Normal,
-            highlighter: false,
+            tip: Tip::Round,
             closed: false,
+        }
+    }
+}
+
+/// How a freehand stroke is read: the fields of [`FreehandData`] and the old marker flag.
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct FreehandWire {
+    #[serde(with = "pts")]
+    #[schemars(with = "Vec<[f64; 2]>")]
+    points: Vec<Point>,
+    #[serde(default)]
+    pressures: Vec<f64>,
+    #[serde(default)]
+    pressure_mode: PressureMode,
+    #[serde(default)]
+    brush: Brush,
+    #[serde(default)]
+    tip: Option<Tip>,
+    /// The old marker flag. An explicit `tip` wins over it. Left out of the schema: it is read, never written.
+    #[serde(default)]
+    #[schemars(skip)]
+    highlighter: bool,
+    #[serde(default)]
+    closed: bool,
+}
+
+impl From<FreehandWire> for FreehandData {
+    fn from(w: FreehandWire) -> Self {
+        let tip = w.tip.unwrap_or(if w.highlighter { Tip::Chisel } else { Tip::Round });
+        Self {
+            points: w.points,
+            pressures: w.pressures,
+            pressure_mode: w.pressure_mode,
+            brush: w.brush,
+            tip,
+            closed: w.closed,
         }
     }
 }
@@ -370,16 +430,19 @@ pub struct CharStyle {
     pub bold: bool,
     /// Italic: the italic face, or a slanted regular one where the family has none.
     pub italic: bool,
+    /// The character's own highlight, which replaces the element's (see [`SpanHighlight`]).
+    pub highlight: SpanHighlight,
 }
 
 impl CharStyle {
-    /// Whether the character looks like the element says (no colour of its own, regular, upright).
+    /// Whether the character looks like the element says (no colour of its own, regular, upright, no highlight of
+    /// its own).
     pub fn is_plain(&self) -> bool {
         *self == Self::default()
     }
 }
 
-/// A style override for a range of characters: colour, bold and italic.
+/// A style override for a range of characters: colour, bold, italic and highlight.
 ///
 /// Ranges are in Unicode scalar values (`char`s), not bytes or UTF-16 units, exactly like the old `char_colors`.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
@@ -398,17 +461,27 @@ pub struct TextRun {
     /// The range is italic.
     #[serde(default, skip_serializing_if = "is_false")]
     pub italic: bool,
+    /// Highlight of the range: a marker colour, `"none"` (no highlight even if the whole text has one), or absent
+    /// (the text's own `style.highlight`).
+    #[serde(default, skip_serializing_if = "SpanHighlight::is_inherit")]
+    pub highlight: SpanHighlight,
 }
 
 impl TextRun {
     /// A run over `start..end` with `style`.
     pub fn new(start: u32, end: u32, style: CharStyle) -> Self {
-        Self { start, end, color: style.color, bold: style.bold, italic: style.italic }
+        Self { start, end, color: style.color, bold: style.bold, italic: style.italic, highlight: style.highlight }
     }
 
     /// What the run gives its characters.
     pub fn style(&self) -> CharStyle {
-        CharStyle { color: self.color, bold: self.bold, italic: self.italic }
+        CharStyle { color: self.color, bold: self.bold, italic: self.italic, highlight: self.highlight }
+    }
+
+    /// Whether the run changes how glyphs are drawn or measured (colour, bold, italic). A run that only carries a
+    /// highlight does not: the layout ignores it.
+    pub fn styles_glyphs(&self) -> bool {
+        self.color.is_some() || self.bold || self.italic
     }
 }
 

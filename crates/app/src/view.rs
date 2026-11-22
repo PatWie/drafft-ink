@@ -5,7 +5,7 @@
 //! and are rebuilt on their own, so a hover outline or a marquee never re-encodes an element.
 
 use drafftink_canvas::PointerKind;
-use drafftink_engine::interact::InteractionOverlay;
+use drafftink_engine::interact::{InteractionOverlay, MarkerPreview};
 use drafftink_engine::services::SharedTypesetter;
 use drafftink_engine::state::TabId;
 use drafftink_geom::kurbo::{Affine, Rect, Size, Vec2};
@@ -14,7 +14,7 @@ use drafftink_render::{
     CropHandleSize, FrameReport, GridSpec, GridStyle, LodConfig, Overlay, OverlayStyle, PaintIndex, RenderOptions,
     Scene, SceneComposer, Theme, View, build_paint_index, fill_veil, paint_crop_chrome, paint_crop_dim, paint_overlay,
 };
-use drafftink_scene::{Element, ElementId, Kind, SceneRead};
+use drafftink_scene::{Element, ElementId, Kind, MARKER_ALPHA, SceneRead, Tone};
 
 use crate::editor::Arranged;
 use vello::peniko::{BlendMode, Color, Compose, Fill, Mix};
@@ -210,6 +210,9 @@ impl CanvasView {
         if let Some(el) = &interaction.preview {
             typesetter.with(|ts| composer.compose_transient(store, std::slice::from_ref(el), view, ts, preview));
         }
+        if let Some(marker) = &interaction.marker {
+            paint_marker(preview, view, *theme, marker);
+        }
         let faded: Vec<_> = interaction.faded.iter().filter_map(|id| store.get(id)).cloned().collect();
         if !faded.is_empty() {
             Self::compose_faded(composer, typesetter, store, &faded, view, preview);
@@ -240,6 +243,43 @@ impl CanvasView {
         out.append(&self.world, None);
         out.append(&self.preview, None);
         out.append(&self.overlay, None);
+    }
+}
+
+/// Draws the highlighter's drag: a band over each character the path has crossed, in the marker colour (a pale
+/// red when the drag removes the highlight), and the path itself as a thin line. The outlines of the elements it
+/// touches come with the overlay of the canvas library.
+pub(crate) fn paint_marker(scene: &mut Scene, view: &View, theme: Theme, marker: &MarkerPreview) {
+    use drafftink_geom::kurbo::{BezPath, Cap, Join, Stroke};
+    let to_dev = view.world_to_device();
+    let px = view.logical_to_device().as_coeffs()[0];
+    let tone = if theme == Theme::Dark { Tone::Dark } else { Tone::Light };
+    // A removal is a pale red; a colour is the marker's own ink at the alpha of its band.
+    let (r, g, b, alpha) = marker.color.map_or((235, 70, 70, 0.4), |c| {
+        let ink = c.rgb(tone);
+        (ink.r, ink.g, ink.b, MARKER_ALPHA as f32)
+    });
+    let mut bands = BezPath::new();
+    for quad in &marker.bands {
+        let [first, rest @ ..] = quad.map(|p| to_dev * p);
+        bands.move_to(first);
+        rest.iter().for_each(|p| bands.line_to(*p));
+        bands.close_path();
+    }
+    if !bands.elements().is_empty() {
+        let dev = view.device_size();
+        let clip = Rect::new(0.0, 0.0, dev.width, dev.height);
+        // One opaque shape under one alpha, so two bands that overlap do not get darker.
+        scene.push_layer(Fill::NonZero, BlendMode::new(Mix::Normal, Compose::SrcOver), alpha, Affine::IDENTITY, &clip);
+        scene.fill(Fill::NonZero, Affine::IDENTITY, Color::from_rgba8(r, g, b, 255), None, &bands);
+        scene.pop_layer();
+    }
+    let mut trail = BezPath::new();
+    if let Some((first, rest)) = marker.trail.split_first() {
+        trail.move_to(to_dev * *first);
+        rest.iter().for_each(|p| trail.line_to(to_dev * *p));
+        let line = Stroke::new(2.0 * px).with_caps(Cap::Round).with_join(Join::Round);
+        scene.stroke(&line, Affine::IDENTITY, Color::from_rgba8(r, g, b, 190), None, &trail);
     }
 }
 

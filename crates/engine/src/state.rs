@@ -9,7 +9,8 @@ use drafftink_edit::arrow_defaults::ArrowDefaults;
 use drafftink_edit::retouch::PaintBrush;
 use drafftink_edit::style::StyleDefaults;
 use drafftink_geom::kurbo::Point;
-use drafftink_scene::{Brush, ElementId, GroupId, PressureMode, Style, TextStyle};
+pub use drafftink_scene::MarkerColor;
+use drafftink_scene::{Brush, ElementId, GroupId, PressureMode, Style, TextStyle, Tip};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -217,6 +218,8 @@ pub struct ToolState {
     pub text_defaults: TextStyle,
     /// Brush for new freehand strokes.
     pub brush_default: Brush,
+    /// Tip for new freehand strokes.
+    pub tip_default: Tip,
     /// Pressure mode for new freehand strokes.
     pub pressure_default: PressureMode,
     /// Path type and heads of new arrows (`tool.set_arrow`; the settings `arrow.type`, `arrow.start_head` and
@@ -224,6 +227,8 @@ pub struct ToolState {
     pub arrow_default: ArrowDefaults,
     /// The brush of the paint editor and the default of `image.paint` (`image.paint_brush`).
     pub paint_brush: PaintBrush,
+    /// The colour of the highlighter tool (`tool.set_marker`). `None` is "none": the tool removes highlights.
+    pub marker: Option<MarkerColor>,
 }
 
 impl Default for ToolState {
@@ -236,9 +241,11 @@ impl Default for ToolState {
             style_defaults: d.style,
             text_defaults: d.text,
             brush_default: d.brush,
+            tip_default: d.tip,
             pressure_default: d.pressure_mode,
             arrow_default: ArrowDefaults::default(),
             paint_brush: PaintBrush::default(),
+            marker: Some(MarkerColor::Yellow),
         }
     }
 }
@@ -255,6 +262,7 @@ impl ToolState {
             style: self.style_defaults.clone(),
             text: self.text_defaults.clone(),
             brush: self.brush_default,
+            tip: self.tip_default,
             pressure_mode: self.pressure_default,
         }
     }
@@ -264,6 +272,7 @@ impl ToolState {
         self.style_defaults = d.style;
         self.text_defaults = d.text;
         self.brush_default = d.brush;
+        self.tip_default = d.tip;
         self.pressure_default = d.pressure_mode;
     }
 }

@@ -8,14 +8,15 @@
 
 use std::sync::Arc;
 
+use drafftink_geom::chisel::Nib;
 use drafftink_profile::{Counter, count};
 use drafftink_scene::{
-    Color, Element, ElementKind, FileId, FillPattern, FreehandData, Head, ImageData as ImageElem, LabelCut, MathData,
-    TextData,
+    Color, Element, ElementKind, FileId, FillPattern, FreehandData, Head, ImageData as ImageElem, LabelCut,
+    MARKER_ALPHA, MarkerColor, MathData, TextData, Tip,
 };
 use drafftink_sketch::{FillKind, SketchCache, SketchGeometry, fit_head_size};
 use drafftink_typeset::{MathFontSlot, Typesetter};
-use kurbo::{Affine, BezPath, Cap, Circle, Join, Point, Rect, RoundedRect, Shape, Stroke, Vec2};
+use kurbo::{Affine, BezPath, Circle, Point, Rect, RoundedRect, Shape, Stroke, Vec2};
 use peniko::{Fill, ImageBrush, Mix};
 use vello::{Glyph, Scene};
 
@@ -34,7 +35,7 @@ pub type FileSource<'a> = &'a dyn Fn(&FileId) -> Option<Arc<[u8]>>;
 /// Encodes elements into fragments. Owns the sketch cache and the decoded-picture cache; borrows the typesetter
 /// (shared with the editor, so text is laid out once for measuring and drawing).
 pub struct ElementPainter {
-    sketch: SketchCache,
+    pub(crate) sketch: SketchCache,
     images: ImageCache,
     sketch_misses_seen: u64,
 }
@@ -90,19 +91,24 @@ impl ElementPainter {
         let _span = drafftink_profile::span("paint_element");
         let mut ink = Ink::new(options.theme, e.style.opacity);
         let mut awaiting = None;
+        // The highlight band lies under everything the element draws (an arrow does it inside its label cut).
+        if !matches!(e.kind, ElementKind::Arrow(_)) {
+            self.paint_highlight(&mut ink, e, typesetter);
+        }
         match &e.kind {
             ElementKind::Rectangle | ElementKind::Diamond | ElementKind::Ellipse | ElementKind::Line(_) => {
                 self.paint_sketch(&mut ink, e);
             }
             ElementKind::Arrow(d) => {
                 let clipped = cut.map(|c| begin_cut(&mut ink, e, c)).is_some();
+                self.paint_highlight(&mut ink, e, typesetter);
                 self.paint_sketch(&mut ink, e);
                 paint_cardinality(&mut ink, e, d);
                 if clipped {
                     ink.scene.pop_layer();
                 }
             }
-            ElementKind::Freehand(f) if f.highlighter => paint_highlighter(&mut ink, e, f),
+            ElementKind::Freehand(f) if f.tip == Tip::Chisel => paint_chisel(&mut ink, e, f),
             ElementKind::Freehand(_) => self.paint_sketch(&mut ink, e),
             ElementKind::Text(t) => paint_text(&mut ink, e, t, typesetter, None),
             ElementKind::Math(m) => paint_math(&mut ink, e, m, typesetter),
@@ -126,6 +132,7 @@ impl ElementPainter {
     ) -> Fragment {
         let mut ink = Ink::new(options.theme, e.style.opacity);
         if let ElementKind::Text(t) = &e.kind {
+            crate::marker::paint_text_highlight(&mut ink, e, t, typesetter);
             paint_text(&mut ink, e, t, typesetter, reveal);
         }
         Fragment::new(ink.scene, ink.bounds, None)
@@ -188,6 +195,13 @@ impl Ink {
     pub fn color(&self, c: Color) -> peniko::Color {
         let m = self.theme.map(c);
         peniko::Color::from_rgba8(m.r, m.g, m.b, scale_alpha(m.a, self.opacity))
+    }
+
+    /// The ink of a marker band on this theme, opaque, and the opacity the band layer is drawn with: the marker's own
+    /// (`MARKER_ALPHA`) times the element's.
+    pub fn marker(&self, color: MarkerColor) -> (peniko::Color, f32) {
+        let c = self.theme.marker(color);
+        (peniko::Color::from_rgba8(c.r, c.g, c.b, 255), (MARKER_ALPHA * self.opacity) as f32)
     }
 
     pub fn grow(&mut self, r: Rect) {
@@ -352,30 +366,22 @@ pub(crate) fn cardinality_path(head: Head, tip: Point, dir: Vec2, size: f64) -> 
     p
 }
 
-/// A highlighter: one wide round-capped stroke whose alpha applies to the stroke as a whole, so a self-crossing
-/// stroke does not get darker where it overlaps.
-fn paint_highlighter(ink: &mut Ink, e: &Element, f: &FreehandData) {
-    let width = e.style.stroke_width.max(0.0);
-    let pts: Vec<Point> = f.points.iter().copied().filter(|p| p.x.is_finite() && p.y.is_finite()).collect();
-    let Some((&first, rest)) = pts.split_first() else { return };
+/// A pencil stroke with a chisel tip: the flat nib of a marker swept along the stroke (`drafftink_geom::chisel`). The sweep is
+/// filled opaque inside one layer whose alpha is the colour's alpha, so a stroke that crosses itself does not
+/// get darker where it overlaps.
+fn paint_chisel(ink: &mut Ink, e: &Element, f: &FreehandData) {
+    let Some(nib) = Nib::new(e.style.stroke_width) else { return };
+    let outline = nib.outline(&f.points);
+    if outline.elements().is_empty() {
+        return;
+    }
     let paint = ink.color(e.style.stroke_color);
     let rgba = paint.to_rgba8();
     let opaque = peniko::Color::from_rgba8(rgba.r, rgba.g, rgba.b, 255);
     let alpha = f32::from(rgba.a) / 255.0;
-    let mut path = BezPath::new();
-    path.move_to(first);
-    for p in rest {
-        path.line_to(*p);
-    }
-    let area = path.control_box().inflate(width / 2.0 + 1.0, width / 2.0 + 1.0);
+    let area = outline.control_box().inflate(1.0, 1.0);
     ink.scene.push_layer(Fill::NonZero, Mix::Normal, alpha, Affine::IDENTITY, &area);
-    if pts.len() == 1 {
-        let dot = Circle::new(first, width / 2.0).to_path(0.05);
-        ink.scene.fill(Fill::NonZero, Affine::IDENTITY, opaque, None, &dot);
-    } else {
-        let s = Stroke::new(width.max(0.0)).with_caps(Cap::Round).with_join(Join::Round);
-        ink.scene.stroke(&s, Affine::IDENTITY, opaque, None, &path);
-    }
+    ink.scene.fill(Fill::NonZero, Affine::IDENTITY, opaque, None, &outline);
     ink.scene.pop_layer();
     ink.grow(area);
 }

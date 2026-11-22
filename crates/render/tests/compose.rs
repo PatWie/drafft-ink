@@ -584,6 +584,7 @@ fn fully_set_elements() -> Vec<Element> {
             stroke_style: StrokeStyle::Dashed,
             fill_color: Some(Color::rgb(4, 5, 6)),
             fill_pattern: FillPattern::Hachure,
+            highlight: Some(MarkerColor::Yellow),
             sloppiness: Sloppiness::Cartoonist,
             opacity: 0.8,
             corner_radius: 4.0,
@@ -616,10 +617,17 @@ fn fully_set_elements() -> Vec<Element> {
     freehand.pressures = vec![0.2, 0.5, 0.9];
     freehand.pressure_mode = PressureMode::Device;
     freehand.brush = Brush::Calligraphy;
-    freehand.highlighter = true;
+    freehand.tip = drafftink_scene::Tip::Chisel;
     freehand.closed = true;
     let mut text = TextData::new("hello");
-    text.runs = vec![TextRun { start: 1, end: 3, color: Some(Color::rgb(7, 8, 9)), bold: true, italic: true }];
+    text.runs = vec![TextRun {
+        start: 1,
+        end: 3,
+        color: Some(Color::rgb(7, 8, 9)),
+        bold: true,
+        italic: true,
+        ..Default::default()
+    }];
     text.font = TextStyle {
         family: FontFamily::GelPenSerif,
         size: 22.0,

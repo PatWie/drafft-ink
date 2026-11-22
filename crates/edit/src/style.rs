@@ -25,8 +25,9 @@ use drafftink_scene::limits::{MAX_CORNER_RADIUS, MAX_FONT_SIZE, MAX_STROKE_WIDTH
 use drafftink_scene::palette;
 use drafftink_scene::words::Article;
 use drafftink_scene::{
-    Brush, Color, Element, ElementId, ElementKind, FillPattern, FontFamily, FontWeight, Kind, PressureMode, SceneRead,
-    SceneTx, Sloppiness, StoreError, StrokeStyle, Style, TextAlign, TextStyle, VerticalAlign,
+    Brush, Color, Element, ElementId, ElementKind, FillPattern, FontFamily, FontWeight, Kind, MarkerColor,
+    PressureMode, SceneRead, SceneTx, Sloppiness, SpanHighlight, StoreError, StrokeStyle, Style, TextAlign, TextRun,
+    TextStyle, Tip, VerticalAlign,
 };
 use drafftink_scene::{fill_paints, style_shows};
 
@@ -50,12 +51,14 @@ pub enum Prop {
     StrokeColor,
     FillColor,
     FillPattern,
+    Highlight,
     StrokeWidth,
     StrokeStyle,
     Sloppiness,
     CornerRadius,
     Opacity,
     FreehandStyle,
+    Tip,
     PressureMode,
     FontFamily,
     FontWeight,
@@ -67,16 +70,18 @@ pub enum Prop {
 
 impl Prop {
     /// Every property, in canonical order.
-    pub const ALL: [Prop; 16] = [
+    pub const ALL: [Prop; 18] = [
         Prop::StrokeColor,
         Prop::FillColor,
         Prop::FillPattern,
+        Prop::Highlight,
         Prop::StrokeWidth,
         Prop::StrokeStyle,
         Prop::Sloppiness,
         Prop::CornerRadius,
         Prop::Opacity,
         Prop::FreehandStyle,
+        Prop::Tip,
         Prop::PressureMode,
         Prop::FontFamily,
         Prop::FontWeight,
@@ -92,12 +97,14 @@ impl Prop {
             Prop::StrokeColor => "stroke_color",
             Prop::FillColor => "fill_color",
             Prop::FillPattern => "fill_pattern",
+            Prop::Highlight => "highlight",
             Prop::StrokeWidth => "stroke_width",
             Prop::StrokeStyle => "stroke_style",
             Prop::Sloppiness => "sloppiness",
             Prop::CornerRadius => "corner_radius",
             Prop::Opacity => "opacity",
             Prop::FreehandStyle => "freehand_style",
+            Prop::Tip => "tip",
             Prop::PressureMode => "pressure_mode",
             Prop::FontFamily => "font_family",
             Prop::FontWeight => "font_weight",
@@ -133,12 +140,13 @@ impl Prop {
             Prop::FillColor | Prop::FillPattern => {
                 "rectangles, diamonds, ellipses, frames, freehand strokes and closed lines"
             }
+            Prop::Highlight => "every element except frames (a marker band behind it; text can have it per character)",
             Prop::StrokeWidth => "every element except text and math",
             Prop::StrokeStyle => "rectangles, diamonds, ellipses, frames, images, lines, arrows and freehand strokes",
             Prop::Sloppiness => "rectangles, diamonds, ellipses, frames, lines and arrows",
             Prop::CornerRadius => "rectangles, diamonds, frames, images, lines and arrows",
             Prop::Opacity => "every element",
-            Prop::FreehandStyle | Prop::PressureMode => "freehand strokes",
+            Prop::FreehandStyle | Prop::Tip | Prop::PressureMode => "freehand strokes",
             Prop::FontFamily | Prop::FontWeight | Prop::TextAlign | Prop::LineHeight => {
                 "text, and shapes and arrows that have a label"
             }
@@ -157,13 +165,14 @@ pub fn applies(e: &Element, prop: Prop) -> bool {
     match prop {
         Prop::StrokeColor => true,
         Prop::FillColor | Prop::FillPattern => fillable,
+        Prop::Highlight => k != Kind::Frame,
         Prop::StrokeWidth | Prop::StrokeStyle => !matches!(k, Kind::Text | Kind::Math),
         Prop::Sloppiness => !matches!(k, Kind::Image | Kind::Text | Kind::Math | Kind::Freehand),
         Prop::CornerRadius => {
             matches!(k, Kind::Rectangle | Kind::Diamond | Kind::Line | Kind::Arrow | Kind::Frame | Kind::Image)
         }
         Prop::Opacity => true,
-        Prop::FreehandStyle | Prop::PressureMode => k == Kind::Freehand,
+        Prop::FreehandStyle | Prop::Tip | Prop::PressureMode => k == Kind::Freehand,
         Prop::FontFamily | Prop::FontWeight | Prop::TextAlign | Prop::LineHeight => k == Kind::Text,
         Prop::FontSize => matches!(k, Kind::Text | Kind::Math),
         Prop::VerticalAlign => e.container_id().is_some(),
@@ -288,6 +297,11 @@ pub struct StyleProps {
     /// How the fill is painted: solid, hachure, zigzag, cross_hatch, dots, dashed or zigzag_line.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fill_pattern: Option<FillPattern>,
+    /// The marker band behind the element: yellow, green, pink, blue or orange. `null` removes it. For text this
+    /// is the whole text; a part of a text is highlighted with `text.format`.
+    #[serde(deserialize_with = "double_option", skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<MarkerColor>")]
+    pub highlight: Option<Option<MarkerColor>>,
     /// Outline width in world units, above 0 (presets 1, 2, 4, 8).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stroke_width: Option<f64>,
@@ -306,6 +320,9 @@ pub struct StyleProps {
     /// Freehand brush: normal or calligraphy.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub freehand_style: Option<Brush>,
+    /// Freehand tip: round or chisel.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tip: Option<Tip>,
     /// Freehand pressure: uniform, simulated or device.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pressure_mode: Option<PressureMode>,
@@ -416,12 +433,14 @@ impl StyleProps {
                 self.fill_color.and_then(|c| c.map_or(Some(Value::Null), |c| serde_json::to_value(c).ok()))
             }
             Prop::FillPattern => self.fill_pattern.and_then(|v| serde_json::to_value(v).ok()),
+            Prop::Highlight => self.highlight.map(|h| h.map_or(Value::Null, |m| json!(m.name()))),
             Prop::StrokeWidth => self.stroke_width.map(|v| json!(v)),
             Prop::StrokeStyle => self.stroke_style.and_then(|v| serde_json::to_value(v).ok()),
             Prop::Sloppiness => self.sloppiness.and_then(|v| serde_json::to_value(v).ok()),
             Prop::CornerRadius => self.corner_radius.map(|v| json!(v)),
             Prop::Opacity => self.opacity.map(|v| json!(v)),
             Prop::FreehandStyle => self.freehand_style.and_then(|v| serde_json::to_value(v).ok()),
+            Prop::Tip => self.tip.and_then(|v| serde_json::to_value(v).ok()),
             Prop::PressureMode => self.pressure_mode.and_then(|v| serde_json::to_value(v).ok()),
             Prop::FontFamily => self.font_family.and_then(|v| serde_json::to_value(v).ok()),
             Prop::FontWeight => self.font_weight.and_then(|v| serde_json::to_value(v).ok()),
@@ -467,12 +486,14 @@ impl StyleProps {
             stroke_color: self.stroke_color.filter(|_| keep(Prop::StrokeColor)),
             fill_color: self.fill_color.filter(|_| keep(Prop::FillColor)),
             fill_pattern: self.fill_pattern.filter(|_| keep(Prop::FillPattern)),
+            highlight: self.highlight.filter(|_| keep(Prop::Highlight)),
             stroke_width: self.stroke_width.filter(|_| keep(Prop::StrokeWidth)),
             stroke_style: self.stroke_style.filter(|_| keep(Prop::StrokeStyle)),
             sloppiness: self.sloppiness.filter(|_| keep(Prop::Sloppiness)),
             corner_radius: self.corner_radius.filter(|_| keep(Prop::CornerRadius)),
             opacity: self.opacity.filter(|_| keep(Prop::Opacity)),
             freehand_style: self.freehand_style.filter(|_| keep(Prop::FreehandStyle)),
+            tip: self.tip.filter(|_| keep(Prop::Tip)),
             pressure_mode: self.pressure_mode.filter(|_| keep(Prop::PressureMode)),
             font_family: self.font_family.filter(|_| keep(Prop::FontFamily)),
             font_weight: self.font_weight.filter(|_| keep(Prop::FontWeight)),
@@ -493,6 +514,13 @@ impl StyleProps {
         }
         if let Some(v) = self.fill_pattern {
             e.style.fill_pattern = v;
+        }
+        if let Some(v) = self.highlight {
+            e.style.highlight = v;
+            // A text highlighted as a whole is highlighted all over: what its runs say of their own goes.
+            if let ElementKind::Text(t) = &mut e.kind {
+                clear_run_highlights(&mut t.runs);
+            }
         }
         if let Some(v) = self.stroke_width {
             e.style.stroke_width = v;
@@ -522,6 +550,9 @@ impl StyleProps {
             ElementKind::Freehand(d) => {
                 if let Some(v) = self.freehand_style {
                     d.brush = v;
+                }
+                if let Some(v) = self.tip {
+                    d.tip = v;
                 }
                 if let Some(v) = self.pressure_mode {
                     d.pressure_mode = v;
@@ -557,6 +588,14 @@ impl StyleProps {
     }
 }
 
+/// Takes the highlight of their own away from `runs`, and drops the runs that were only that.
+fn clear_run_highlights(runs: &mut Vec<TextRun>) {
+    for r in runs.iter_mut() {
+        r.highlight = SpanHighlight::Inherit;
+    }
+    runs.retain(|r| !r.style().is_plain());
+}
+
 /// The properties `e` supports, with their current values. A removed fill is `fill_color: Some(None)`.
 pub fn props_of(e: &Element) -> StyleProps {
     let mut p = StyleProps::default();
@@ -569,6 +608,9 @@ pub fn props_of(e: &Element) -> StyleProps {
     }
     if has(Prop::FillPattern) {
         p.fill_pattern = Some(e.style.fill_pattern);
+    }
+    if has(Prop::Highlight) {
+        p.highlight = Some(e.style.highlight);
     }
     if has(Prop::StrokeWidth) {
         p.stroke_width = Some(e.style.stroke_width);
@@ -586,6 +628,7 @@ pub fn props_of(e: &Element) -> StyleProps {
     match &e.kind {
         ElementKind::Freehand(d) => {
             p.freehand_style = Some(d.brush);
+            p.tip = Some(d.tip);
             p.pressure_mode = Some(d.pressure_mode);
         }
         ElementKind::Text(t) => {
@@ -732,6 +775,8 @@ pub struct StyleDefaults {
     pub text: TextStyle,
     /// Brush of new freehand strokes.
     pub brush: Brush,
+    /// Tip of new freehand strokes.
+    pub tip: Tip,
     /// Pressure mode of new freehand strokes.
     pub pressure_mode: PressureMode,
 }
@@ -767,6 +812,9 @@ impl StyleDefaults {
         if let Some(v) = props.freehand_style {
             self.brush = v;
         }
+        if let Some(v) = props.tip {
+            self.tip = v;
+        }
         if let Some(v) = props.pressure_mode {
             self.pressure_mode = v;
         }
@@ -797,12 +845,15 @@ impl StyleDefaults {
             stroke_color: Some(ColorArg(self.style.stroke_color)),
             fill_color: Some(self.style.fill_color.map(ColorArg)),
             fill_pattern: Some(self.style.fill_pattern),
+            // New elements are never highlighted by default, so the defaults have no highlight to report.
+            highlight: None,
             stroke_width: Some(self.style.stroke_width),
             stroke_style: Some(self.style.stroke_style),
             sloppiness: Some(self.style.sloppiness),
             corner_radius: Some(self.style.corner_radius),
             opacity: Some(self.style.opacity),
             freehand_style: Some(self.brush),
+            tip: Some(self.tip),
             pressure_mode: Some(self.pressure_mode),
             font_family: Some(self.text.family),
             font_weight: Some(self.text.weight),

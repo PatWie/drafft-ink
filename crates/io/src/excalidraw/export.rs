@@ -253,8 +253,8 @@ fn element_json(e: &Element, bound: Option<&[Value]>, cx: &mut Cx) -> Value {
             if d.brush != drafftink_scene::Brush::Normal {
                 note.brush = Some(d.brush);
             }
-            if d.highlighter {
-                note.highlighter = Some(true);
+            if d.tip != drafftink_scene::Tip::Round {
+                note.tip = Some(d.tip);
             }
             if d.closed {
                 note.closed = Some(true);

@@ -76,7 +76,7 @@ fn every_kind() -> Document {
         d.pressures = vec![0.1, 0.5, 0.9];
         d.pressure_mode = PressureMode::Device;
         d.brush = Brush::Calligraphy;
-        d.highlighter = true;
+        d.tip = drafftink_scene::Tip::Chisel;
     }
     els.push(free);
 
@@ -84,9 +84,16 @@ fn every_kind() -> Document {
     t.runs = vec![
         TextRun { start: 0, end: 5, color: Some(Color::parse("#ff0000").unwrap()), ..Default::default() },
         TextRun { start: 8, end: 12, color: Some(Color::parse("#0000ff80").unwrap()), ..Default::default() },
-        TextRun { start: 12, end: 15, color: None, bold: true, italic: false },
-        TextRun { start: 15, end: 18, color: Some(Color::parse("#00ff00").unwrap()), bold: true, italic: true },
-        TextRun { start: 19, end: 22, color: None, bold: false, italic: true },
+        TextRun { start: 12, end: 15, color: None, bold: true, italic: false, ..Default::default() },
+        TextRun {
+            start: 15,
+            end: 18,
+            color: Some(Color::parse("#00ff00").unwrap()),
+            bold: true,
+            italic: true,
+            ..Default::default()
+        },
+        TextRun { start: 19, end: 22, color: None, bold: false, italic: true, ..Default::default() },
     ];
     t.font.family = FontFamily::VanillaExtract;
     t.font.size = 28.0;

@@ -6,7 +6,7 @@
 
 use drafftink_scene::{
     Color, Element, ElementKind, FillPattern, FontFamily, FontWeight, FrameData, Head, InlineMath, LinearData,
-    MathData, PathType, PressureMode, Sloppiness, StrokeStyle, TextAlign, TextData,
+    MathData, PathType, PressureMode, Sloppiness, StrokeStyle, TextAlign, TextData, Tip,
 };
 use drafftink_sketch as sketch;
 use drafftink_typeset as typeset;
@@ -86,7 +86,8 @@ fn spans(t: &TextData) -> Vec<typeset::Span> {
     let byte = |char_index: u32| at.get(char_index as usize).copied().unwrap_or(t.content.len());
     t.runs
         .iter()
-        .filter(|run| !run.style().is_plain())
+        // A run that only highlights changes no glyph, so the layout never sees it (and is not made again for it).
+        .filter(|run| run.styles_glyphs())
         .map(|run| typeset::Span {
             range: byte(run.start)..byte(run.end),
             style: typeset::SpanStyle::run(run.color.map(rgba8), run.bold, run.italic),
@@ -195,7 +196,7 @@ fn curve(p: PathType) -> sketch::Curve {
 }
 
 /// The sketch input of an element that is drawn by the sketch generator, or `None` for other kinds (text, math,
-/// image, frame) and for highlighter strokes, which have their own path.
+/// image, frame) and for chisel-tip strokes, which have their own path.
 pub fn sketch_input(e: &Element) -> Option<sketch::SketchInput> {
     let (w, h) = (e.transform.w, e.transform.h);
     let shape = match &e.kind {
@@ -212,7 +213,7 @@ pub fn sketch_input(e: &Element) -> Option<sketch::SketchInput> {
             end: arrowhead(d.end_head),
             head_size: head_size(d, e.style.stroke_width),
         },
-        ElementKind::Freehand(f) if !f.highlighter => {
+        ElementKind::Freehand(f) if f.tip == Tip::Round => {
             // Pressures shape the width unless the stroke is uniform, and only one per point is usable.
             let usable = f.pressure_mode != PressureMode::Uniform && f.pressures.len() == f.points.len();
             let pressures = if usable { f.pressures.clone() } else { Vec::new() };
@@ -270,6 +271,13 @@ fn sane(v: f64) -> f64 {
 /// stroke, arrow heads and text overhang are all included, so an index of [`paint_bounds`] never culls a visible
 /// element.
 pub fn paint_margin(e: &Element) -> Margin {
+    let m = ink_margin(e);
+    let reach = crate::marker::reach(e);
+    Margin { left: m.left + reach, top: m.top + reach, right: m.right + reach, bottom: m.bottom + reach }
+}
+
+/// The margin of the element's own ink, without its highlight band.
+fn ink_margin(e: &Element) -> Margin {
     let t = &e.transform;
     let (w, h) = (sane(t.w), sane(t.h));
     let diag = w.hypot(h);
@@ -295,7 +303,7 @@ pub fn paint_margin(e: &Element) -> Margin {
             Margin::all(m)
         }
         ElementKind::Freehand(f) => {
-            let ink = if f.highlighter { sw } else { sw * 1.2 + 0.2 * sw };
+            let ink = if f.tip == Tip::Chisel { sw } else { sw * 1.2 + 0.2 * sw };
             Margin::all(ink + sketchy + 1.0)
         }
         ElementKind::Text(td) => {

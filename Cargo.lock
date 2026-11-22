@@ -1817,6 +1817,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "serde_path_to_error",
  "sha2 0.10.9",
  "smallvec",
  "smol_str 0.3.7",

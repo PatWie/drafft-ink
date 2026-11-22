@@ -50,8 +50,7 @@ fn open_at(bytes: &[u8], ids: &mut dyn IdSource, measure: &dyn TextMeasure, dept
     let doc = |imported: Imported| Opened::Document { imported, source: format };
     match format {
         Format::Native => {
-            let document = native::load(text()?)?;
-            Ok(doc(Imported { document, report: ImportReport::default() }))
+            Ok(doc(native::load_report(text()?)?))
         }
         Format::LegacyJson => Ok(doc(legacy::migrate_json(text()?, ids, measure)?)),
         Format::LegacyClipboard => Ok(doc(legacy::migrate_clipboard(text()?, ids, measure)?)),

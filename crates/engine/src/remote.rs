@@ -22,9 +22,11 @@
 //!   nothing left to fix. Its writes are on no undo stack. Each pass that writes leaves a second ring entry
 //!   (`remote.repair`, origin `remote`).
 
+use drafftink_scene::unknown::UnknownFields;
 use drafftink_scene::{ChangeKind, ChangeSet, SceneRead};
 use serde_json::json;
 
+use crate::cmd::collab::CollabNotice;
 use crate::refusal::Refusal;
 use crate::ring::{Origin, Outcome, Record};
 use crate::session::Session;
@@ -37,6 +39,10 @@ pub const REMOTE_RING_ID: &str = "remote.apply";
 
 /// The id under which the repair of a merge appears in the ring, after the batch it repaired.
 pub const REPAIR_RING_ID: &str = "remote.repair";
+
+/// Whether the person was told about fields of a newer build in this tab's document.
+#[derive(Debug, Default)]
+struct NewerFieldsTold(bool);
 
 impl Session {
     /// Applies a Loro update or snapshot received for `tab`. Returns what changed in the scene.
@@ -99,6 +105,7 @@ impl Session {
         if cs.is_empty() {
             return;
         }
+        self.warn_of_newer_fields(tab);
         let Some(t) = self.tab_by_id_mut(tab) else { return };
         let gone: Vec<_> = cs
             .elements
@@ -120,6 +127,19 @@ impl Session {
         }
         self.cancel_gesture_on_removed(tab, &gone);
         self.mark_dirty(Redraw::Scene);
+    }
+
+    /// Tells the person, once per document, that a collaborator's build wrote fields this build does not know
+    /// (`UnknownFields::WARNING`). The elements are shown without them, and what this build edits keeps them.
+    fn warn_of_newer_fields(&mut self, tab: TabId) {
+        let Some(t) = self.tab_by_id_mut(tab) else { return };
+        if t.doc.replicated().newer_element_count() == 0 {
+            return;
+        }
+        let told = t.ext.with::<NewerFieldsTold, _>(|n| std::mem::replace(&mut n.0, true));
+        if !told {
+            self.collab_notify(CollabNotice::Info(UnknownFields::WARNING.to_owned()));
+        }
     }
 
     /// Takes a change set the collab client already imported into the replicated store: copies it into the

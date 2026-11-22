@@ -108,7 +108,8 @@ fn the_head_picker_opens_over_the_canvas_with_a_picture_in_every_cell() {
 }
 
 /// Where the corner radius button of the strip is, with a rectangle selected, in the same window.
-const RADIUS_BUTTON: Pos2 = Pos2::new(641.0, 19.0);
+/// The highlight button at the end of the stroke style row moved it 24 points to the right.
+const RADIUS_BUTTON: Pos2 = Pos2::new(665.0, 19.0);
 
 #[test]
 fn the_corner_radius_menu_opens_under_its_button_with_the_slider_and_the_value() {

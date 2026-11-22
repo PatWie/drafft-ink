@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::hash::{DefaultHasher, Hash, Hasher};
 
 use drafftink_engine::spec::{CommandSpec, Host, Scope, TextGate};
-use drafftink_engine::state::Tool;
+use drafftink_engine::state::{MarkerColor, Tool};
 use drafftink_engine::{Refusal, Session};
 use drafftink_scene::paint::PaintMode;
 use drafftink_scene::{Color, SceneRead};
@@ -185,6 +185,18 @@ pub struct TextFaces {
     pub bold: Option<bool>,
     /// The text is italic.
     pub italic: Option<bool>,
+}
+
+/// The highlight of what the highlight button acts on, as it shows it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MarkerState {
+    /// Not highlighted.
+    #[default]
+    Off,
+    /// All of it is highlighted with this marker.
+    On(drafftink_scene::MarkerColor),
+    /// Some of it, or with different markers.
+    Mixed,
 }
 
 /// The brush of the paint editor: what the session paints with (`image.paint_brush`).
@@ -550,11 +562,16 @@ pub struct Model {
     pub paint_editing: bool,
     /// The brush of the paint editor.
     pub brush: BrushView,
+    /// The colour of the highlighter tool; `None` is "none" (the tool removes highlights).
+    pub tool_marker: Option<MarkerColor>,
     /// Bold and italic of the selected texts and labels, from the document; `None` when none is selected.
     pub text_faces: Option<TextFaces>,
     /// Bold and italic at the selection of the text editor while one runs. The editor owns the text then, so these
     /// win over [`Model::text_faces`]. Set by the app.
     pub editor_faces: Option<TextFaces>,
+    /// The highlight at the selection of the text editor while one runs; it wins over the highlight of the
+    /// element that `style.get` reports. Set by the app.
+    pub editor_highlight: Option<MarkerState>,
     /// The common bounds of the selection; `None` when nothing is selected.
     pub selection_bounds: Option<BoundsView>,
     /// The link of the selected element, when exactly one is selected and it has a link.
@@ -626,8 +643,10 @@ impl Default for Model {
             crop_editing: false,
             paint_editing: false,
             brush: BrushView::default(),
+            tool_marker: None,
             text_faces: None,
             editor_faces: None,
+            editor_highlight: None,
             selection_bounds: None,
             selection_link: None,
             selection: Vec::new(),
@@ -689,6 +708,7 @@ impl Model {
         t.observed.crop_editor.as_ref().map(|id| id.as_str().to_owned()).hash(&mut h);
         t.observed.paint_editor.as_ref().map(|id| id.as_str().to_owned()).hash(&mut h);
         format!("{:?}", s.tool.paint_brush).hash(&mut h);
+        s.tool.marker.hash(&mut h);
         (s.tool.active.name(), s.tool.lock, s.tool.temporary.map(Tool::name)).hash(&mut h);
         format!("{:?}", s.tool.style_defaults).hash(&mut h);
         s.view_only.hash(&mut h);
@@ -805,6 +825,7 @@ impl Model {
             opacity: brush.opacity,
             mode: brush.mode,
         };
+        self.tool_marker = s.tool.marker;
         self.zoom_percent = t.view.percent();
         self.background = t.doc.store().meta().background.to_hex();
         self.history = HistoryView { undo_label: t.doc.undo_label(), redo_label: t.doc.redo_label() };
@@ -849,6 +870,24 @@ impl Model {
     /// texts. `None` when there is no text to format.
     pub fn faces(&self) -> Option<TextFaces> {
         self.editor_faces.or(self.text_faces)
+    }
+
+    /// The highlight the button shows: the editor's selection while a text edit runs, else what `style.get` says of
+    /// the selection. `None` when the selection cannot be highlighted.
+    pub fn marker(&self) -> Option<MarkerState> {
+        if let Some(editor) = self.editor_highlight {
+            return Some(editor);
+        }
+        let prop = self.style.prop("highlight").filter(|p| p.applicable)?;
+        Some(if prop.is_mixed() {
+            MarkerState::Mixed
+        } else {
+            prop.value
+                .as_ref()
+                .and_then(Value::as_str)
+                .and_then(drafftink_scene::MarkerColor::from_name)
+                .map_or(MarkerState::Off, MarkerState::On)
+        })
     }
 
     /// The command with this id.

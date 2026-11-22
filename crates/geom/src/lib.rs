@@ -16,6 +16,7 @@
 //! - The primitive shapes ([`RectShape`], [`EllipseShape`], [`DiamondShape`], [`Polyline`], [`PathShape`]) and the
 //!   [`Outline`] queries (bounds, containment, distance, closest point, ray and segment intersection,
 //!   hit tests) are at the crate root.
+//! - [`chisel`]: the flat nib of a highlighter and the outline of the stroke it sweeps.
 //! - [`binding`]: headings, fixed points and outline helpers used by arrow binding and elbow routing.
 //! - [`SpatialIndex`]: an R-tree keyed by id.
 //! - [`snap`], [`guides`]: grid, angle and smart-guide snapping math.
@@ -33,6 +34,7 @@ pub use kurbo;
 pub mod aabb;
 pub mod align;
 pub mod binding;
+pub mod chisel;
 pub mod guides;
 pub mod hash;
 mod index;

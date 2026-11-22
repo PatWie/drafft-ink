@@ -503,6 +503,8 @@ pub enum RibbonMenu {
     EndHead,
     /// The corner radius slider of a shape's corners.
     CornerRadius,
+    /// The marker colours of the highlight button (and "none").
+    Highlight,
 }
 
 /// A ribbon menu that is open, and where its button is.
@@ -548,6 +550,9 @@ pub struct UiState {
     pub font_picker_open: bool,
     /// The menu of a ribbon control, when open.
     pub ribbon_menu: Option<OpenRibbonMenu>,
+    /// The marker colour the highlight button puts on when it is clicked: the last one the selection showed or the
+    /// person picked. `None` until there was one, which reads as yellow.
+    pub last_marker: Option<drafftink_scene::MarkerColor>,
     /// The search box is open.
     pub search_open: bool,
     /// What the last search found, while the search box is open.

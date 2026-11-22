@@ -1880,3 +1880,22 @@ fn hostile_arguments_never_break_a_doc_or_library_command_that_has_every_port() 
         }
     }
 }
+
+#[test]
+fn a_file_from_a_newer_build_opens_without_its_new_fields_and_says_so() {
+    let (mut a, _) = drawn(1);
+    let mut doc: Value = serde_json::from_slice(&native(&mut a)).unwrap();
+    doc["elements"][0]["style"]["glow"] = json!(3);
+    doc["elements"][0]["style"]["highlight"] = json!("blue");
+    doc["future_top"] = json!(true);
+    let (mut b, _) = testing::session();
+    let out = open_inline(&mut b, doc.to_string().as_bytes(), json!({})).unwrap();
+    let warnings: Vec<&str> = out["warnings"].as_array().unwrap().iter().filter_map(Value::as_str).collect();
+    assert!(warnings.contains(&drafftink_scene::unknown::UnknownFields::WARNING), "{warnings:?}");
+    let shown = b.store().iter().next().unwrap().clone();
+    assert_eq!(shown.style.highlight, Some(drafftink_scene::MarkerColor::Blue), "what is known is kept");
+    // A file this build writes has no such warning.
+    let (mut c, _) = testing::session();
+    let own = open_inline(&mut c, &native(&mut a), json!({})).unwrap();
+    assert!(own["warnings"].as_array().is_none_or(|w| w.is_empty()), "{own}");
+}

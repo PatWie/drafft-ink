@@ -30,12 +30,13 @@ fn style(h: &mut Hash128, s: &Style) {
         stroke_style,
         fill_color,
         fill_pattern,
+        highlight,
         sloppiness,
         opacity,
         corner_radius,
         seed,
     } = s;
-    (stroke_color, Bits(*stroke_width), stroke_style, fill_color, fill_pattern, sloppiness).hash(h);
+    (stroke_color, Bits(*stroke_width), stroke_style, fill_color, fill_pattern, highlight, sloppiness).hash(h);
     (Bits(*opacity), Bits(*corner_radius), seed).hash(h);
 }
 
@@ -58,13 +59,13 @@ fn linear(h: &mut Hash128, d: &LinearData) {
 }
 
 fn freehand(h: &mut Hash128, f: &FreehandData) {
-    let FreehandData { points: pts, pressures, pressure_mode, brush, highlighter, closed } = f;
+    let FreehandData { points: pts, pressures, pressure_mode, brush, tip, closed } = f;
     points(h, pts);
     pressures.len().hash(h);
     for v in pressures {
         Bits(*v).hash(h);
     }
-    (pressure_mode, brush, highlighter, closed).hash(h);
+    (pressure_mode, brush, tip, closed).hash(h);
 }
 
 fn text(h: &mut Hash128, d: &TextData) {
@@ -79,8 +80,8 @@ fn text(h: &mut Hash128, d: &TextData) {
     content.hash(h);
     container_id.is_some().hash(h);
     runs.len().hash(h);
-    for TextRun { start, end, color, bold, italic } in runs {
-        (start, end, color, bold, italic).hash(h);
+    for TextRun { start, end, color, bold, italic, highlight } in runs {
+        (start, end, color, bold, italic, highlight).hash(h);
     }
     let TextStyle { family, size, weight, align, vertical_align, line_height, inline_math } = font;
     (family, Bits(*size), weight, align, vertical_align, Bits(*line_height), auto_resize, inline_math).hash(h);

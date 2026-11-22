@@ -8,7 +8,7 @@ use drafftink_io::svg::MathSvg;
 use drafftink_io::typeset_measure::{element_text_spec, font_wrapped_lines, math_layout_with};
 use drafftink_io::{MathBox, TextMeasure as IoMeasure, TypesetterHandle, TypesetterMeasure};
 use drafftink_scene as scene;
-use drafftink_typeset::{MathError, MathLayout, Rgba8, TypesetStats, Typesetter};
+use drafftink_typeset::{MathError, MathLayout, Rgba8, TextLayout, TypesetStats, Typesetter};
 
 use super::Measure;
 
@@ -171,5 +171,10 @@ impl Measure for TypesetMeasure {
 
     fn stats(&self) -> Option<TypesetStats> {
         Some(self.ts.with(|t| t.stats()))
+    }
+
+    fn text_layout(&self, text: &scene::TextData, box_width: f64) -> Option<Arc<TextLayout>> {
+        let spec = element_text_spec(text, Rgba8::BLACK, box_width);
+        Some(self.ts.with(|t| t.text(&spec)))
     }
 }

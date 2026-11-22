@@ -1,4 +1,4 @@
-//! Text content and per-character style runs (colour, bold, italic) in a `LoroText`.
+//! Text content and per-character style runs (colour, bold, italic, highlight) in a `LoroText`.
 //!
 //! The content is the text itself, so two people typing in one text element merge character by character. A run
 //! is made of Loro marks on the characters it covers (`color` = `#rrggbb[aa]`, `bold` and `italic` = true), so runs
@@ -9,7 +9,7 @@
 //! non-empty, adjacent runs of the same style merged, and plain runs dropped (no colour, regular, upright is the
 //! same as no run).
 
-use drafftink_scene::{CharStyle, Color, TextRun};
+use drafftink_scene::{CharStyle, Color, SpanHighlight, TextRun};
 use loro::{ExpandType, LoroDoc, LoroText, LoroValue, StyleConfig, StyleConfigMap};
 
 use crate::error::DocError;
@@ -21,8 +21,11 @@ pub(crate) const BOLD_MARK: &str = "bold";
 /// Name of the mark of an italic run.
 pub(crate) const ITALIC_MARK: &str = "italic";
 
+/// Name of the mark of a highlighted run. Its value is the marker name (`yellow`) or `none`.
+pub(crate) const HIGHLIGHT_MARK: &str = "highlight";
+
 /// Every mark a run can carry.
-const MARKS: [&str; 3] = [COLOR_MARK, BOLD_MARK, ITALIC_MARK];
+const MARKS: [&str; 4] = [COLOR_MARK, BOLD_MARK, ITALIC_MARK, HIGHLIGHT_MARK];
 
 /// Tells the document how colour marks behave at their edges. Marks are not extended by typing next to them, so a
 /// character typed after a red word is not red (the editor decides what typed text looks like). Must be called on every `LoroDoc` the store creates (it is not
@@ -69,7 +72,11 @@ pub(crate) fn read_runs(text: &LoroText) -> Vec<TextRun> {
             _ => None,
         };
         let flag = |mark: &str| matches!(attrs.and_then(|a| a.get(mark)), Some(LoroValue::Bool(true)));
-        let style = CharStyle { color, bold: flag(BOLD_MARK), italic: flag(ITALIC_MARK) };
+        let highlight = match attrs.and_then(|a| a.get(HIGHLIGHT_MARK)) {
+            Some(LoroValue::String(h)) => SpanHighlight::from_name(h).unwrap_or_default(),
+            _ => SpanHighlight::Inherit,
+        };
+        let style = CharStyle { color, bold: flag(BOLD_MARK), italic: flag(ITALIC_MARK), highlight };
         let end = pos.saturating_add(n);
         if !style.is_plain() {
             match runs.last_mut() {
@@ -129,6 +136,9 @@ pub(crate) fn write_text(text: &LoroText, content: &str, runs: &[TextRun]) -> Re
             }
             if r.italic {
                 text.mark(s..e, ITALIC_MARK, true)?;
+            }
+            if let Some(name) = r.highlight.name() {
+                text.mark(s..e, HIGHLIGHT_MARK, name)?;
             }
         }
     }

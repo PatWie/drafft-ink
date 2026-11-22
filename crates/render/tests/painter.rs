@@ -198,11 +198,11 @@ fn a_short_arrow_keeps_its_paint_bounds_around_the_shrunk_head() {
 }
 
 #[test]
-fn a_highlighter_is_one_layer_with_the_alpha_on_the_layer() {
+fn a_chisel_stroke_is_one_layer_with_the_alpha_on_the_layer() {
     let mut rng = Rng(1);
     let mut e = freehand_el("h", &ZIndex::first(), 0.0, 0.0, 20, &mut rng, false);
     if let ElementKind::Freehand(d) = &mut e.kind {
-        d.highlighter = true;
+        d.tip = drafftink_scene::Tip::Chisel;
     }
     e.style.stroke_width = 14.0;
     e.style.stroke_color = Color::rgba(255, 230, 0, 128);
@@ -210,7 +210,57 @@ fn a_highlighter_is_one_layer_with_the_alpha_on_the_layer() {
     assert_eq!(n_draws(&f, DrawTag::BEGIN_CLIP), 1);
     // The stroke itself is opaque; a self-crossing highlighter does not darken.
     assert_eq!(colors(&f), [packed(PColor::from_rgba8(255, 230, 0, 255))]);
-    assert!(f.bounds.height() >= 14.0);
+    let ElementKind::Freehand(d) = &e.kind else { panic!("a freehand") };
+    let swept = drafftink_geom::chisel::Nib::new(14.0).expect("a nib").outline(&d.points).control_box();
+    assert!(f.bounds.contains_rect(swept), "the paint bounds hold the whole sweep: {:?} vs {swept:?}", f.bounds);
+}
+
+#[test]
+fn a_highlight_band_under_a_chisel_stroke_follows_its_points_and_holds_the_whole_nib() {
+    use drafftink_geom::chisel::Nib;
+    let width = 14.0;
+    let mut e = freehand_el("hc", &ZIndex::first(), 0.0, 0.0, 2, &mut Rng(1), false);
+    e.style.stroke_width = width;
+    let points = vec![kurbo::Point::new(0.0, 0.0), kurbo::Point::new(100.0, 40.0)];
+    if let ElementKind::Freehand(d) = &mut e.kind {
+        d.tip = drafftink_scene::Tip::Chisel;
+        d.points = points.clone();
+    }
+    let plain = paint(&e);
+    e.style.highlight = Some(MarkerColor::Yellow);
+    let banded = paint(&e);
+    let nib = Nib::new(width).expect("a nib");
+    let sweep = nib.outline(&points).control_box();
+    assert!(banded.bounds.contains_rect(sweep), "the band's fragment holds the nib's sweep");
+    assert!(banded.bounds.contains_rect(plain.bounds), "and what the stroke alone covers");
+    // The band is `band_width(width)` wide across the points: more than the widest the nib can be, so the nib
+    // lies inside the band all along the stroke.
+    assert!(band_width(width) / 2.0 > nib.reach(), "{} vs {}", band_width(width) / 2.0, nib.reach());
+    assert!(banded.bounds.height() > plain.bounds.height() + 2.0 * (band_width(width) / 2.0 - nib.reach()) - 2.0);
+}
+
+#[test]
+fn a_chisel_stroke_is_the_swept_nib_with_flat_ends_and_not_a_round_line() {
+    use drafftink_geom::chisel::Nib;
+    let mut e = freehand_el("c", &ZIndex::first(), 0.0, 0.0, 2, &mut Rng(1), false);
+    let width = 20.0;
+    e.style.stroke_width = width;
+    if let ElementKind::Freehand(d) = &mut e.kind {
+        d.tip = drafftink_scene::Tip::Chisel;
+        d.points = vec![kurbo::Point::new(0.0, 0.0), kurbo::Point::new(100.0, 0.0)];
+    }
+    let f = paint(&e);
+    // Left of the first point and right of the last one the mark reaches only as far as the nib does: a round cap
+    // would reach `width / 2`, the nib reaches its horizontal half-extent.
+    let nib = Nib::new(width).expect("a nib");
+    let half_w = (nib.width_moving_along(kurbo::Vec2::new(0.0, 1.0)).expect("a direction")) / 2.0;
+    assert!(half_w > width / 2.0 * 0.9, "the nib is wider across the page than a round cap would be tall");
+    let b = f.bounds;
+    assert!(b.x0 <= -half_w + 1.0 && b.x0 >= -half_w - 2.0, "{b:?}");
+    assert!(b.x1 >= 100.0 + half_w - 1.0 && b.x1 <= 100.0 + half_w + 2.0, "{b:?}");
+    // And it is a fill of straight pieces, not a stroked path: the geometry has no curve segments.
+    let again = paint(&e);
+    assert_eq!(geometry(&f), geometry(&again), "the same stroke gives the same outline");
 }
 
 #[test]
@@ -336,7 +386,14 @@ fn bold_and_italic_runs_change_the_glyphs_the_width_and_the_cache_key() {
     let (same_width, _) = widths(&e, vec![TextRun { start: 6, end: 10, ..Default::default() }]);
     assert_eq!(same_width, plain.bounds.width());
     if let ElementKind::Text(t) = &mut e.kind {
-        t.runs = vec![TextRun { start: 0, end: 5, color: Some(Color::rgb(255, 0, 0)), bold: true, italic: false }];
+        t.runs = vec![TextRun {
+            start: 0,
+            end: 5,
+            color: Some(Color::rgb(255, 0, 0)),
+            bold: true,
+            italic: false,
+            ..Default::default()
+        }];
     }
     let red_bold = paint(&e);
     assert!(colors(&red_bold).contains(&packed(PColor::from_rgba8(255, 0, 0, 255))), "colour and bold together");

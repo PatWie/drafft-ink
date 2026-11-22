@@ -751,7 +751,10 @@ fn the_result_carries_bold_and_italic_in_characters() {
     r.ed.set_face(Face::Italic, true);
     r.ed.set_color(Some(RED));
     let done = r.ed.finish();
-    assert_eq!(done.runs, vec![TextRun { start: 1, end: 3, color: Some(RED), bold: true, italic: true }]);
+    assert_eq!(
+        done.runs,
+        vec![TextRun { start: 1, end: 3, color: Some(RED), bold: true, italic: true, ..Default::default() }]
+    );
     // And the same runs open again.
     let again = Editor::new("aé€b", &done.runs, InlineMath::Auto);
     assert_eq!(bold(&again), vec![1..6]);
@@ -774,4 +777,40 @@ fn a_composition_takes_the_chosen_face_and_blocks_toggling() {
     plain.ed.preedit("ni", None);
     let regular_width = layout(&mut plain.ts, &plain.ed.shown()).size.width;
     assert!(bold_width > regular_width, "{bold_width} vs {regular_width}");
+}
+
+#[test]
+fn highlighting_a_selection_only_marks_that_range_and_is_reported_in_characters() {
+    use drafftink_scene::{MarkerColor, SpanHighlight};
+    let mut m = Rig::new("héllo wörld");
+    assert_eq!(m.ed.highlight_state(None), Some(None));
+    m.ed.select_chars(6..11);
+    assert!(m.ed.set_highlight(Some(MarkerColor::Yellow)));
+    assert_eq!(m.ed.highlight_state(None), Some(Some(MarkerColor::Yellow)));
+    assert!(!m.ed.set_highlight(Some(MarkerColor::Yellow)), "the same again changes nothing");
+    let runs = m.ed.finish().runs;
+    assert_eq!(runs.len(), 1);
+    assert_eq!((runs[0].start, runs[0].end, runs[0].highlight), (6, 11, SpanHighlight::On(MarkerColor::Yellow)));
+    // The whole text reads as mixed, and as yellow once the text itself is yellow.
+    m.ed.select_chars(0..11);
+    assert_eq!(m.ed.highlight_state(None), None);
+    assert_eq!(
+        m.ed.highlight_state(Some(MarkerColor::Yellow)),
+        Some(Some(MarkerColor::Yellow)),
+        "the first word follows the yellow text, the second says yellow itself"
+    );
+    m.ed.select_chars(6..11);
+    assert!(m.ed.set_highlight(None));
+    assert_eq!(m.ed.highlight_state(None), Some(None));
+}
+
+#[test]
+fn a_highlight_with_a_caret_is_what_is_typed_next() {
+    use drafftink_scene::MarkerColor;
+    let mut m = Rig::new("ab");
+    m.ed.select_chars(2..2);
+    assert!(m.ed.set_highlight(Some(MarkerColor::Pink)));
+    m.ed.insert("cd");
+    let runs = m.ed.finish().runs;
+    assert_eq!((runs[0].start, runs[0].end), (2, 4));
 }

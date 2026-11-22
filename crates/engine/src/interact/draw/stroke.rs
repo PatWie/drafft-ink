@@ -1,13 +1,20 @@
-//! Freehand and highlighter strokes (E7).
+//! Pencil strokes (E7).
+//!
+//! With Shift held the stroke goes straight from where it was when Shift went down to the pointer, turned to the
+//! angle step of the lock (15 degrees unless `snap.angle_step` says otherwise), with the polar rays of the lock
+//! shown as for a line. Releasing Shift in mid-drag keeps that segment as drawn and the pencil carries on freehand
+//! from its end. Pressing Shift again starts the next straight segment there.
+
+use std::borrow::Cow;
 
 use drafftink_edit::brush::{StrokeSample, StrokeSampler};
 use drafftink_geom::kurbo::Point;
 use serde_json::json;
 
 use super::preview;
+use super::snap::{self, SnapMarks, Snaps};
 use crate::interact::ctx::Ctx;
 use crate::interact::events::Ev;
-use crate::state::Tool;
 
 /// Samples closer than this to the last one (in screen pixels) are skipped.
 const MIN_SPACING_PX: f64 = 0.5;
@@ -16,33 +23,85 @@ const MAX_SAMPLES: usize = 10_000;
 /// The tolerance of the simplification at the end (`docs/exceptions.md` E7).
 const SIMPLIFY: f64 = 2.0;
 
+/// The straight segment of a stroke while Shift is held.
+#[derive(Debug, Clone, Copy)]
+struct Straight {
+    /// Where the segment starts: the last point of the stroke when Shift went down.
+    anchor: Point,
+    /// Where it ends now: the pointer, turned to the angle lock about `anchor`.
+    end: Point,
+}
+
 /// The samples of a stroke being drawn.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub(super) struct Stroke {
     points: Vec<Point>,
     /// One pressure per point: the pen's, or simulated from the speed. Empty for a mouse or a finger
     /// with the uniform mode.
     pressures: Vec<f64>,
-    highlighter: bool,
+    /// Shift is held: the stroke runs straight from the last point to the pointer.
+    straight: Option<Straight>,
     /// Brush and pressure model of this stroke. It starts with the first sample, which brings the time.
     sampler: Option<StrokeSampler>,
 }
 
 impl Stroke {
-    pub(super) fn start(tool: Tool) -> Self {
-        Self { points: Vec::new(), pressures: Vec::new(), highlighter: tool == Tool::Highlighter, sampler: None }
-    }
-
     /// Adds the sample at the pointer (and the press position for the first one).
     ///
     /// The brush and the pressure mode of the session shape the sample here, while it is drawn, as in the old
     /// app: the stored stroke holds the result (`edit::brush`).
     pub(super) fn update(&mut self, cx: &mut Ctx<'_>, ev: &Ev<'_>) {
-        let mut changed = self.begin(cx, ev);
-        changed |= self.add(cx.px(MIN_SPACING_PX), ev);
+        let changed = self.begin(cx, ev) | self.follow(cx, ev);
         if changed {
-            preview::set(cx, preview::stroke(cx, &self.points, &self.pressures, self.highlighter));
+            let (points, pressures) = self.shown();
+            preview::set(cx, preview::stroke(cx, &points, &pressures));
         }
+    }
+
+    /// Takes the pointer into the stroke: the end of the straight segment while Shift is held, else a freehand
+    /// sample (after the segment that Shift left behind). True when the stroke changed.
+    fn follow(&mut self, cx: &mut Ctx<'_>, ev: &Ev<'_>) -> bool {
+        if cx.mods.shift {
+            return self.straighten(cx, ev);
+        }
+        let settled = self.settle(cx);
+        settled | self.add(cx.px(MIN_SPACING_PX), ev)
+    }
+
+    /// Runs the straight segment to the pointer, turned to the angle lock about its anchor. True when it moved.
+    fn straighten(&mut self, cx: &mut Ctx<'_>, ev: &Ev<'_>) -> bool {
+        let Some(anchor) = self.straight.map(|s| s.anchor).or_else(|| self.points.last().copied()) else {
+            return false;
+        };
+        let placed = snap::place(cx, ev.at.world, Some(anchor), Snaps::angle_only());
+        let end = placed.point;
+        let moved = self.straight.is_none_or(|s| s.end != end);
+        self.straight = Some(Straight { anchor, end });
+        preview::set_marks(cx, placed.marks);
+        moved
+    }
+
+    /// Keeps the straight segment as part of the stroke and takes back the rays. True when there was one.
+    fn settle(&mut self, cx: &mut Ctx<'_>) -> bool {
+        let Some(Straight { end, .. }) = self.straight.take() else { return false };
+        preview::set_marks(cx, SnapMarks::default());
+        let pressure = self.pressures.last().copied();
+        self.push_spaced(cx.px(MIN_SPACING_PX), end, pressure);
+        true
+    }
+
+    /// The points and pressures to show: the stroke so far, and the straight segment to its end.
+    fn shown(&self) -> (Cow<'_, [Point]>, Cow<'_, [f64]>) {
+        let Some(Straight { end, .. }) = self.straight else {
+            return (Cow::Borrowed(&self.points), Cow::Borrowed(&self.pressures));
+        };
+        let mut points = self.points.clone();
+        points.push(end);
+        let mut pressures = self.pressures.clone();
+        if let Some(last) = pressures.last().copied() {
+            pressures.push(last);
+        }
+        (Cow::Owned(points), Cow::Owned(pressures))
     }
 
     /// The first point of the stroke: the press position, with what the pen did at the press. The drag start carries
@@ -103,20 +162,22 @@ impl Stroke {
         true
     }
 
-    /// The pointer was released: one `element.create`.
+    /// The pointer was released: one `element.create`. A straight segment that Shift still holds is part of it.
     pub(super) fn finish(mut self, cx: &mut Ctx<'_>, ev: &Ev<'_>) {
-        self.add(cx.px(MIN_SPACING_PX), ev);
-        create(cx, &self.points, &self.pressures, self.highlighter);
+        self.begin(cx, ev);
+        self.follow(cx, ev);
+        self.settle(cx);
+        create(cx, &self.points, &self.pressures);
     }
 }
 
 /// A click without a drag makes a dot.
 pub(super) fn dot(cx: &mut Ctx<'_>, ev: &Ev<'_>) {
     let pressures: Vec<f64> = ev.pen_pressure().into_iter().collect();
-    create(cx, &[ev.at.world], &pressures, cx.tool() == Tool::Highlighter);
+    create(cx, &[ev.at.world], &pressures);
 }
 
-fn create(cx: &mut Ctx<'_>, points: &[Point], pressures: &[f64], highlighter: bool) {
+fn create(cx: &mut Ctx<'_>, points: &[Point], pressures: &[f64]) {
     if points.is_empty() {
         return;
     }
@@ -124,7 +185,6 @@ fn create(cx: &mut Ctx<'_>, points: &[Point], pressures: &[f64], highlighter: bo
     let mut args = json!({
         "kind": "freehand",
         "points": pts,
-        "highlighter": highlighter,
         "simplify": SIMPLIFY,
         "from_tool": true,
     });
@@ -140,7 +200,7 @@ mod tests {
 
     #[test]
     fn samples_closer_than_the_gap_are_skipped() {
-        let mut s = Stroke::start(Tool::Freehand);
+        let mut s = Stroke::default();
         assert!(s.push_spaced(1.0, Point::new(0.0, 0.0), None));
         assert!(!s.push_spaced(1.0, Point::new(0.4, 0.0), None));
         assert!(s.push_spaced(1.0, Point::new(2.0, 0.0), None));
@@ -149,7 +209,7 @@ mod tests {
 
     #[test]
     fn a_runaway_pen_cannot_grow_the_buffer_past_the_cap() {
-        let mut s = Stroke::start(Tool::Freehand);
+        let mut s = Stroke::default();
         for i in 0..(MAX_SAMPLES * 3) {
             s.push_spaced(0.1, Point::new(i as f64, 0.0), Some(0.5));
         }

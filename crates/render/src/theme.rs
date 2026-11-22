@@ -5,7 +5,7 @@
 //! canvas becomes `#121212`, black ink becomes a light grey, and hues keep their meaning. Alpha is untouched.
 //! The mapping itself is `Color::for_dark_theme` (drafftink-scene), which the SVG export shares.
 
-use drafftink_scene::Color;
+use drafftink_scene::{Color, MarkerColor, Tone};
 
 /// Which palette elements are drawn with.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
@@ -24,6 +24,15 @@ impl Theme {
             Theme::Light => c,
             Theme::Dark => c.for_dark_theme(),
         }
+    }
+
+    /// The ink of a marker on this canvas. Markers have a value of their own for each theme; the dark filter that
+    /// maps stored colours would turn a pale yellow into olive.
+    pub fn marker(self, color: MarkerColor) -> Color {
+        color.rgb(match self {
+            Theme::Light => Tone::Light,
+            Theme::Dark => Tone::Dark,
+        })
     }
 
     /// Index for per-theme tables.

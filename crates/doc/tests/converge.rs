@@ -316,13 +316,23 @@ fn bold_and_italic_runs_follow_their_characters_and_merge_when_two_people_style_
     });
     edit(&mut b, "t", |e| {
         if let ElementKind::Text(t) = &mut e.kind {
-            t.runs = vec![TextRun { start: 7, end: 10, color: Some(red()), bold: true, italic: false }];
+            t.runs = vec![TextRun {
+                start: 7,
+                end: 10,
+                color: Some(red()),
+                bold: true,
+                italic: false,
+                ..Default::default()
+            }];
         }
     });
     sync(&mut a, &mut b);
     assert_same(&a, &b);
     let merged = a.get(&eid("t")).unwrap().text_data().unwrap().runs.clone();
-    assert_eq!(merged, vec![TextRun { start: 7, end: 10, color: Some(red()), bold: true, italic: true }]);
+    assert_eq!(
+        merged,
+        vec![TextRun { start: 7, end: 10, color: Some(red()), bold: true, italic: true, ..Default::default() }]
+    );
     assert_view_matches_loro(&a);
 }
 

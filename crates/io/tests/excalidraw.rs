@@ -935,7 +935,7 @@ fn native_documents_survive_a_trip_through_excalidraw() {
     fh.pressures = vec![0.1, 0.5, 0.9];
     fh.pressure_mode = PressureMode::Device;
     fh.brush = Brush::Calligraphy;
-    fh.highlighter = true;
+    fh.tip = drafftink_scene::Tip::Chisel;
     fh.closed = true;
     base_element(&mut doc, ElementKind::Freehand(fh), 500.0, 200.0, 20.0, 5.0);
     // Text: serif light, per-character runs, a label for the rectangle; another for the arrow.
@@ -946,7 +946,7 @@ fn native_documents_survive_a_trip_through_excalidraw() {
     t.runs = vec![
         TextRun { start: 0, end: 3, color: Some(Color::rgb(255, 0, 0)), ..Default::default() },
         TextRun { start: 5, end: 6, color: None, ..Default::default() },
-        TextRun { start: 6, end: 8, color: None, bold: true, italic: true },
+        TextRun { start: 6, end: 8, color: None, bold: true, italic: true, ..Default::default() },
         TextRun { start: 8, end: 11, italic: true, ..Default::default() },
     ];
     t.container_id = Some(doc.elements[rect].id.clone());

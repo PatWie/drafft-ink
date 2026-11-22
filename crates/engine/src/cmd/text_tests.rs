@@ -220,7 +220,7 @@ fn format_makes_a_range_bold_and_italic_and_keeps_the_colours() {
         runs_of(&s, &t),
         vec![
             TextRun { start: 0, end: 3, color: red, ..Default::default() },
-            TextRun { start: 3, end: 5, color: red, bold: true, italic: false },
+            TextRun { start: 3, end: 5, color: red, bold: true, italic: false, ..Default::default() },
             TextRun { start: 5, end: 8, bold: true, ..Default::default() },
         ]
     );

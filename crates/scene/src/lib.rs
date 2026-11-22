@@ -20,6 +20,7 @@ mod id;
 pub mod label;
 mod label_cut;
 pub mod limits;
+mod marker;
 mod memory;
 pub mod paint;
 pub mod palette;
@@ -29,6 +30,7 @@ pub mod scenegen;
 mod shared;
 mod store;
 mod style;
+pub mod unknown;
 mod validate;
 mod version;
 mod visibility;
@@ -41,18 +43,22 @@ pub mod conformance;
 pub use color::Color;
 pub use derived::DerivedIndex;
 pub use document::{
-    BASE_SCHEMA_VERSION, DocMeta, Document, DocumentError, FORMAT_NAME, FileEntry, SCHEMA_VERSION, json_schema,
+    BASE_SCHEMA_VERSION, DocMeta, Document, DocumentError, FORMAT_NAME, FileEntry, Loaded, SCHEMA_VERSION, json_schema,
 };
 pub use element::{
     BindMode, Binding, Brush, CharStyle, Crop, DEFAULT_HEAD_SIZE, Element, ElementKind, FixedSegment, FrameData,
     FreehandData, Head, ImageData, Kind, LinearData, LinearKind, MathData, ParseKindError, PathType, PressureMode,
-    RefitError, TextData, TextRun, Transform, default_head_size,
+    RefitError, TextData, TextRun, Tip, Transform, default_head_size,
 };
 pub use id::{
     ElementId, FileId, GroupId, IdError, IdSource, MAX_ID_LEN, RandomIds, Rng64, SeqIds, SplitMix64, StrokeId,
     VersionId,
 };
 pub use label_cut::{LABEL_CUT_PADDING, LabelCut};
+pub use marker::{
+    MARKER_ALPHA, MarkerColor, SpanHighlight, TEXT_END_PAD, TEXT_END_WOBBLE, Tone, band_width, has_highlight,
+    text_band_overhang,
+};
 pub use memory::{MemoryStore, MemoryTx};
 pub use paint::{Paint, PaintMode, PaintStroke};
 pub use shared::{DocumentCheck, JsonJob, SharedDocument};

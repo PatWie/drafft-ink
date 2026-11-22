@@ -79,7 +79,8 @@ use world::{World, pointer_mode};
 pub use events::Key;
 pub use outcome::{ContextTarget, Outcome, UiRequest};
 pub use overlay::{
-    AngleRays, Badge, CropView, EraserRing, InteractionOverlay, LaserPoint, LinkIcon, OverlayParts, PaintView,
+    AngleRays, Badge, CropView, EraserRing, InteractionOverlay, LaserPoint, LinkIcon, MarkerPreview, OverlayParts,
+    PaintView,
 };
 pub use view::REPORT_EVERY_MS;
 

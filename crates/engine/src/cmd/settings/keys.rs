@@ -241,6 +241,7 @@ pub const STYLE_PROPS: &[&str] = &[
     "corner_radius",
     "opacity",
     "freehand_style",
+    "tip",
     "pressure_mode",
     "font_family",
     "font_weight",
@@ -254,6 +255,7 @@ const FILL_PATTERNS: &[&str] = &["solid", "hachure", "zigzag", "cross_hatch", "d
 const STROKE_STYLES: &[&str] = &["solid", "dashed", "dotted"];
 const SLOPPINESS: &[&str] = &["architect", "artist", "cartoonist", "drunk"];
 const FREEHAND_STYLES: &[&str] = &["normal", "calligraphy"];
+const TIPS: &[&str] = &["round", "chisel"];
 const PRESSURE_MODES: &[&str] = &["uniform", "simulated", "device"];
 /// The canvas font families (the words of `font_family`); the UI font is one of them.
 const FONT_FAMILIES: &[&str] = UI_FONTS;
@@ -442,6 +444,7 @@ fn style_prop(name: &str, v: &Value) -> Option<Value> {
         "corner_radius" => style_number(v, 0.0, MAX_CORNER_RADIUS, false),
         "opacity" => style_number(v, 0.0, 1.0, false),
         "freehand_style" => style_choice(v, FREEHAND_STYLES),
+        "tip" => style_choice(v, TIPS),
         "pressure_mode" => style_choice(v, PRESSURE_MODES),
         "font_family" => style_choice(v, FONT_FAMILIES),
         "font_weight" => style_choice(v, FONT_WEIGHTS),
@@ -465,6 +468,7 @@ fn style_prop_expected(name: &str) -> String {
         "corner_radius" => format!("a number from 0 to {}", number_text(MAX_CORNER_RADIUS)),
         "opacity" => "a number from 0 to 1".to_owned(),
         "freehand_style" => format!("one of {}", words(FREEHAND_STYLES)),
+        "tip" => format!("one of {}", words(TIPS)),
         "pressure_mode" => format!("one of {}", words(PRESSURE_MODES)),
         "font_family" => format!("one of {}", words(FONT_FAMILIES)),
         "font_weight" => format!("one of {}", words(FONT_WEIGHTS)),

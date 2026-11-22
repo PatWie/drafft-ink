@@ -1,5 +1,5 @@
 {
- "count": 172,
+ "count": 174,
  "families": [
   "arrange",
   "arrow",
@@ -12,6 +12,7 @@
   "frame",
   "gesture",
   "group",
+  "highlight",
   "history",
   "image",
   "layout",
@@ -113,6 +114,7 @@
   "group.exit",
   "group.set_name",
   "group.ungroup",
+  "highlight.apply",
   "history.clear",
   "history.redo",
   "history.state",
@@ -180,6 +182,7 @@
   "tool.release",
   "tool.set",
   "tool.set_arrow",
+  "tool.set_marker",
   "version.delete",
   "version.list",
   "version.open",

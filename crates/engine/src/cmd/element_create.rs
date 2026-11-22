@@ -19,7 +19,7 @@ use drafftink_geom::kurbo::{Point, Size};
 use drafftink_scene::words::Article;
 use drafftink_scene::limits::{MAX_LATEX_CHARS, MAX_POINTS, MAX_TEXT_CHARS};
 use drafftink_typeset::MathErrorKind;
-use drafftink_scene::{BindMode, ElementId, Head, Kind, PathType, PressureMode, SceneRead, SceneTx, Style};
+use drafftink_scene::{BindMode, ElementId, Head, Kind, PathType, PressureMode, SceneRead, SceneTx, Style, Tip};
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::json;
@@ -323,7 +323,9 @@ pub struct CreateArgs {
     /// `style.pressure_mode`). With it the stroke uses device pressure unless the style says otherwise.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pressures: Option<Vec<f64>>,
-    /// freehand: a marker stroke, at least 12 wide with alpha 128 unless the style gives a width or colour.
+    /// freehand, the old way to ask for a marker: the same as `style.tip` chisel, and at least 12 wide with alpha
+    /// 128 unless the style gives a width or colour. New callers set the tip in `style` and choose the width and
+    /// the opacity themselves.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub highlighter: Option<bool>,
     /// freehand: tolerance of the simplification in world units, 0 keeps all points. Default 2.
@@ -547,7 +549,7 @@ fn head_of(h: Option<Option<Head>>, default: Head) -> Head {
 enum Body {
     Box { rect: (f64, f64, f64, f64), capture: bool },
     Linear { world: Vec<Point>, spec: LinearSpec, start: EndBinding, end: EndBinding, auto: AutoBind },
-    Freehand { world: Vec<Point>, pressures: Vec<f64>, mode: PressureMode, highlighter: bool },
+    Freehand { world: Vec<Point>, pressures: Vec<f64>, mode: PressureMode },
     Text { content: String, at: Point, width: Option<f64> },
     Label { container: ElementId, content: String },
     Math { latex: String, at: Point, font_size: f64, size: Size },
@@ -587,8 +589,10 @@ fn plan_create(s: &Session, a: &CreateArgs) -> Result<Plan, Refusal> {
     let name = check_name(s, cmd, &a.name)?;
     let props = a.style.clone().unwrap_or_default();
     let mut defaults = s.tool.defaults();
-    if a.kind == Kind::Freehand && a.highlighter == Some(true) {
-        defaults.style = create::highlighter_style(defaults.style, create::Given::default());
+    let marker = a.kind == Kind::Freehand && a.highlighter == Some(true);
+    if marker {
+        defaults.style = create::marker_style(defaults.style, create::Given::default());
+        defaults.tip = Tip::Chisel;
     }
     defaults.apply(&props);
     let style = defaults.style.clone();
@@ -670,7 +674,7 @@ fn plan_create(s: &Session, a: &CreateArgs) -> Result<Plan, Refusal> {
                 None if !pressures.is_empty() => PressureMode::Device,
                 None => PressureMode::Uniform,
             };
-            Body::Freehand { world, pressures, mode, highlighter: a.highlighter.unwrap_or(false) }
+            Body::Freehand { world, pressures, mode }
         }
         Kind::Text => {
             let content = a.text.clone().unwrap_or_default();
@@ -742,12 +746,12 @@ fn create_element(s: &mut Session, a: CreateArgs) -> Result<CreateOut, Refusal> 
                 bound = create::bind_new_ends(tx, &id, start, end, *auto, spec.path, zoom, midpoint)?;
                 id
             }
-            Body::Freehand { world, pressures, mode, highlighter } => create::insert_on_top(tx, |z| {
+            Body::Freehand { world, pressures, mode } => create::insert_on_top(tx, |z| {
                 let spec = StrokeSpec {
                     pressures: pressures.clone(),
                     pressure_mode: *mode,
                     brush: plan.defaults.brush,
-                    highlighter: *highlighter,
+                    tip: plan.defaults.tip,
                 };
                 create::freehand_element(wanted.clone(), z, world, spec, style)
             })?,

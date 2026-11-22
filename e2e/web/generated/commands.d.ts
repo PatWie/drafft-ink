@@ -701,6 +701,8 @@ export namespace ClipboardCopyStyle {
   type O_FontWeight = "light" | "regular" | "heavy";
   /** The kind tag without data. */
   type O_Kind = "rectangle" | "diamond" | "ellipse" | "line" | "arrow" | "freehand" | "text" | "math" | "image" | "frame";
+  /** A named marker colour. */
+  type O_MarkerColor = "yellow" | "green" | "pink" | "blue" | "orange";
   /** How pen pressure shapes a freehand stroke. */
   type O_PressureMode = "uniform" | "simulated" | "device";
   /** How hand-drawn the outline looks. The names are the old app's; `roughness` gives the numeric value. */
@@ -723,6 +725,11 @@ export namespace ClipboardCopyStyle {
     font_weight?: O_FontWeight | null;
     /** Freehand brush: normal or calligraphy. */
     freehand_style?: O_Brush | null;
+    /**
+     * The marker band behind the element: yellow, green, pink, blue or orange. `null` removes it. For text this
+     * is the whole text; a part of a text is highlighted with `text.format`.
+     */
+    highlight?: O_MarkerColor | null;
     /** Line height as a multiple of the font size, 1.0 to 3.0 (default 1.25). */
     line_height?: number | null;
     /** Opacity from 0 (invisible) to 1. */
@@ -739,11 +746,15 @@ export namespace ClipboardCopyStyle {
     stroke_width?: number | null;
     /** Horizontal text alignment: left, center or right. */
     text_align?: O_TextAlign | null;
+    /** Freehand tip: round or chisel. */
+    tip?: O_Tip | null;
     /** Vertical alignment of text bound to a container: top, middle or bottom. */
     vertical_align?: O_VerticalAlign | null;
   };
   /** Horizontal text alignment. */
   type O_TextAlign = "left" | "center" | "right";
+  /** The tip of a freehand pen: the shape that is swept along the stroke. */
+  type O_Tip = "round" | "chisel";
   /** Vertical alignment of text inside its box or container. */
   type O_VerticalAlign = "top" | "middle" | "bottom";
   /** Output of `clipboard.copy_style`. */
@@ -2398,6 +2409,8 @@ export namespace ElementConnect {
   type A_FontWeight = "light" | "regular" | "heavy";
   /** What is drawn at an end of a line or arrow. */
   type A_Head = "none" | "arrow" | "bar" | "circle" | "circle_outline" | "triangle" | "triangle_outline" | "diamond" | "diamond_outline" | "cardinality_one" | "cardinality_many" | "cardinality_one_or_many" | "cardinality_exactly_one" | "cardinality_zero_or_one" | "cardinality_zero_or_many";
+  /** A named marker colour. */
+  type A_MarkerColor = "yellow" | "green" | "pink" | "blue" | "orange";
   /** How the points of a line or arrow are joined. */
   type A_PathType = "sharp" | "round" | "elbow" | "auto_route";
   /** How pen pressure shapes a freehand stroke. */
@@ -2424,6 +2437,11 @@ export namespace ElementConnect {
     font_weight?: A_FontWeight | null;
     /** Freehand brush: normal or calligraphy. */
     freehand_style?: A_Brush | null;
+    /**
+     * The marker band behind the element: yellow, green, pink, blue or orange. `null` removes it. For text this
+     * is the whole text; a part of a text is highlighted with `text.format`.
+     */
+    highlight?: A_MarkerColor | null;
     /** Line height as a multiple of the font size, 1.0 to 3.0 (default 1.25). */
     line_height?: number | null;
     /** Opacity from 0 (invisible) to 1. */
@@ -2440,11 +2458,15 @@ export namespace ElementConnect {
     stroke_width?: number | null;
     /** Horizontal text alignment: left, center or right. */
     text_align?: A_TextAlign | null;
+    /** Freehand tip: round or chisel. */
+    tip?: A_Tip | null;
     /** Vertical alignment of text bound to a container: top, middle or bottom. */
     vertical_align?: A_VerticalAlign | null;
   };
   /** Horizontal text alignment. */
   type A_TextAlign = "left" | "center" | "right";
+  /** The tip of a freehand pen: the shape that is swept along the stroke. */
+  type A_Tip = "round" | "chisel";
   /** Vertical alignment of text inside its box or container. */
   type A_VerticalAlign = "top" | "middle" | "bottom";
   /** Arguments of `element.connect`. */
@@ -2576,6 +2598,8 @@ export namespace ElementCreate {
   type A_Head = "none" | "arrow" | "bar" | "circle" | "circle_outline" | "triangle" | "triangle_outline" | "diamond" | "diamond_outline" | "cardinality_one" | "cardinality_many" | "cardinality_one_or_many" | "cardinality_exactly_one" | "cardinality_zero_or_one" | "cardinality_zero_or_many";
   /** The kind tag without data. */
   type A_Kind = "rectangle" | "diamond" | "ellipse" | "line" | "arrow" | "freehand" | "text" | "math" | "image" | "frame";
+  /** A named marker colour. */
+  type A_MarkerColor = "yellow" | "green" | "pink" | "blue" | "orange";
   /** How the points of a line or arrow are joined. */
   type A_PathType = "sharp" | "round" | "elbow" | "auto_route";
   /** How pen pressure shapes a freehand stroke. */
@@ -2613,6 +2637,11 @@ export namespace ElementCreate {
     font_weight?: A_FontWeight | null;
     /** Freehand brush: normal or calligraphy. */
     freehand_style?: A_Brush | null;
+    /**
+     * The marker band behind the element: yellow, green, pink, blue or orange. `null` removes it. For text this
+     * is the whole text; a part of a text is highlighted with `text.format`.
+     */
+    highlight?: A_MarkerColor | null;
     /** Line height as a multiple of the font size, 1.0 to 3.0 (default 1.25). */
     line_height?: number | null;
     /** Opacity from 0 (invisible) to 1. */
@@ -2629,11 +2658,15 @@ export namespace ElementCreate {
     stroke_width?: number | null;
     /** Horizontal text alignment: left, center or right. */
     text_align?: A_TextAlign | null;
+    /** Freehand tip: round or chisel. */
+    tip?: A_Tip | null;
     /** Vertical alignment of text bound to a container: top, middle or bottom. */
     vertical_align?: A_VerticalAlign | null;
   };
   /** Horizontal text alignment. */
   type A_TextAlign = "left" | "center" | "right";
+  /** The tip of a freehand pen: the shape that is swept along the stroke. */
+  type A_Tip = "round" | "chisel";
   /** Vertical alignment of text inside its box or container. */
   type A_VerticalAlign = "top" | "middle" | "bottom";
   /**
@@ -2679,7 +2712,11 @@ export namespace ElementCreate {
     frame?: A_FrameArg;
     /** Passed by the drawing tools: afterwards the tool returns to select unless the tool is locked. */
     from_tool?: boolean;
-    /** freehand: a marker stroke, at least 12 wide with alpha 128 unless the style gives a width or colour. */
+    /**
+     * freehand, the old way to ask for a marker: the same as `style.tip` chisel, and at least 12 wide with alpha
+     * 128 unless the style gives a width or colour. New callers set the tip in `style` and choose the width and
+     * the opacity themselves.
+     */
     highlighter?: boolean | null;
     /** The id of the new element. Default: a fresh id. */
     id?: string | null;
@@ -4287,6 +4324,55 @@ export namespace GroupUngroup {
     members: O_ElementId[];
     /** The groups that were dissolved. */
     removed: O_GroupId[];
+    /** The label of the undo step the command pushed. */
+    undo_label?: string;
+    /** Non-fatal notes. */
+    warnings?: string[];
+    [key: string]: unknown;
+  };
+}
+
+/** Puts a marker band behind elements, or behind ranges of characters of texts, or takes it off. Elements and ranges in one call are one undo step. */
+export namespace HighlightApply {
+  /** A named marker colour. */
+  type A_MarkerColor = "yellow" | "green" | "pink" | "blue" | "orange";
+  /** A range of characters of one text. */
+  type A_RangeArg = {
+    /** One past the last character. Above `start`, and at most the number of characters of the text. */
+    end: number;
+    /** The text element, or a label (which is a text element). An id or `@name`. */
+    id: A_Ref;
+    /** First character, counted in Unicode characters (not bytes, not UTF-16 units) from 0. */
+    start: number;
+  };
+  /** An element reference in arguments: an id, or `"@name"` for the name set with `element.set_name`. */
+  type A_Ref = string;
+  /** Arguments of `highlight.apply`. */
+  export type Args = {
+    /** The marker colour: `yellow`, `green`, `pink`, `blue` or `orange`. `null` (or absent) takes the highlight off. */
+    color?: A_MarkerColor | null;
+    /**
+     * Elements to highlight as a whole. A text named here is highlighted all over. Default: the selection when no
+     * `ranges` are given, and none when they are.
+     */
+    ids?: A_Ref[] | null;
+    /** Character ranges of texts to highlight. Several ranges, of one text or of many, are one step. */
+    ranges?: A_RangeArg[];
+  };
+  /** Output of `highlight.apply`. */
+  export type Output = {
+    /** False when everything already looked as asked. */
+    changed: boolean;
+    /** Ids of elements the command made. */
+    created?: string[];
+    /** Ids of elements the command removed. */
+    deleted?: string[];
+    /** Elements and texts whose highlight changed. */
+    highlighted: string[];
+    /** Elements that cannot be highlighted (frames). */
+    skipped: string[];
+    /** Elements and texts that already looked as asked. */
+    unchanged: string[];
     /** The label of the undo step the command pushed. */
     undo_label?: string;
     /** Non-fatal notes. */
@@ -6331,6 +6417,8 @@ export namespace StyleListThemes {
   type O_FontFamily = "gelpen" | "noto_sans" | "gelpen_serif" | "vanilla_extract" | "plex_sans";
   /** Font weight. */
   type O_FontWeight = "light" | "regular" | "heavy";
+  /** A named marker colour. */
+  type O_MarkerColor = "yellow" | "green" | "pink" | "blue" | "orange";
   /** How pen pressure shapes a freehand stroke. */
   type O_PressureMode = "uniform" | "simulated" | "device";
   /** How hand-drawn the outline looks. The names are the old app's; `roughness` gives the numeric value. */
@@ -6353,6 +6441,11 @@ export namespace StyleListThemes {
     font_weight?: O_FontWeight | null;
     /** Freehand brush: normal or calligraphy. */
     freehand_style?: O_Brush | null;
+    /**
+     * The marker band behind the element: yellow, green, pink, blue or orange. `null` removes it. For text this
+     * is the whole text; a part of a text is highlighted with `text.format`.
+     */
+    highlight?: O_MarkerColor | null;
     /** Line height as a multiple of the font size, 1.0 to 3.0 (default 1.25). */
     line_height?: number | null;
     /** Opacity from 0 (invisible) to 1. */
@@ -6369,6 +6462,8 @@ export namespace StyleListThemes {
     stroke_width?: number | null;
     /** Horizontal text alignment: left, center or right. */
     text_align?: O_TextAlign | null;
+    /** Freehand tip: round or chisel. */
+    tip?: O_Tip | null;
     /** Vertical alignment of text bound to a container: top, middle or bottom. */
     vertical_align?: O_VerticalAlign | null;
   };
@@ -6384,6 +6479,8 @@ export namespace StyleListThemes {
     props: O_StyleProps;
     [key: string]: unknown;
   };
+  /** The tip of a freehand pen: the shape that is swept along the stroke. */
+  type O_Tip = "round" | "chisel";
   /** Vertical alignment of text inside its box or container. */
   type O_VerticalAlign = "top" | "middle" | "bottom";
   /** Output of `style.list_themes`. */
@@ -6419,6 +6516,8 @@ export namespace StyleSet {
   type A_FontFamily = "gelpen" | "noto_sans" | "gelpen_serif" | "vanilla_extract" | "plex_sans";
   /** Font weight. */
   type A_FontWeight = "light" | "regular" | "heavy";
+  /** A named marker colour. */
+  type A_MarkerColor = "yellow" | "green" | "pink" | "blue" | "orange";
   /** How pen pressure shapes a freehand stroke. */
   type A_PressureMode = "uniform" | "simulated" | "device";
   /** An element reference in arguments: an id, or `"@name"` for the name set with `element.set_name`. */
@@ -6445,6 +6544,11 @@ export namespace StyleSet {
     font_weight?: A_FontWeight | null;
     /** Freehand brush: normal or calligraphy. */
     freehand_style?: A_Brush | null;
+    /**
+     * The marker band behind the element: yellow, green, pink, blue or orange. `null` removes it. For text this
+     * is the whole text; a part of a text is highlighted with `text.format`.
+     */
+    highlight?: A_MarkerColor | null;
     /** Line height as a multiple of the font size, 1.0 to 3.0 (default 1.25). */
     line_height?: number | null;
     /** Opacity from 0 (invisible) to 1. */
@@ -6461,11 +6565,15 @@ export namespace StyleSet {
     stroke_width?: number | null;
     /** Horizontal text alignment: left, center or right. */
     text_align?: A_TextAlign | null;
+    /** Freehand tip: round or chisel. */
+    tip?: A_Tip | null;
     /** Vertical alignment of text bound to a container: top, middle or bottom. */
     vertical_align?: A_VerticalAlign | null;
   };
   /** Horizontal text alignment. */
   type A_TextAlign = "left" | "center" | "right";
+  /** The tip of a freehand pen: the shape that is swept along the stroke. */
+  type A_Tip = "round" | "chisel";
   /** Vertical alignment of text inside its box or container. */
   type A_VerticalAlign = "top" | "middle" | "bottom";
   /** Arguments of `style.set`. */
@@ -6892,9 +7000,11 @@ export namespace TextEditEnd {
    * the text is drawn and measured (`docs/model.md` section 4, "Inline math").
    */
   type A_InlineMath = "auto" | "off";
+  /** A named marker colour. */
+  type A_MarkerColor = "yellow" | "green" | "pink" | "blue" | "orange";
   /** How pen pressure shapes a freehand stroke. */
   type A_PressureMode = "uniform" | "simulated" | "device";
-  /** One style range chosen in the editor: a colour, bold, italic. */
+  /** One style range chosen in the editor: a colour, bold, italic, a highlight. */
   type A_RunArg = {
     /** The range is bold. */
     bold?: boolean;
@@ -6902,6 +7012,11 @@ export namespace TextEditEnd {
     color?: A_Color | null;
     /** One past the last character. */
     end: number;
+    /**
+     * The highlight of the range: a marker colour (`yellow`, `green`, `pink`, `blue`, `orange`), `none` for no
+     * highlight even where the whole text has one, or absent for the text's own.
+     */
+    highlight?: A_SpanHighlight;
     /** The range is italic. */
     italic?: boolean;
     /** First character. */
@@ -6909,6 +7024,7 @@ export namespace TextEditEnd {
   };
   /** How hand-drawn the outline looks. The names are the old app's; `roughness` gives the numeric value. */
   type A_Sloppiness = "architect" | "artist" | "cartoonist" | "drunk";
+  type A_SpanHighlight = "none" | "yellow" | "green" | "pink" | "blue" | "orange";
   /** Dash pattern of a stroke. */
   type A_StrokeStyle = "solid" | "dashed" | "dotted";
   /** A set of style properties to change. Absent properties stay as they are. */
@@ -6927,6 +7043,11 @@ export namespace TextEditEnd {
     font_weight?: A_FontWeight | null;
     /** Freehand brush: normal or calligraphy. */
     freehand_style?: A_Brush | null;
+    /**
+     * The marker band behind the element: yellow, green, pink, blue or orange. `null` removes it. For text this
+     * is the whole text; a part of a text is highlighted with `text.format`.
+     */
+    highlight?: A_MarkerColor | null;
     /** Line height as a multiple of the font size, 1.0 to 3.0 (default 1.25). */
     line_height?: number | null;
     /** Opacity from 0 (invisible) to 1. */
@@ -6943,11 +7064,15 @@ export namespace TextEditEnd {
     stroke_width?: number | null;
     /** Horizontal text alignment: left, center or right. */
     text_align?: A_TextAlign | null;
+    /** Freehand tip: round or chisel. */
+    tip?: A_Tip | null;
     /** Vertical alignment of text bound to a container: top, middle or bottom. */
     vertical_align?: A_VerticalAlign | null;
   };
   /** Horizontal text alignment. */
   type A_TextAlign = "left" | "center" | "right";
+  /** The tip of a freehand pen: the shape that is swept along the stroke. */
+  type A_Tip = "round" | "chisel";
   /** Vertical alignment of text inside its box or container. */
   type A_VerticalAlign = "top" | "middle" | "bottom";
   /** Arguments of `text.edit_end`. */
@@ -6958,7 +7083,7 @@ export namespace TextEditEnd {
     inline_math?: A_InlineMath | null;
     /** The final formula, when a math element is edited. */
     latex?: string | null;
-    /** Style ranges of the text (colour, bold, italic). Absent keeps the current ones. */
+    /** Style ranges of the text (colour, bold, italic, highlight). Absent keeps the current ones. */
     runs?: A_RunArg[] | null;
     /**
      * Text properties chosen during the edit, applied in the same step: the colour, opacity and font
@@ -7502,6 +7627,38 @@ export namespace ToolSetArrow {
     end_head: O_Head;
     /** The head at the start of new arrows. */
     start_head: O_Head;
+    /** The label of the undo step the command pushed. */
+    undo_label?: string;
+    /** Non-fatal notes. */
+    warnings?: string[];
+    [key: string]: unknown;
+  };
+}
+
+/** Sets the colour of the highlighter tool: yellow, green, pink, blue or orange. null is none: the tool then removes highlights. */
+export namespace ToolSetMarker {
+  /** A named marker colour. */
+  type A_MarkerColor = "yellow" | "green" | "pink" | "blue" | "orange";
+  /** Arguments of `tool.set_marker`. */
+  export type Args = {
+    /**
+     * The marker colour: `yellow`, `green`, `pink`, `blue` or `orange`. `null` (or absent) is none: the
+     * highlighter then removes highlights.
+     */
+    color?: A_MarkerColor | null;
+  };
+  /** A named marker colour. */
+  type O_MarkerColor = "yellow" | "green" | "pink" | "blue" | "orange";
+  /** Result of `tool.set_marker`. */
+  export type Output = {
+    /** False when the marker already had this colour. */
+    changed: boolean;
+    /** The colour now, `null` for none. */
+    color?: O_MarkerColor | null;
+    /** Ids of elements the command made. */
+    created?: string[];
+    /** Ids of elements the command removed. */
+    deleted?: string[];
     /** The label of the undo step the command pushed. */
     undo_label?: string;
     /** Non-fatal notes. */
@@ -8305,6 +8462,7 @@ export interface CommandTable {
   "group.exit": { args: GroupExit.Args; output: GroupExit.Output };
   "group.set_name": { args: GroupSetName.Args; output: GroupSetName.Output };
   "group.ungroup": { args: GroupUngroup.Args; output: GroupUngroup.Output };
+  "highlight.apply": { args: HighlightApply.Args; output: HighlightApply.Output };
   "history.clear": { args: HistoryClear.Args; output: HistoryClear.Output };
   "history.redo": { args: HistoryRedo.Args; output: HistoryRedo.Output };
   "history.state": { args: HistoryState.Args; output: HistoryState.Output };
@@ -8372,6 +8530,7 @@ export interface CommandTable {
   "tool.release": { args: ToolRelease.Args; output: ToolRelease.Output };
   "tool.set": { args: ToolSet.Args; output: ToolSet.Output };
   "tool.set_arrow": { args: ToolSetArrow.Args; output: ToolSetArrow.Output };
+  "tool.set_marker": { args: ToolSetMarker.Args; output: ToolSetMarker.Output };
   "version.delete": { args: VersionDelete.Args; output: VersionDelete.Output };
   "version.list": { args: VersionList.Args; output: VersionList.Output };
   "version.open": { args: VersionOpen.Args; output: VersionOpen.Output };
@@ -8396,7 +8555,7 @@ export interface CommandTable {
 export type CommandId = keyof CommandTable;
 
 /** Commands whose arguments may all be left out. */
-export type OptionalArgsId = "arrow.delete_point" | "arrow.edit_points" | "arrow.reroute" | "arrow.swap_heads" | "clipboard.copy" | "clipboard.copy_as" | "clipboard.copy_style" | "clipboard.cut" | "clipboard.paste" | "clipboard.paste_style" | "collab.connect" | "collab.disconnect" | "collab.follow" | "collab.join_room" | "collab.leave_room" | "collab.set_pointer" | "collab.set_user" | "collab.status" | "doc.autosave" | "doc.clear" | "doc.export" | "doc.inspect" | "doc.list" | "doc.new" | "doc.outline" | "doc.save" | "doc.show_intro" | "element.convert" | "element.create_sticky" | "element.delete" | "element.duplicate" | "element.lock" | "element.move" | "element.open_link" | "element.query" | "element.set_bounds" | "element.set_link" | "element.unlock_all" | "engine.commands" | "engine.recent" | "engine.state" | "frame.remove" | "frame.select_children" | "frame.unwrap" | "frame.wrap" | "gesture.cancel" | "gesture.end" | "group.create" | "group.enter" | "group.exit" | "group.set_name" | "group.ungroup" | "history.clear" | "history.redo" | "history.state" | "history.undo" | "image.crop" | "image.crop_begin" | "image.crop_end" | "image.paint" | "image.paint_begin" | "image.paint_brush" | "image.paint_end" | "image.reset_crop" | "image.reset_paint" | "layout.apply" | "library.add" | "library.export" | "library.list" | "library.remove" | "perf.stats" | "selection.all" | "selection.clear" | "selection.get" | "selection.select" | "settings.get" | "settings.reset" | "style.get" | "style.list_themes" | "tab.close" | "tab.duplicate" | "tab.list" | "tab.new" | "text.edit_begin" | "text.edit_end" | "text.format" | "text.wrap_in_container" | "tool.cancel" | "tool.hold" | "tool.lock" | "tool.release" | "tool.set_arrow" | "version.list" | "view.center" | "view.get" | "view.screenshot" | "view.set" | "view.set_view_only" | "view.zoom_at" | "view.zoom_in" | "view.zoom_out" | "view.zoom_reset" | "view.zoom_to_fit";
+export type OptionalArgsId = "arrow.delete_point" | "arrow.edit_points" | "arrow.reroute" | "arrow.swap_heads" | "clipboard.copy" | "clipboard.copy_as" | "clipboard.copy_style" | "clipboard.cut" | "clipboard.paste" | "clipboard.paste_style" | "collab.connect" | "collab.disconnect" | "collab.follow" | "collab.join_room" | "collab.leave_room" | "collab.set_pointer" | "collab.set_user" | "collab.status" | "doc.autosave" | "doc.clear" | "doc.export" | "doc.inspect" | "doc.list" | "doc.new" | "doc.outline" | "doc.save" | "doc.show_intro" | "element.convert" | "element.create_sticky" | "element.delete" | "element.duplicate" | "element.lock" | "element.move" | "element.open_link" | "element.query" | "element.set_bounds" | "element.set_link" | "element.unlock_all" | "engine.commands" | "engine.recent" | "engine.state" | "frame.remove" | "frame.select_children" | "frame.unwrap" | "frame.wrap" | "gesture.cancel" | "gesture.end" | "group.create" | "group.enter" | "group.exit" | "group.set_name" | "group.ungroup" | "highlight.apply" | "history.clear" | "history.redo" | "history.state" | "history.undo" | "image.crop" | "image.crop_begin" | "image.crop_end" | "image.paint" | "image.paint_begin" | "image.paint_brush" | "image.paint_end" | "image.reset_crop" | "image.reset_paint" | "layout.apply" | "library.add" | "library.export" | "library.list" | "library.remove" | "perf.stats" | "selection.all" | "selection.clear" | "selection.get" | "selection.select" | "settings.get" | "settings.reset" | "style.get" | "style.list_themes" | "tab.close" | "tab.duplicate" | "tab.list" | "tab.new" | "text.edit_begin" | "text.edit_end" | "text.format" | "text.wrap_in_container" | "tool.cancel" | "tool.hold" | "tool.lock" | "tool.release" | "tool.set_arrow" | "tool.set_marker" | "version.list" | "view.center" | "view.get" | "view.screenshot" | "view.set" | "view.set_view_only" | "view.zoom_at" | "view.zoom_in" | "view.zoom_out" | "view.zoom_reset" | "view.zoom_to_fit";
 
 /** The registry size when the types were made; a spec can compare it with `commands()`. */
-export declare const COMMAND_COUNT: 172;
+export declare const COMMAND_COUNT: 174;
