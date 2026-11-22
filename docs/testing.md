@@ -276,7 +276,7 @@ DRAFFTINK_PARITY_WRANGLER=1 cargo nextest run -p drafftink-server parity   # all
 DRAFFTINK_PARITY_WRANGLER=1 cargo nextest run -p drafftink-server parity::wrangler::expire   # one scenario on one target
 ```
 
-The wrangler target needs Node 22 and the Worker's wasm once: `cd apps/drafftink-worker && npm ci && npm run build:wasm`. Each test starts its own `wrangler dev` (the pinned one of `node_modules`) on a free port with a temporary `--persist-to` folder and `--var ROOM_TTL_SECS`/`ROOM_LEAVE_GRACE_SECS`, in its own process group that is stopped when the test ends, and writes its output to `target/parity-wrangler/<test>.log`, which is printed when the test fails. `cargo xtask worker` runs this with the switch on and fails if any parity test skipped. The wasm client is not part of it: until the repo has browser tests it is covered by the browser e2e suite only.
+The wrangler target needs Node 22 and the Worker's wasm once: `cd apps/drafftink-worker && npm ci && npm run build:wasm`. Each test starts its own `wrangler dev` (the pinned one of `node_modules`) on a free port with a temporary `--persist-to` folder and `--var ROOM_TTL_SECS`/`ROOM_LEAVE_GRACE_SECS`, in its own process group that is stopped when the test ends, and writes its output to `target/parity-wrangler/<test>.log`, which is printed when the test fails. `cargo xtask worker` runs this with the switch on and fails if any parity test skipped.
 
 ## Fixtures
 
