@@ -12,8 +12,9 @@ use drafftink_geom::kurbo::Point;
 use drafftink_doc::ImportProgress;
 use drafftink_protocol::{MAX_SELECTION_IDS, Viewport};
 
+use super::pictures;
 use super::state::{CollabNotice, CollabState, Gate, Live, stage_threshold};
-use super::view::{CollabView, ConnectionState, Loading, PeerView};
+use super::view::{CollabView, ConnectionState, ImagesView, Loading, PeerView};
 use crate::session::Session;
 use crate::spec::Redraw;
 use crate::state::{TabId, clamp_zoom};
@@ -113,6 +114,10 @@ fn live_view(live: &Live, import: Option<ImportProgress>, now_ms: u64) -> Collab
     let state = ConnectionState::of(status.state);
     let following = client.following();
     let held = live.gate.get().held;
+    let progress = client.images();
+    let visible = live.pictures.visible();
+    // Pictures of the visible area that are on their way: the room is usable, the pictures follow.
+    let downloading = progress.downloading + progress.waiting > 0 && visible.missing > 0;
     let loading = match (held, import, live.synced_once, status.state) {
         (Some(bytes), ..) => Some(Loading::Receiving { bytes }),
         (None, Some(p), ..) => Some(Loading::Importing { done: p.done, total: p.total }),
@@ -120,6 +125,9 @@ fn live_view(live: &Live, import: Option<ImportProgress>, now_ms: u64) -> Collab
             Some(Loading::Connecting)
         }
         (None, None, false, ConnState::Syncing | ConnState::Online) => Some(Loading::Syncing),
+        (None, None, true, _) if downloading => {
+            Some(Loading::Images { done: visible.total.saturating_sub(visible.missing), total: visible.total })
+        }
         _ => None,
     };
     CollabView {
@@ -132,6 +140,7 @@ fn live_view(live: &Live, import: Option<ImportProgress>, now_ms: u64) -> Collab
         unsynced: status.unsynced,
         loading,
         peers: client.peers().iter().map(|p| PeerView::of(p, now_ms, following == Some(p.id))).collect(),
+        images: ImagesView::of(&progress),
         e2e: client.sealed().is_some(),
         expires_at_ms: client.sealed().map(drafftink_collab::SealedClient::expires_at_ms).filter(|ms| *ms > 0),
         expiring: client.sealed().is_some_and(drafftink_collab::SealedClient::expiring),
@@ -160,6 +169,7 @@ fn poll_live(s: &mut Session, live: &mut Live, now: u64) -> Option<CollabPoll> {
     if live.session.client().status().state == ConnState::Online {
         live.synced_once = true;
     }
+    pictures::step(s, live, now)?;
     let gate = live.gate.get();
     if gate.held.is_some() && !gate.release {
         // The pump just met a big message. Ask for a frame now; the next poll imports it.
@@ -336,6 +346,7 @@ fn handle(s: &mut Session, live: &mut Live, now: u64, event: CollabEvent, rest: 
                 fatal: true,
             }));
         }
+        CollabEvent::Image(event) => pictures::on_event(s, live, event)?,
         CollabEvent::Status(_) | CollabEvent::Presence | CollabEvent::Retention { .. } => {}
     }
     Some(())

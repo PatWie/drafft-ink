@@ -59,6 +59,45 @@ pub enum Loading {
         /// All items of the room.
         total: usize,
     },
+    /// The room is usable, and pictures in the visible area are still on their way. They show as empty pictures
+    /// until they arrive.
+    Images {
+        /// Pictures of the visible area that are here.
+        done: u32,
+        /// Pictures the visible area shows.
+        total: u32,
+    },
+}
+
+/// Where the pictures of an encrypted room stand. All zero for a plaintext room, which embeds them.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, JsonSchema)]
+pub struct ImagesView {
+    /// Pictures being sent to the room.
+    pub uploading: u32,
+    /// Pictures being fetched from the room.
+    pub downloading: u32,
+    /// Pictures waiting for a free slot, a retry time, or the room's list (a picture whose upload has not finished
+    /// yet is retried every few seconds).
+    pub waiting: u32,
+    /// Pictures that will not be transferred: refused uploads, damaged downloads.
+    pub failed: u32,
+    /// Pictures the room holds, as the server last reported.
+    pub room_images: u32,
+    /// Bytes the room's pictures take on the server (sealed), as the server last reported.
+    pub room_image_bytes: u64,
+}
+
+impl ImagesView {
+    pub(super) fn of(progress: &drafftink_collab::ImageProgress) -> Self {
+        Self {
+            uploading: progress.uploading,
+            downloading: progress.downloading,
+            waiting: progress.waiting,
+            failed: progress.failed,
+            room_images: progress.room_images,
+            room_image_bytes: progress.room_image_bytes,
+        }
+    }
 }
 
 /// A point of a fading trail.
@@ -187,6 +226,8 @@ pub struct CollabView {
     pub peers: Vec<PeerView>,
     /// This user's laser trail.
     pub laser: Vec<LaserDot>,
+    /// Where the pictures of an encrypted room stand.
+    pub images: ImagesView,
     /// True for an end-to-end encrypted room: the server cannot read it. `room` is its id, never its key.
     pub e2e: bool,
     /// When the server deletes the room if nobody visits, in milliseconds since the epoch. Absent: never, or not
@@ -211,6 +252,7 @@ impl CollabView {
             loading: None,
             peers: Vec::new(),
             laser: Vec::new(),
+            images: ImagesView::default(),
             e2e: false,
             expires_at_ms: None,
             expiring: false,

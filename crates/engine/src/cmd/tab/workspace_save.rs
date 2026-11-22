@@ -10,13 +10,13 @@
 //! Work is counted in bytes of JSON: a piece is about [`TICK_BYTES`] of text, and the other steps cost what they cost
 //! per element in the same unit ([`SHARE_COST`], [`CHECK_COST`]). A small document is written in one call.
 
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 
-use drafftink_scene::{DocumentCheck, DocumentError, JsonJob, SharedDocument};
+use drafftink_scene::{DocumentCheck, DocumentError, JsonJob, SceneRead, SharedDocument};
 use serde_json::{Value, json};
 
 use super::workspace::{INDEX_KEY, LORO_KEY_SUFFIX, SCHEMA, TAB_KEY_PREFIX, WorkspaceSaved, to_hex};
-use crate::ports::Ns;
+use crate::ports::{Ns, Storage};
 use crate::refusal::Refusal;
 use crate::session::Session;
 use crate::state::TabId;
@@ -86,6 +86,8 @@ pub(super) struct SaveJob {
     snapshots: Vec<(String, Vec<u8>)>,
     /// The keys of the snapshots every room tab has, so that cleanup keeps them.
     snapshot_keys: Vec<String>,
+    /// A tab of the last write is gone: its pictures may be garbage in the blob cache.
+    closed_tab: bool,
 }
 
 fn document_error(tab: TabId, e: &DocumentError) -> Refusal {
@@ -103,6 +105,24 @@ fn room_entry(tab: &crate::state::Tab) -> Option<Value> {
         "relay_vv": to_hex(&room.resume.relay_vv),
         "joined_ms": room.joined_ms,
     }))
+}
+
+/// The ids of the pictures any tab names: the bytes it holds and the manifests of its room.
+fn referenced_files(s: &Session) -> HashSet<String> {
+    let mut ids = HashSet::new();
+    for t in &s.tabs {
+        ids.extend(t.doc.store().files().map(|(id, _)| id.as_str().to_owned()));
+        ids.extend(t.doc.replicated().manifests().map(|(id, _)| id.as_str().to_owned()));
+    }
+    ids
+}
+
+/// Deletes the entries of the blob cache that no tab names (a failure only leaves garbage for the next write).
+fn evict_blobs(storage: &mut dyn Storage, kept: &HashSet<String>) {
+    let Ok(listed) = storage.list(Ns::Blobs) else { return };
+    for info in listed.into_iter().filter(|i| !kept.contains(&i.name)) {
+        let _ = storage.delete(Ns::Blobs, &info.name);
+    }
 }
 
 impl SaveJob {
@@ -148,6 +168,7 @@ impl SaveJob {
             }
             job.entries.push(entry);
         }
+        job.closed_tab = written.keys().any(|id| !job.tabs.contains(id));
         (job, cost)
     }
 
@@ -195,6 +216,9 @@ impl SaveJob {
     /// removes the documents of closed tabs, which waits for the port's queue.
     pub(super) fn finish(self, s: &mut Session, cleanup: bool) -> Result<Finished, Refusal> {
         let now_ms = s.now_ms();
+        // Taken before the storage port is borrowed. A full write (`cleanup`) and the write after a tab was closed
+        // clean the blob cache: what no tab names any more is deleted.
+        let kept_blobs = (cleanup || self.closed_tab).then(|| referenced_files(s));
         let index = json!({
             "format": "drafftink-workspace",
             "schema": SCHEMA,
@@ -234,6 +258,9 @@ impl SaveJob {
                     }
                 }
             }
+        }
+        if let Some(kept) = kept_blobs {
+            evict_blobs(storage.as_mut(), &kept);
         }
         Ok(Finished {
             saved: WorkspaceSaved { tabs: self.tabs.len(), documents_written, index_bytes: index_len },

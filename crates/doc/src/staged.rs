@@ -44,8 +44,13 @@ impl Staged {
             // What only the view has goes away.
             let gone_elements: Vec<String> =
                 view.iter_all().map(|e| e.id.to_string()).filter(|id| !elements.has(id)).collect();
-            let gone_files: Vec<String> =
-                view.files().map(|(id, _)| id.to_string()).filter(|id| !files.has(id)).collect();
+            let gone_files: Vec<String> = view
+                .files()
+                .map(|(id, _)| id)
+                .chain(core.manifests.keys())
+                .map(ToString::to_string)
+                .filter(|id| !files.has(id))
+                .collect();
             items.extend(elements.list().map(|k| Item::Element(k.to_owned())));
             items.extend(gone_elements.into_iter().map(Item::Element));
             items.extend(files.list().map(|k| Item::File(k.to_owned())));

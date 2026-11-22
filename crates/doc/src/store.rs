@@ -14,12 +14,13 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use drafftink_scene::{
-    ChangeSet, DerivedIndex, DocMeta, Document, Element, ElementId, FileEntry, FileId, MemoryStore, NamedVersion,
-    SceneRead, SceneStore, StoreError, SubscriptionId, VersionId, ZIndex, load_document,
+    ChangeSet, DerivedIndex, DocMeta, Document, Element, ElementId, FileEntry, FileId, FileManifest, MemoryStore,
+    NamedVersion, SceneRead, SceneStore, SceneTx, StoreError, SubscriptionId, VersionId, ZIndex, load_document,
 };
 use loro::{ExportMode, Frontiers, LoroDoc, UndoManager, VersionVector};
 
 use crate::error::DocError;
+use crate::files::FilePolicy;
 use crate::schema::{self, META_SCHEMA, Migration, ROOT_META, SCHEMA_VERSION, SYSTEM_ORIGIN_PREFIX};
 use crate::sync::{self, Direction};
 use crate::text;
@@ -120,6 +121,12 @@ pub(crate) struct Core {
     pub poisoned: Rc<Cell<bool>>,
     /// A big import whose elements are still being decoded into the view.
     pub staged: Option<crate::staged::Staged>,
+    /// Where the bytes of pictures added here go.
+    pub file_policy: FilePolicy,
+    /// Every valid entry of the Loro `files` map, with or without bytes.
+    pub manifests: BTreeMap<FileId, FileManifest>,
+    /// Counts the changes of `manifests`.
+    pub manifest_revision: u64,
 }
 
 /// Runs a Loro call that parses bytes from outside. Loro 1.17 asserts on some corrupted inputs (found by the
@@ -208,6 +215,20 @@ impl Core {
             migrations,
             poisoned: Rc::new(Cell::new(false)),
             staged: None,
+            file_policy: FilePolicy::default(),
+            manifests: BTreeMap::new(),
+            manifest_revision: 0,
+        }
+    }
+
+    /// Sets or removes the manifest of `id`, and counts the change when there is one.
+    pub fn set_manifest(&mut self, id: &FileId, manifest: Option<FileManifest>) {
+        let changed = match manifest {
+            Some(m) => self.manifests.insert(id.clone(), m.clone()).as_ref() != Some(&m),
+            None => self.manifests.remove(id).is_some(),
+        };
+        if changed {
+            self.manifest_revision += 1;
         }
     }
 
@@ -393,11 +414,19 @@ impl LoroStore {
 
     /// A store holding `doc`, loaded as one non-undoable commit. The document is validated first.
     pub fn from_document(doc: &Document) -> Result<Self, StoreError> {
+        Self::from_document_with_policy(doc, FilePolicy::Embedded)
+    }
+
+    /// Like [`LoroStore::from_document`] with a file policy that applies from the first write: with
+    /// [`FilePolicy::External`] the bytes of the document's pictures never enter the Loro document (the view
+    /// still holds them).
+    pub fn from_document_with_policy(doc: &Document, policy: FilePolicy) -> Result<Self, StoreError> {
         let config = LoroConfig::default();
         let core = Core::create_unwatched(config.clone(), Vec::new())
             .or_else(|_| Core::create_unwatched(LoroConfig { peer_id: None, ..config.clone() }, Vec::new()))
             .unwrap_or_else(|_| Core::with_doc(LoroDoc::new(), config, Vec::new()));
         let mut store = Self { view: MemoryStore::new(), core };
+        store.core.file_policy = policy;
         load_document(&mut store, doc)?;
         // The load is not an undo step, and Loro would not have seen it as one: start watching from here.
         store.core.attach_undo();
@@ -441,6 +470,56 @@ impl LoroStore {
         let cs = sync::rebuild_all(&mut self.view, &mut self.core)?;
         self.core.notify(&cs);
         Ok(cs)
+    }
+
+    /// Where the bytes of pictures added here go.
+    pub fn file_policy(&self) -> FilePolicy {
+        self.core.file_policy
+    }
+
+    /// Sets where the bytes of pictures added from now on go. Entries already written stay as they are (their bytes
+    /// stay in the history of the document).
+    pub fn set_file_policy(&mut self, policy: FilePolicy) {
+        self.core.file_policy = policy;
+    }
+
+    /// The manifest (media type and size) of the picture `id` as the Loro document holds it, with or without bytes.
+    /// [`SceneRead::file`] returns only the pictures whose bytes are here too.
+    pub fn manifest(&self, id: &FileId) -> Option<&FileManifest> {
+        self.core.manifests.get(id)
+    }
+
+    /// Every valid entry of the Loro `files` map, in id order.
+    pub fn manifests(&self) -> impl Iterator<Item = (&FileId, &FileManifest)> {
+        self.core.manifests.iter()
+    }
+
+    /// Counts the changes of the set of manifests (a local commit, a remote update, a replaced snapshot). A caller
+    /// that wants the missing bytes compares it with the value it saw last.
+    pub fn manifest_revision(&self) -> u64 {
+        self.core.manifest_revision
+    }
+
+    /// Puts downloaded bytes into the view for a picture that the document has a manifest for. Nothing is written to
+    /// Loro, nothing is undoable and no change is reported to subscribers; the view's revision moves so that
+    /// drawing picks the picture up.
+    ///
+    /// `Ok(true)`: added. `Ok(false)`: no manifest for these bytes (the id is their hash), the media type or size
+    /// differs from the manifest, or the view already holds the picture.
+    pub fn supply_file(&mut self, entry: FileEntry) -> Result<bool, DocError> {
+        let id = FileId::of(&entry.bytes);
+        let fits = self.core.manifests.get(&id).is_some_and(|m| *m == FileManifest::of(&entry));
+        if !fits || self.view.file(&id).is_some() {
+            return Ok(false);
+        }
+        let mut tx = self.view.begin();
+        match tx.put_file(entry) {
+            Ok(_) => {}
+            Err(StoreError::BadFile(rejection)) => return Err(DocError::BadFile(rejection)),
+            Err(other) => return Err(DocError::backend(other)),
+        }
+        tx.commit().map_err(DocError::backend)?;
+        Ok(true)
     }
 
     /// Turns the staging of big imports on (`bytes` is the smallest message that is staged) or off (`usize::MAX`).

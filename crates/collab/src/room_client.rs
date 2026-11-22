@@ -1,12 +1,16 @@
 //! One client type for the engine: a plaintext room ([`CollabClient`]) or an end-to-end encrypted one
 //! ([`SealedClient`]). Every method forwards, so the session and the engine do not care which one runs.
 
+use std::sync::Arc;
+
 use drafftink_doc::LoroStore;
 use drafftink_protocol::{ClientId, Point, UserInfo, Viewport};
+use drafftink_scene::FileId;
 
 use crate::awareness::{LocalPresence, PeerTable};
+use crate::blobs::{BlobRequest, BlobResponse};
 use crate::client::{AuthToken, CollabClient, CollabEvent, Output, Stats, TrimmedChoice};
-use crate::sealed::SealedClient;
+use crate::sealed::{ImageProgress, SealedClient};
 use crate::status::Status;
 use crate::transport::TransportEvent;
 use crate::url::ServerUrl;
@@ -184,5 +188,52 @@ impl RoomClient {
     /// When the owner must call `tick` next.
     pub fn next_wake_ms(&self) -> Option<u64> {
         forward!(self.next_wake_ms())
+    }
+
+    // ---- pictures (encrypted rooms only; a plaintext room embeds them in the document) ---------------------------
+
+    /// "I hold these bytes": uploads them unless the relay has the name. A plaintext client ignores it.
+    pub fn offer_image(&mut self, now_ms: u64, id: &FileId, bytes: Arc<[u8]>) {
+        if let RoomClient::Sealed(c) = self {
+            c.offer_image(now_ms, id, bytes);
+        }
+    }
+
+    /// "Show me this picture": downloads it. A plaintext client ignores it.
+    pub fn want_image(&mut self, now_ms: u64, id: &FileId) {
+        if let RoomClient::Sealed(c) = self {
+            c.want_image(now_ms, id);
+        }
+    }
+
+    /// The next HTTP request for a picture. A plaintext client has none.
+    pub fn poll_blob_request(&mut self) -> Option<BlobRequest> {
+        match self {
+            RoomClient::Sealed(c) => c.poll_blob_request(),
+            RoomClient::Plain(_) => None,
+        }
+    }
+
+    /// The answer to a picture request. A plaintext client ignores it.
+    pub fn on_blob_response(&mut self, now_ms: u64, response: BlobResponse) {
+        if let RoomClient::Sealed(c) = self {
+            c.on_blob_response(now_ms, response);
+        }
+    }
+
+    /// The limits of an encrypted room as its relay announced them. `None` for a plaintext client.
+    pub fn room_limits(&self) -> Option<&drafftink_protocol::v2::RoomLimits> {
+        match self {
+            RoomClient::Sealed(c) => Some(c.limits()),
+            RoomClient::Plain(_) => None,
+        }
+    }
+
+    /// Where the picture transfers stand. All zero for a plaintext client.
+    pub fn images(&self) -> ImageProgress {
+        match self {
+            RoomClient::Sealed(c) => c.images(),
+            RoomClient::Plain(_) => ImageProgress::default(),
+        }
     }
 }

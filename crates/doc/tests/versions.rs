@@ -5,7 +5,7 @@
 mod common;
 
 use common::*;
-use drafftink_doc::{LoroConfig, LoroStore};
+use drafftink_doc::{FilePolicy, LoroConfig, LoroStore};
 use drafftink_scene::*;
 use loro::{ExportMode, LoroDoc, LoroValue};
 
@@ -332,4 +332,37 @@ fn a_version_costs_its_stored_size_in_a_state_and_twice_that_in_a_full_snapshot(
         assert!(s.export_snapshot().unwrap().len() - full1 < 200, "{name}: a rename is small");
     }
     eprintln!("{report}");
+}
+
+#[test]
+fn a_version_keeps_its_file_ids_when_the_pictures_are_external_and_across_a_snapshot_round_trip() {
+    let mut a = peer(1);
+    a.set_file_policy(FilePolicy::External);
+    let (id, entry) = put_picture(&mut a, 1, 1500);
+    add(&mut a, vec![image_of("img", &zs(1)[0], &id)]);
+    let v = save(&mut a, "v1", "With a picture", 5);
+    assert_eq!(v.files, vec![id.clone()], "captured from the scene, not from the bytes");
+
+    let list = |s: &LoroStore| s.versions().cloned().collect::<Vec<_>>();
+    for (what, bytes) in [
+        ("snapshot", a.export_snapshot().unwrap()),
+        ("state only", a.export_state_only().unwrap()),
+        ("trimmed", a.export_shallow_snapshot(0).unwrap()),
+        ("all updates", a.export_updates_since(&[]).unwrap()),
+    ] {
+        let mut b = if what == "all updates" {
+            let mut b = peer(2);
+            b.apply_remote(&bytes).unwrap();
+            b
+        } else {
+            LoroStore::from_snapshot(&bytes).unwrap()
+        };
+        assert_eq!(list(&b), vec![v.clone()], "{what}: the version and its file list");
+        assert_eq!(b.version(&v.id).unwrap().files, vec![id.clone()], "{what}");
+        assert!(b.manifest(&id).is_some(), "{what}: the manifest the version refers to");
+        assert!(b.file(&id).is_none(), "{what}: the bytes are not in the document");
+        // The bytes come from elsewhere; the version then opens with its picture available.
+        assert_eq!(b.supply_file(entry.clone()), Ok(true), "{what}");
+        assert!(b.version(&v.id).unwrap().open().is_ok(), "{what}");
+    }
 }

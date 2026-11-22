@@ -3,7 +3,7 @@
 use std::error::Error;
 use std::sync::Arc;
 
-use drafftink_scene::{ElementError, ElementId, StoreError};
+use drafftink_scene::{ElementError, ElementId, FileRejection, StoreError};
 
 /// A failure of the CRDT library, kept as the source of the error. `LoroError` is neither `Clone` nor
 /// `PartialEq`, so two of these compare by their message.
@@ -84,6 +84,9 @@ pub enum DocError {
     /// Loro failed in a way that is not the caller's fault.
     #[error("the CRDT layer failed: {0}")]
     Backend(#[source] BackendError),
+    /// A picture was refused by the store's rules (not an image media type, over the size limit, too many files).
+    #[error("the picture was refused: {0}")]
+    BadFile(#[source] FileRejection),
     /// Loro refuses this peer id (it reserves `u64::MAX`).
     #[error("{0} cannot be used as a peer id")]
     BadPeerId(u64),

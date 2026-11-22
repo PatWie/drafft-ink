@@ -200,6 +200,7 @@ pub const ALLOWED_EXTERNAL: &[(&str, &[&str])] = &[
     (
         "drafftink-collab",
         &[
+            "base64",
             "futures-util",
             "js-sys",
             "log",
@@ -209,7 +210,9 @@ pub const ALLOWED_EXTERNAL: &[(&str, &[&str])] = &[
             "tokio",
             "tokio-rustls",
             "tokio-tungstenite",
+            "ureq",
             "wasm-bindgen",
+            "wasm-bindgen-futures",
             "web-sys",
             "webpki-roots",
         ],

@@ -85,7 +85,7 @@ impl ServerUrl {
         }
         let (host, port) = split_host_port(authority, secure)?;
         let path = normalize_path(tail);
-        let loopback = is_loopback(&host);
+        let loopback = is_loopback_host(&host);
         if !secure && !loopback && !policy.allow_insecure {
             return Err(UrlError::Insecure(host));
         }
@@ -96,6 +96,17 @@ impl ServerUrl {
     /// not from the address the person gave.
     pub fn with_path(&self, path: impl Into<String>) -> ServerUrl {
         ServerUrl { path: path.into(), ..self.clone() }
+    }
+
+    /// The address of the same server for plain HTTP requests, such as the pictures of a room: `ws` becomes `http`,
+    /// `wss` becomes `https`, and the host and port stay. No path and no query: `wss://draw.example.com/ws` gives
+    /// `https://draw.example.com`, and `ws://127.0.0.1:3030/ws` gives `http://127.0.0.1:3030`. A default port is left
+    /// out, as in the `Display` form.
+    pub fn http_base(&self) -> String {
+        let scheme = if self.secure { "https" } else { "http" };
+        let default = if self.secure { 443 } else { 80 };
+        let host = if self.host.contains(':') { format!("[{}]", self.host) } else { self.host.clone() };
+        if self.port == default { format!("{scheme}://{host}") } else { format!("{scheme}://{host}:{}", self.port) }
     }
 
     /// True for `wss://`.
@@ -197,7 +208,8 @@ fn normalize_path(tail: &str) -> String {
     }
 }
 
-fn is_loopback(host: &str) -> bool {
+/// True for `localhost`, `*.localhost`, `127.x.x.x`, `::1` (and the v4-mapped form).
+pub(crate) fn is_loopback_host(host: &str) -> bool {
     if host == "localhost" || host.ends_with(".localhost") {
         return true;
     }
@@ -272,6 +284,19 @@ mod tests {
             assert!(matches!(err(s), UrlError::Invalid(_) | UrlError::Scheme), "{s}");
         }
         assert!(matches!(err(&format!("wss://{}", "a".repeat(3000))), UrlError::Invalid(_)));
+    }
+
+    #[test]
+    fn http_base_maps_the_scheme_and_drops_the_path() {
+        let base = |s: &str| ok(s).http_base();
+        assert_eq!(base("wss://draw.example.com/ws"), "https://draw.example.com");
+        assert_eq!(base("wss://draw.example.com:8443/sync?x=1"), "https://draw.example.com:8443");
+        assert_eq!(base("ws://127.0.0.1:3030/ws"), "http://127.0.0.1:3030");
+        assert_eq!(base("ws://localhost"), "http://localhost");
+        assert_eq!(base("ws://[::1]:3030"), "http://[::1]:3030");
+        assert_eq!(base("wss://Draw.Example.com:443"), "https://draw.example.com");
+        // A room's path does not leak into the base.
+        assert_eq!(ok("ws://127.0.0.1:3030/ws").with_path("/r/abc/ws").http_base(), "http://127.0.0.1:3030");
     }
 
     #[test]

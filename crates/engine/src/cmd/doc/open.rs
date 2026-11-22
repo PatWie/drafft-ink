@@ -16,6 +16,7 @@ use serde_json::json;
 use super::files::{self, InlineBytes, Loaded, Provenance, Source, base64_of};
 use crate::cmd::bytes::{Bytes, BytesError};
 use crate::cmd::clipboard::common::{At, resolve_at};
+use crate::cmd::image::room::{self, Oversize};
 use super::save;
 use crate::args;
 use crate::cmd::view::Pt;
@@ -354,6 +355,8 @@ pub(crate) fn merge_into_active(
     if s.tab().doc.blocked_by_schema().is_some() {
         return Err(Refusal::newer_schema(id));
     }
+    // Pictures that come with the elements are stored too: in a room they meet the room's limits.
+    room::admit(s, &room::pictures_of(doc), Oversize::Refuse).map_err(|r| r.raised_by(id))?;
     let place = match at {
         Some(p) => Placement::Centre(Point::new(args::world(id, "at[0]", p[0])?, args::world(id, "at[1]", p[1])?)),
         None => Placement::AsIs,

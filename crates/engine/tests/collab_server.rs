@@ -122,6 +122,12 @@ impl Net for NativeNet {
         Ok(Box::new(NativeTransport::new(wake)))
     }
 
+    fn open_blob_transport(&mut self) -> Result<Box<dyn drafftink_collab::BlobTransport>, PortError> {
+        let w = Arc::clone(&self.waker);
+        let wake: WakeFn = Arc::new(move || w.wake());
+        Ok(Box::new(drafftink_collab::NativeBlobTransport::new(wake)))
+    }
+
     fn random(&mut self) -> u128 {
         (u128::from(self.rng.next_u64()) << 64) | u128::from(self.rng.next_u64())
     }

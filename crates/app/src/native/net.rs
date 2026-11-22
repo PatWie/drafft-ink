@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use drafftink_collab::{NativeTransport, Transport};
+use drafftink_collab::{BlobTransport, NativeBlobTransport, NativeTransport, Transport};
 use drafftink_engine::PortError;
 use drafftink_engine::ports::Net;
 
@@ -20,6 +20,10 @@ impl NativeNet {
 impl Net for NativeNet {
     fn open_transport(&mut self) -> Result<Box<dyn Transport>, PortError> {
         Ok(Box::new(NativeTransport::new(Arc::clone(&self.wake))))
+    }
+
+    fn open_blob_transport(&mut self) -> Result<Box<dyn BlobTransport>, PortError> {
+        Ok(Box::new(NativeBlobTransport::new(Arc::clone(&self.wake))))
     }
 
     fn random(&mut self) -> u128 {

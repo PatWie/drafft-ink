@@ -1,16 +1,17 @@
 //! Transactions: edit the view, then write only the changed fields into Loro in one commit.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
 
 use drafftink_scene::MemoryTx;
 use drafftink_scene::{
     Change, ChangeKind, ChangeSet, Color, DerivedIndex, DocMeta, Element, ElementId, ElementKind, Fields, FileEntry,
-    FileId, NamedVersion, SceneRead, SceneTx, StoreError, VersionId, ZIndex,
+    FileId, FileManifest, NamedVersion, SceneRead, SceneTx, StoreError, VersionId, ZIndex,
 };
 use loro::{CommitOptions, LoroMap, LoroValue};
 
 use crate::codec::{self, Flat};
 use crate::error::DocError;
+use crate::files;
 use crate::schema::{
     META_BACKGROUND, META_NAME, ROOT_ELEMENTS, ROOT_FILES, ROOT_META, ROOT_VERSIONS, SYSTEM_ORIGIN_PREFIX,
 };
@@ -455,18 +456,23 @@ impl Core {
         Ok(())
     }
 
-    fn write_files(&self, files: &[(FileId, Option<FileEntry>)]) -> Result<(), DocError> {
+    fn write_files(&mut self, files: &[(FileId, Option<FileEntry>)]) -> Result<(), DocError> {
         let map = self.doc.get_map(ROOT_FILES);
         for (id, entry) in files {
             match entry {
                 Some(f) => {
-                    let blob = HashMap::from([
-                        ("mime".to_owned(), LoroValue::from(f.mime.as_str())),
-                        ("bytes".to_owned(), LoroValue::from(f.bytes.to_vec())),
-                    ]);
-                    map.insert(id.as_str(), LoroValue::from(blob))?;
+                    let value = files::to_loro(f, self.file_policy);
+                    // A picture a peer already described is not written again.
+                    let held = matches!(map.get(id.as_str()), Some(loro::ValueOrContainer::Value(v)) if v == value);
+                    if !held {
+                        map.insert(id.as_str(), value)?;
+                    }
+                    self.set_manifest(id, Some(FileManifest::of(f)));
                 }
-                None => map.delete(id.as_str())?,
+                None => {
+                    map.delete(id.as_str())?;
+                    self.set_manifest(id, None);
+                }
             }
         }
         Ok(())

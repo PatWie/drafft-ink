@@ -13,6 +13,9 @@
 //! the crop editor (`image.crop_begin`, `image.crop_end`). The rules for crops are in `drafftink_edit::crop`; the
 //! pointer side of the editor is `interact::crop`.
 
+#[path = "image_room.rs"]
+pub(crate) mod room;
+
 use drafftink_edit::TargetError;
 use drafftink_edit::crop::{self, BoxRule, CropError, Cropped};
 use drafftink_geom::kurbo::{Point, Rect};
@@ -27,6 +30,7 @@ use serde::{Deserialize, Serialize};
 use super::bytes::{Bytes, BytesError, Loaded};
 use super::clipboard::common::{At, edit_with, resolve_at, select_only};
 use crate::args;
+use room::{Incoming, Oversize};
 use super::element_common::target_refusal;
 use super::view::RectArg;
 use crate::refusal::{Refusal, echo};
@@ -75,6 +79,8 @@ pub(crate) struct Placement {
     pub offset: f64,
     pub select: bool,
     pub downscale: bool,
+    /// What happens to a picture over the room's size limit (only in an encrypted room).
+    pub oversize: Oversize,
 }
 
 /// One inserted picture.
@@ -136,10 +142,28 @@ pub(crate) fn insert_pictures(
 ) -> Result<Vec<Inserted>, Refusal> {
     let cmd = s.cmd();
     let mut ready: Vec<Ready> = Vec::with_capacity(pics.len());
+    let room_limit = s.room_images().map(|r| r.max_image_bytes);
     for p in pics {
-        let prepared = picture::prepare(p.bytes, place.downscale).map_err(|e| picture_refusal(cmd, &p.name, &e))?;
+        let mut prepared = picture::prepare(p.bytes, place.downscale).map_err(|e| picture_refusal(cmd, &p.name, &e))?;
         for note in &prepared.warnings {
             s.warn(format!("`{}`: {}", echo(&p.name), note));
+        }
+        // A picture of a room is at most the room's limit. With `shrink` a smaller copy is stored; otherwise
+        // `room::admit` below refuses it.
+        if let (Some(max), Oversize::Shrink) = (room_limit, place.oversize)
+            && prepared.bytes.len() > max
+        {
+            let before = prepared.bytes.len();
+            prepared = picture::fit_into(prepared, max).map_err(|e| match e {
+                PictureError::TooLarge { size } => room::too_large_even_shrunk(cmd, size, max),
+                other => picture_refusal(cmd, &p.name, &other),
+            })?;
+            s.warn(format!(
+                "`{}` was {} bytes, over the {max} bytes a picture in a shared room can take, so a smaller copy of {} bytes is stored.",
+                echo(&p.name),
+                before,
+                prepared.bytes.len()
+            ));
         }
         // The size on the canvas follows the picture as it was given, not the smaller copy we store.
         let (w, h) = (f64::from(prepared.given.0), f64::from(prepared.given.1));
@@ -147,6 +171,8 @@ pub(crate) fn insert_pictures(
         let (file_id, entry) = FileEntry::new(prepared.mime, prepared.bytes);
         ready.push(Ready { entry, file_id, natural: prepared.natural, show: (w * k, h * k), shrunk: prepared.shrunk });
     }
+    let incoming: Vec<Incoming> = ready.iter().map(|r| Incoming { id: r.file_id.clone(), size: r.entry.bytes.len() }).collect();
+    room::admit(s, &incoming, place.oversize)?;
     // A picture is reused when the document has the bytes already, or an earlier picture of this call has them.
     let mut known: Vec<bool> = Vec::with_capacity(ready.len());
     for (i, r) in ready.iter().enumerate() {
@@ -244,6 +270,11 @@ pub struct InsertArgs {
     /// A name for messages about pictures that carry no `name` of their own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// In a shared (encrypted) room a picture can be at most 4 MB. With `shrink` a larger picture is stored as a
+    /// smaller copy (scaled down, a JPEG unless it has transparency) and the output says `shrunk`; without it
+    /// the picture is refused with `image_too_large`. Outside a room it changes nothing.
+    #[serde(default)]
+    pub shrink: bool,
 }
 
 /// Output of `image.insert`.
@@ -275,7 +306,10 @@ fn insert(s: &mut Session, a: InsertArgs) -> Result<InsertOut, Refusal> {
         };
         loaded.push(load_picture(s, b, &fallback)?);
     }
-    let images = insert_pictures(s, loaded, &Placement { at, fit, offset, select: a.select, downscale: a.downscale })?;
+    let oversize = if a.shrink { Oversize::Shrink } else { Oversize::Offer };
+    let place = Placement { at, fit, offset, select: a.select, downscale: a.downscale, oversize };
+    let images = insert_pictures(s, loaded, &place)
+        .map_err(|r| room::offer_shrink(r, cmd, serde_json::to_value(&a).ok()))?;
     Ok(InsertOut { ids: images.iter().map(|i| i.id.clone()).collect(), images })
 }
 
@@ -586,7 +620,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         &Typed::new(insert),
         DOC,
     )
-    .refusals(&["unsupported_format"])
+    .refusals(&["unsupported_format", room::IMAGE_TOO_LARGE, room::ROOM_IMAGES_FULL])
     .example(r#"{"images":[{"base64":"iVBORw0KGgo=","name":"logo.png"}],"at":[0,0]}"#),
     CommandSpec::new(
         "image.crop",
@@ -631,6 +665,10 @@ pub const COMMANDS: &[CommandSpec] = &[
     )
     .available(crop_editor_open),
 ];
+
+#[cfg(test)]
+#[path = "image_room_tests.rs"]
+pub(crate) mod room_tests;
 
 #[cfg(test)]
 #[path = "image_tests.rs"]

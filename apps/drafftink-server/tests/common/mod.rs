@@ -3,6 +3,7 @@
 #![allow(dead_code)]
 
 pub mod mock_s3;
+pub mod room_client;
 
 use std::net::SocketAddr;
 use std::time::Duration;

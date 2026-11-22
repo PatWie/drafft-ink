@@ -116,7 +116,7 @@ error page.
 
 | Port | Web implementation |
 |---|---|
-| Storage | `WebStorage`: the whole `drafftink` IndexedDB (one object store, keys `<namespace>/<key>`) is read into memory before the app starts. `get` and `list` read memory. `put` and `delete` change memory and queue a write that goes out in the next microtask (a burst of writes to one key is one write). Pending writes are flushed again on `pagehide` and when the page becomes hidden. A failed transaction is retried with the next change or flush and logged. Without IndexedDB (some private modes) the storage is memory only and a notice at the bottom of the page says so. Two tabs of one site each see the database as it was when they opened; the autosave record belongs to the tab that wrote last. |
+| Storage | `WebStorage`: the whole `drafftink` IndexedDB (one object store, keys `<namespace>/<key>`) is read into memory before the app starts. `get` and `list` read memory. `put` and `delete` change memory and queue a write that goes out in the next microtask (a burst of writes to one key is one write). Pending writes are flushed again on `pagehide` and when the page becomes hidden. A failed transaction is retried with the next change or flush and logged. Without IndexedDB (some private modes) the storage is memory only and a notice at the bottom of the page says so. Two tabs of one site each see the database as it was when they opened; the autosave record belongs to the tab that wrote last. The namespaces are `documents`, `autosave`, `settings`, `library` and `blobs` (the plaintext cache of room pictures, key = file id, 64 hex characters; like every namespace it is read into memory at start). |
 | Files | `Download{name}`: a Blob with the given media type and an anchor click. `Stored{name}`: the `Documents` namespace. Paths and handles are refused with a plain message. |
 | Net | `WebTransport`. `same_origin_url("/ws")` is `ws(s)://<location.host>/ws` by the page protocol; plain `ws://` to other machines is allowed only when the page itself is on a loopback host. |
 | Clock, ids | `AppClock`; `RandomIds` over `crypto.getRandomValues`. |
@@ -224,6 +224,8 @@ Nobody sees the refusal in normal use:
   polls (`BridgeHost`), so the promise resolves with the picture;
 - the UI keeps the call in `UiState::waiting`, shows "Drawing the picture..." and runs it again each frame until it works (the export dialog
   stays open until then).
+
+`images_pending` (an export in an encrypted room that waits for pictures to download, `commands.md` `doc.export`) is kept and run again the same way: `Refusal::is_pending` is true for both codes, `UiState::waiting` shows "Loading the pictures of the room...", and the bridge parks the request. It becomes `images_unavailable` after 30 seconds, so the wait ends. A batch step refused with it fails the batch (only `render_pending` is waited for in a batch).
 
 A `batch` with an export step is applied as a whole: the engine commits it and lists the export as a waiting step with a token
 (`commands.md` §1.7), the bridge keeps the answer back and calls `Session::finish_render` on each wake, and the caller gets the

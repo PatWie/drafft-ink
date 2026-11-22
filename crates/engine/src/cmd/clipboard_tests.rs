@@ -1025,3 +1025,85 @@ fn hostile_payloads_never_panic() {
         }
     }
 }
+
+// ---- pictures in an encrypted room (docs/design/collab-e2e.md section 9) ----
+
+mod room {
+    use super::*;
+    use crate::cmd::image::room_tests::{Room, png_of_size};
+    use base64::Engine as _;
+    use base64::engine::general_purpose::STANDARD;
+    use drafftink_protocol::{MAX_IMAGE_BYTES, MAX_ROOM_IMAGES};
+    use drafftink_scene::ElementKind;
+
+    fn pictures(s: &Session) -> usize {
+        s.store().iter().filter(|e| matches!(e.kind, ElementKind::Image(_))).count()
+    }
+
+    fn room() -> Room {
+        let mut w = Room::new(1);
+        w.create(0);
+        w
+    }
+
+    /// The clipboard payload of a picture inserted into a local session (a local tab takes 25 MiB).
+    fn copied_picture(bytes: &[u8]) -> Value {
+        let (mut local, _) = testing::session();
+        run(&mut local, "image.insert", json!({"images": [{"base64": STANDARD.encode(bytes)}]}));
+        run(&mut local, "clipboard.copy", json!({}));
+        local.ext.with::<CopyBuffer, _>(|b| b.envelope.clone()).expect("the copy buffer holds the elements")
+    }
+
+    #[test]
+    fn pasting_an_image_over_the_room_limit_is_refused_and_one_at_the_limit_is_stored() {
+        let mut w = room();
+        let at_limit = png_of_size(MAX_IMAGE_BYTES, 1);
+        let out = run(w.s(0), "clipboard.paste", json!({"source": {"image": {"base64": STANDARD.encode(&at_limit)}}}));
+        assert_eq!(out["kind"], "image");
+        let r = refuse_clean(w.s(0), "clipboard.paste", json!({"source": {"image": {"base64": STANDARD.encode(png_of_size(MAX_IMAGE_BYTES + 1, 2))}}}));
+        assert_eq!(r.code, "image_too_large");
+        assert_eq!(
+            r.message,
+            "This picture is 4.1 MB. Pictures in a shared room can be at most 4 MB. Save it smaller (for example as a JPEG) and try again."
+        );
+        assert!(r.suggest.is_empty(), "paste has no `shrink`, so it offers none");
+        assert_eq!(pictures(w.s(0)), 1);
+    }
+
+    #[test]
+    fn pasting_elements_that_carry_a_big_picture_is_refused_before_anything_is_added() {
+        let mut w = room();
+        let envelope = copied_picture(&png_of_size(MAX_IMAGE_BYTES + 1, 3));
+        let r = refuse_clean(w.s(0), "clipboard.paste", json!({"source": {"elements": envelope}}));
+        assert_eq!(r.code, "image_too_large");
+        assert_eq!(w.s(0).store().iter().count(), 0);
+        // The same elements are fine in a local tab.
+        let (mut local, _) = testing::session();
+        run(&mut local, "clipboard.paste", json!({"source": {"elements": envelope}}));
+        assert_eq!(pictures(&local), 1);
+    }
+
+    #[test]
+    fn pasting_elements_with_a_picture_the_room_has_costs_nothing_even_when_the_room_is_full() {
+        let mut w = room();
+        let pics: Vec<Vec<u8>> = (0..MAX_ROOM_IMAGES).map(|i| png_of_size(100 + i as usize, 1)).collect();
+        for chunk in pics.chunks(20) {
+            let list: Vec<Value> = chunk.iter().map(|p| json!({"base64": STANDARD.encode(p)})).collect();
+            run(w.s(0), "image.insert", json!({"images": list}));
+        }
+        let new = copied_picture(&png_of_size(9_000, 7));
+        let r = refuse_clean(w.s(0), "clipboard.paste", json!({"source": {"elements": new}}));
+        assert_eq!(r.code, "room_images_full");
+        let held = copied_picture(&pics[3]);
+        run(w.s(0), "clipboard.paste", json!({"source": {"elements": held}}));
+        assert_eq!(pictures(w.s(0)), MAX_ROOM_IMAGES as usize + 1);
+    }
+
+    #[test]
+    fn a_picture_of_a_local_tab_is_not_gated() {
+        let (mut local, _) = testing::session();
+        let big = png_of_size(MAX_IMAGE_BYTES + 1, 4);
+        run(&mut local, "clipboard.paste", json!({"source": {"image": {"base64": STANDARD.encode(&big)}}}));
+        assert_eq!(pictures(&local), 1);
+    }
+}

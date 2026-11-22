@@ -78,12 +78,16 @@ pub(crate) fn ns_name(ns: Ns) -> &'static str {
         Ns::Autosave => "autosave",
         Ns::Settings => "settings",
         Ns::Library => "library",
+        Ns::Blobs => "blobs",
     }
 }
 
+/// Every namespace, in the order of [`Ns`].
+const ALL_NS: [Ns; 5] = [Ns::Documents, Ns::Autosave, Ns::Settings, Ns::Library, Ns::Blobs];
+
 /// The namespace stored under `name`, if any.
 pub(crate) fn ns_from_name(name: &str) -> Option<Ns> {
-    [Ns::Documents, Ns::Autosave, Ns::Settings, Ns::Library].into_iter().find(|ns| ns_name(*ns) == name)
+    ALL_NS.into_iter().find(|ns| ns_name(*ns) == name)
 }
 
 /// The IndexedDB key of one entry: `<namespace>/<key>`.
@@ -185,9 +189,11 @@ mod tests {
 
     #[test]
     fn namespaces_round_trip() {
-        for ns in [Ns::Documents, Ns::Autosave, Ns::Settings, Ns::Library] {
+        for ns in ALL_NS {
             assert_eq!(ns_from_name(ns_name(ns)), Some(ns));
         }
+        assert_eq!(ns_name(Ns::Blobs), "blobs");
+        assert_eq!(ns_from_name("blobs"), Some(Ns::Blobs));
         assert_eq!(ns_from_name("nope"), None);
         assert_eq!(record_key(Ns::Autosave, "slot/1"), "autosave/slot/1");
     }

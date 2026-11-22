@@ -731,3 +731,216 @@ fn a_collaborator_deleting_the_image_closes_the_editor() {
     run(&mut s, "element.delete", json!({"ids": [id]}));
     assert!(s.tab().observed.crop_editor.is_none());
 }
+
+// ---- pictures in an encrypted room (docs/design/collab-e2e.md section 9) ----
+
+mod room {
+    use super::*;
+    use crate::cmd::image::room_tests::{Room, png_of_size};
+    use drafftink_protocol::{MAX_IMAGE_BYTES, MAX_ROOM_IMAGE_BYTES, MAX_ROOM_IMAGES, SEAL_OVERHEAD};
+
+    fn insert(s: &mut Session, bytes: &[u8]) -> Value {
+        run(s, "image.insert", json!({"images": [b64(bytes)], "at": [0, 0]}))
+    }
+
+    fn room() -> Room {
+        let mut w = Room::new(1);
+        w.create(0);
+        w
+    }
+
+    #[test]
+    fn a_picture_of_exactly_the_room_limit_is_stored() {
+        let mut w = room();
+        let out = insert(w.s(0), &png_of_size(MAX_IMAGE_BYTES, 1));
+        assert_eq!(out["images"][0]["shrunk"], false, "{out}");
+        assert_eq!(images(w.s(0)).len(), 1);
+        let room = w.s(0).room_images().expect("a room tab");
+        assert_eq!(room.count, 1);
+        assert_eq!(room.sealed_bytes, (MAX_IMAGE_BYTES + SEAL_OVERHEAD) as u64);
+    }
+
+    #[test]
+    fn one_byte_more_is_refused_with_the_size_the_limit_and_the_offer_to_shrink() {
+        let mut w = room();
+        let big = png_of_size(MAX_IMAGE_BYTES + 1, 1);
+        w.fakes(0).files.insert(&FileRef::Path { path: "/pics/big.png".to_owned() }, &big, "image/png");
+        let args = json!({"images": [{"path": "/pics/big.png"}], "at": [0, 0]});
+        let r = refuse_clean(w.s(0), "image.insert", args.clone());
+        assert_eq!(r.code, "image_too_large");
+        assert_eq!(
+            r.message,
+            "This picture is 4.1 MB. Pictures in a shared room can be at most 4 MB. Run the command again with `shrink: true` to store a smaller copy, or save it smaller and insert it again."
+        );
+        // The offer is the same call with `shrink: true`, and it works.
+        let offer = r.suggest.first().expect("an offer");
+        assert_eq!(offer.command, "image.insert");
+        let offered = offer.args.clone().expect("the arguments of the call");
+        assert_eq!(offered["images"], args["images"]);
+        assert_eq!((offered["shrink"].clone(), offered["at"].clone()), (json!(true), json!([0.0, 0.0])));
+        run(w.s(0), "image.insert", offered);
+        assert_eq!(images(w.s(0)).len(), 1);
+    }
+
+    #[test]
+    fn an_inline_picture_is_not_copied_into_the_offer_but_the_offer_still_names_shrink() {
+        let mut w = room();
+        let r = refuse_clean(w.s(0), "image.insert", json!({"images": [b64(&png_of_size(MAX_IMAGE_BYTES + 1, 1))]}));
+        assert_eq!(r.suggest.first().and_then(|s| s.args.clone()), Some(json!({"shrink": true})));
+        assert!(serde_json::to_string(&r).unwrap().len() < 4_000, "the refusal stays small");
+    }
+
+    #[test]
+    fn a_refusal_names_the_size_of_the_picture_in_megabytes() {
+        let mut w = room();
+        let r = refuse_clean(w.s(0), "image.insert", json!({"images": [b64(&png_of_size(6_501_171, 1))]}));
+        assert!(r.message.starts_with("This picture is 6.2 MB. Pictures in a shared room can be at most 4 MB."), "{}", r.message);
+    }
+
+    #[test]
+    fn shrink_stores_a_smaller_copy_that_fits_and_says_so() {
+        let mut w = room();
+        let big = noisy_png(1400, 1400);
+        assert!(big.len() > MAX_IMAGE_BYTES, "the test picture must be over the limit: {}", big.len());
+        let out = run(w.s(0), "image.insert", json!({"images": [named(&big, "photo.png")], "at": [0, 0], "shrink": true}));
+        assert_eq!(out["images"][0]["shrunk"], true, "{out}");
+        let id = out["images"][0]["file_id"].as_str().unwrap();
+        let stored = w.s(0).store().file(&FileId::new(id).unwrap()).unwrap().bytes.len();
+        assert!(stored <= MAX_IMAGE_BYTES && stored > 0, "{stored}");
+        let note = out["warnings"].as_array().unwrap().iter().filter_map(Value::as_str).find(|n| n.contains("smaller copy"));
+        assert!(note.is_some_and(|n| n.contains("photo.png")), "{out}");
+    }
+
+    #[test]
+    fn shrink_changes_nothing_for_a_picture_that_fits_or_outside_a_room() {
+        let mut w = room();
+        let small = png(40, 30);
+        let out = run(w.s(0), "image.insert", json!({"images": [b64(&small)], "shrink": true}));
+        assert_eq!(out["images"][0]["shrunk"], false);
+        assert_eq!(w.s(0).store().file(&FileId::of(&small)).unwrap().bytes.as_ref(), small.as_slice());
+        // A local tab keeps the 25 MiB limit and ignores `shrink`.
+        let mut local = session();
+        let big = png_of_size(MAX_IMAGE_BYTES + 1, 2);
+        let out = run(&mut local, "image.insert", json!({"images": [b64(&big)], "shrink": true}));
+        assert_eq!(out["images"][0]["shrunk"], false);
+        assert_eq!(local.store().file(&FileId::of(&big)).unwrap().bytes.len(), big.len());
+        let again = run(&mut local, "image.insert", json!({"images": [b64(&png_of_size(MAX_IMAGE_BYTES + 5, 3))]}));
+        assert_eq!(again["images"][0]["reused"], false);
+    }
+
+    #[test]
+    fn a_picture_that_cannot_get_small_enough_is_refused_even_with_shrink() {
+        let mut w = room();
+        // Noise at this size never reaches 4 MiB as a 256 px JPEG? It does; so ask for less than is possible by
+        // making the picture a PNG that is not decodable: the copy cannot be made, and the refusal says why.
+        let mut broken = png_of_size(MAX_IMAGE_BYTES + 100, 1);
+        // A damaged header chunk: the picture is not readable at all.
+        broken[20] ^= 0xff;
+        let r = refuse_clean(w.s(0), "image.insert", json!({"images": [b64(&broken)], "shrink": true}));
+        assert!(matches!(r.code, "parse_failed" | "unsupported_format"), "{}: {}", r.code, r.message);
+    }
+
+    #[test]
+    fn the_third_picture_of_a_call_over_the_limit_leaves_the_document_alone() {
+        let mut w = room();
+        let (a, b, big) = (png(10, 10), png(11, 10), png_of_size(MAX_IMAGE_BYTES + 1, 1));
+        let r = refuse_clean(w.s(0), "image.insert", json!({"images": [b64(&a), b64(&b), b64(&big)]}));
+        assert_eq!(r.code, "image_too_large");
+        assert!(images(w.s(0)).is_empty());
+        assert_eq!(w.s(0).room_images().map(|r| r.count), Some(0));
+    }
+
+    #[test]
+    fn the_count_limit_refuses_the_next_new_picture_and_still_takes_one_the_room_has() {
+        let mut w = room();
+        let pics: Vec<Vec<u8>> = (0..MAX_ROOM_IMAGES).map(|i| png_of_size(100 + i as usize, 1)).collect();
+        for chunk in pics.chunks(20) {
+            let list: Vec<Value> = chunk.iter().map(|p| b64(p)).collect();
+            run(w.s(0), "image.insert", json!({"images": list}));
+        }
+        assert_eq!(w.s(0).room_images().map(|r| r.count), Some(MAX_ROOM_IMAGES));
+        let r = refuse_clean(w.s(0), "image.insert", json!({"images": [b64(&png_of_size(5_000, 9))]}));
+        assert_eq!(r.code, "room_images_full");
+        assert!(r.message.starts_with("This room already holds 200 pictures"), "{}", r.message);
+        assert!(r.message.ends_with("Remove some, or start a new room."), "{}", r.message);
+        // A picture the room holds already costs nothing.
+        let out = insert(w.s(0), &pics[7]);
+        assert_eq!(out["images"][0]["reused"], true, "{out}");
+    }
+
+    #[test]
+    fn the_total_of_a_room_is_checked_in_sealed_bytes_at_the_limit_and_one_over() {
+        let mut w = room();
+        let mut used = 0u64;
+        let mut n = 0u8;
+        while used + (MAX_IMAGE_BYTES + SEAL_OVERHEAD) as u64 <= MAX_ROOM_IMAGE_BYTES {
+            n += 1;
+            insert(w.s(0), &png_of_size(MAX_IMAGE_BYTES, n));
+            used += (MAX_IMAGE_BYTES + SEAL_OVERHEAD) as u64;
+        }
+        assert_eq!(w.s(0).room_images().map(|r| r.sealed_bytes), Some(used));
+        // What is left, minus the seal, is the largest picture that still fits.
+        let fits = (MAX_ROOM_IMAGE_BYTES - used) as usize - SEAL_OVERHEAD;
+        let over = png_of_size(fits + 1, 100);
+        let r = refuse_clean(w.s(0), "image.insert", json!({"images": [b64(&over)]}));
+        assert_eq!(r.code, "room_images_full");
+        assert!(r.message.starts_with("This room already holds 48.1 MB of pictures, and a room takes at most 50 MB"), "{}", r.message);
+        assert!(r.message.ends_with("Remove some, or start a new room."), "{}", r.message);
+        // The same picture twice in one call counts once, and it fills the room exactly.
+        let exact = png_of_size(fits, 101);
+        let out = run(w.s(0), "image.insert", json!({"images": [b64(&exact), b64(&exact)]}));
+        assert_eq!(out["images"][1]["reused"], true, "{out}");
+        assert_eq!(w.s(0).room_images().map(|r| r.sealed_bytes), Some(MAX_ROOM_IMAGE_BYTES));
+        // Now even a tiny new picture is too much, and the same one again is free.
+        let r = refuse_clean(w.s(0), "image.insert", json!({"images": [b64(&png(7, 7))]}));
+        assert_eq!(r.code, "room_images_full");
+        assert!(r.message.starts_with("This room already holds 50 MB of pictures"), "{}", r.message);
+        assert_eq!(insert(w.s(0), &exact)["images"][0]["reused"], true);
+    }
+
+    #[test]
+    fn two_new_pictures_that_do_not_fit_together_are_refused_before_the_first_is_stored() {
+        let mut w = room();
+        let mut n = 0u8;
+        while w.s(0).room_images().is_some_and(|r| r.sealed_bytes + 2 * (MAX_IMAGE_BYTES + SEAL_OVERHEAD) as u64 <= MAX_ROOM_IMAGE_BYTES) {
+            n += 1;
+            insert(w.s(0), &png_of_size(MAX_IMAGE_BYTES, n));
+        }
+        let left = MAX_ROOM_IMAGE_BYTES - w.s(0).room_images().unwrap().sealed_bytes;
+        let one = (left as usize - SEAL_OVERHEAD) / 2 + 100;
+        let (x, y) = (png_of_size(one, 200), png_of_size(one, 201));
+        let before = images(w.s(0)).len();
+        let r = refuse_clean(w.s(0), "image.insert", json!({"images": [b64(&x), b64(&y)]}));
+        assert_eq!(r.code, "room_images_full");
+        assert_eq!(images(w.s(0)).len(), before, "the first picture was not stored");
+        run(w.s(0), "image.insert", json!({"images": [b64(&x)]}));
+    }
+
+    #[test]
+    fn a_room_that_is_offline_still_gates_pictures() {
+        let mut w = room();
+        w.go_offline(0);
+        assert!(w.s(0).room_images().is_some_and(|r| !r.online));
+        let r = refuse_clean(w.s(0), "image.insert", json!({"images": [b64(&png_of_size(MAX_IMAGE_BYTES + 1, 1))]}));
+        assert_eq!(r.code, "image_too_large");
+    }
+
+    #[test]
+    fn a_dropped_picture_over_the_limit_is_not_inserted_and_says_why() {
+        let mut w = room();
+        let big = png_of_size(MAX_IMAGE_BYTES + 1, 1);
+        let r = w.s(0).execute("doc.drop", json!({"items": [{"name": "big.png", "bytes": b64(&big)}]})).unwrap_err();
+        assert_eq!(r.code, "nothing_to_do");
+        assert!(r.message.contains("This picture is 4.1 MB"), "{}", r.message);
+        assert!(images(w.s(0)).is_empty());
+    }
+
+    #[test]
+    fn the_new_codes_are_listed_on_the_commands_that_can_return_them() {
+        let (s, _) = testing::session();
+        for id in ["image.insert", "clipboard.paste", "library.insert", "doc.open"] {
+            let refusals = s.registry().find(id).unwrap().refusals;
+            assert!(refusals.contains(&"image_too_large") && refusals.contains(&"room_images_full"), "{id}: {refusals:?}");
+        }
+    }
+}

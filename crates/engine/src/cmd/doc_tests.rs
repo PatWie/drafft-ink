@@ -1900,3 +1900,202 @@ fn a_file_from_a_newer_build_opens_without_its_new_fields_and_says_so() {
     let own = open_inline(&mut c, &native(&mut a), json!({})).unwrap();
     assert!(own["warnings"].as_array().is_none_or(|w| w.is_empty()), "{own}");
 }
+
+// ---- pictures of an encrypted room (docs/design/collab-e2e.md sections 9.6 and 9.7) ----
+
+mod room {
+    use super::*;
+    use crate::cmd::image::room_tests::{Room, png_of_size};
+    use drafftink_scene::FileId;
+
+    /// Session 0 made a room and put one picture in it (the bytes stay in its view); session 1 joined, so it
+    /// holds the manifest of the picture and not its bytes. Returns the room, the picture and its id.
+    fn two() -> (Room, Vec<u8>, FileId) {
+        let mut w = Room::new(2);
+        let link = w.create(0);
+        let bytes = png_of_size(3_000, 5);
+        run(w.s(0), "image.insert", json!({"images": [{"base64": b64(&bytes)}], "at": [0, 0]}));
+        w.settle();
+        w.join(1, &link);
+        let id = FileId::of(&bytes);
+        assert!(w.s(1).store().file(&id).is_none(), "the second session has the manifest only");
+        assert_eq!(w.s(1).room_images().map(|r| r.missing), Some(vec![id.clone()]));
+        (w, bytes, id)
+    }
+
+    /// A renderer that records how many pictures the scene it was asked to draw carries.
+    #[derive(Clone, Default)]
+    struct CountingRenderer(Arc<Mutex<Vec<usize>>>);
+
+    impl Renderer for CountingRenderer {
+        fn render_png(&self, doc: &SceneView, _: &RenderRequest) -> Result<Vec<u8>, PortError> {
+            self.0.lock().unwrap().push(doc.files.len());
+            Ok(base64::engine::general_purpose::STANDARD.decode(PNG_1X1).unwrap())
+        }
+    }
+
+    fn export(s: &mut Session, format: &str, extra: Value) -> Result<Value, Refusal> {
+        let mut args = json!({"format": format, "scope": "all"});
+        if let (Value::Object(a), Value::Object(e)) = (&mut args, extra) {
+            a.extend(e);
+        }
+        s.execute_from(Origin::Test, "doc.export", args)
+    }
+
+    fn text_of(out: &Value) -> String {
+        String::from_utf8(unb64(&out["bytes"]["base64"])).unwrap()
+    }
+
+    #[test]
+    fn an_offline_export_of_svg_json_and_excalidraw_reads_the_pictures_from_the_cache() {
+        let (mut w, bytes, id) = two();
+        w.go_offline(1);
+        w.cache(1, &bytes);
+        for format in ["svg", "json", "excalidraw"] {
+            let out = export(w.s(1), format, json!({})).unwrap_or_else(|r| panic!("{format}: {} ({})", r.message, r.code));
+            assert!(out.get("images_missing").is_none(), "{format}: {out}");
+            assert!(text_of(&out).contains(&b64(&bytes)), "the {format} export holds the picture");
+        }
+        assert!(w.s(1).store().file(&id).is_some(), "the picture came into the view");
+    }
+
+    #[test]
+    fn an_offline_png_export_hands_the_renderer_the_pictures_from_the_cache() {
+        let (mut w, bytes, _) = two();
+        let renderer = CountingRenderer::default();
+        w.s(1).ports.renderer = Some(Box::new(renderer.clone()));
+        w.go_offline(1);
+        w.cache(1, &bytes);
+        let out = export(w.s(1), "png", json!({})).unwrap();
+        assert_eq!(out["mime"], "image/png");
+        assert_eq!(*renderer.0.lock().unwrap(), vec![1]);
+    }
+
+    #[test]
+    fn a_picture_that_is_not_in_the_cache_and_cannot_be_loaded_refuses_the_export_with_the_way_forward() {
+        let (mut w, _, _) = two();
+        w.go_offline(1);
+        for format in ["svg", "json", "png", "excalidraw"] {
+            let r = refuse(w.s(1), "doc.export", json!({"format": format, "scope": "all"}));
+            assert_eq!(r.code, "images_unavailable", "{format}");
+            assert_eq!(
+                r.message,
+                "1 picture of this room could not be loaded, so the export would have empty frames. Pass `missing_images: \"placeholder\"` to export without them."
+            );
+            let offer = r.suggest.first().expect("an offer");
+            assert_eq!(offer.command, "doc.export");
+            assert_eq!(offer.args.as_ref().map(|a| a["missing_images"].clone()), Some(json!("placeholder")));
+        }
+    }
+
+    #[test]
+    fn the_placeholder_option_exports_without_the_pictures_and_says_how_many() {
+        let (mut w, _, _) = two();
+        let renderer = CountingRenderer::default();
+        w.s(1).ports.renderer = Some(Box::new(renderer.clone()));
+        w.go_offline(1);
+        let svg = export(w.s(1), "svg", json!({"missing_images": "placeholder"})).unwrap();
+        assert_eq!((svg["images_missing"].clone(), svg["format"].clone()), (json!(1), json!("svg")));
+        assert!(svg["warnings"].as_array().unwrap().iter().any(|n| n.as_str().is_some_and(|n| n.contains("left out of the export"))), "{svg}");
+        let png = export(w.s(1), "png", json!({"missing_images": "placeholder"})).unwrap();
+        assert_eq!(png["images_missing"], 1);
+        assert_eq!(*renderer.0.lock().unwrap(), vec![0]);
+        // The offer the refusal made is the same call and it works.
+        let r = refuse(w.s(1), "doc.export", json!({"format": "svg", "scope": "all"}));
+        let offer = r.suggest[0].args.clone().unwrap();
+        assert_eq!(run(w.s(1), "doc.export", offer)["images_missing"], 1);
+    }
+
+    #[test]
+    fn a_picture_that_is_downloading_makes_the_export_pending_and_the_shell_runs_it_again() {
+        let (mut w, bytes, _) = two();
+        let r = refuse(w.s(1), "doc.export", json!({"format": "svg", "scope": "all"}));
+        assert_eq!(r.code, "images_pending");
+        assert_eq!(r.message, "1 picture of this room is still downloading. Run the export again in a moment.");
+        assert!(r.is_pending(), "the shells keep a call that is refused this way and run it again");
+        // Still pending a few seconds later.
+        w.c[1].1.clock.advance_ms(5_000);
+        w.c[1].0.collab_poll();
+        assert_eq!(refuse(w.s(1), "doc.export", json!({"format": "svg", "scope": "all"})).code, "images_pending");
+        // The picture arrives (here: through the blob cache), and the next run works.
+        w.cache(1, &bytes);
+        let out = run(w.s(1), "doc.export", json!({"format": "svg", "scope": "all"}));
+        assert!(text_of(&out).contains(&b64(&bytes)));
+    }
+
+    #[test]
+    fn an_export_that_waits_too_long_for_a_picture_gives_up_with_images_unavailable() {
+        let (mut w, _, _) = two();
+        assert_eq!(refuse(w.s(1), "doc.export", json!({"format": "svg", "scope": "all"})).code, "images_pending");
+        w.c[1].1.clock.advance_ms(31_000);
+        w.c[1].0.collab_poll();
+        assert_eq!(refuse(w.s(1), "doc.export", json!({"format": "svg", "scope": "all"})).code, "images_unavailable");
+    }
+
+    #[test]
+    fn an_export_that_shows_no_missing_picture_is_not_held_back() {
+        let (mut w, _, _) = two();
+        // Only a rectangle is chosen: the picture of the room is not part of this export.
+        let rect = testing::add_rect(w.s(1), 500.0, 500.0, 40.0, 40.0).unwrap();
+        let out = run(w.s(1), "doc.export", json!({"format": "svg", "scope": "ids", "ids": [rect.as_str()]}));
+        assert_eq!(out["format"], "svg");
+    }
+
+    #[test]
+    fn a_local_tab_exports_as_before_and_ignores_missing_images() {
+        let (mut s, _) = testing::session();
+        rects(&mut s, 1);
+        let out = run(&mut s, "doc.export", json!({"format": "svg", "scope": "all", "missing_images": "placeholder"}));
+        assert!(out.get("images_missing").is_none());
+    }
+
+    fn save_to(s: &mut Session, path: &str) -> Value {
+        run(s, "doc.save", json!({"to": {"path": path}}))
+    }
+
+    /// Opens the file in a new local tab of the session.
+    fn open_new_tab(s: &mut Session, path: &str) {
+        run(s, "doc.open", json!({"source": {"path": path}, "mode": "new_tab"}));
+        assert!(s.room_images().is_none(), "the new tab is not a room");
+    }
+
+    #[test]
+    fn saving_a_room_embeds_the_pictures_it_holds_and_the_file_opens_in_a_local_tab_with_them() {
+        let (mut w, bytes, id) = two();
+        let out = save_to(w.s(0), "/saved/room.json");
+        assert!(out.get("images_missing").is_none(), "{out}");
+        let file = w.fakes(0).files.bytes(&FileRef::Path { path: "/saved/room.json".to_owned() }).expect("the file");
+        let json: Value = serde_json::from_slice(&file).unwrap();
+        assert_eq!(json["version"], 1, "the file format does not change");
+        open_new_tab(w.s(0), "/saved/room.json");
+        assert_eq!(w.s(0).store().file(&id).map(|f| f.bytes.to_vec()), Some(bytes));
+        assert_eq!(w.s(0).store().iter().filter(|e| matches!(e.kind, ElementKind::Image(_))).count(), 1);
+    }
+
+    #[test]
+    fn saving_takes_the_pictures_from_the_cache_and_reports_the_ones_it_could_not_embed() {
+        let (mut w, bytes, id) = two();
+        w.go_offline(1);
+        // Nothing cached: the save goes through and says what is missing.
+        let out = save_to(w.s(1), "/saved/b1.json");
+        assert_eq!(out["images_missing"], 1, "{out}");
+        assert!(out["warnings"].as_array().unwrap().iter().any(|n| n.as_str().is_some_and(|n| n.contains("not on this device yet"))), "{out}");
+        open_new_tab(w.s(1), "/saved/b1.json");
+        assert!(w.s(1).store().file(&id).is_none(), "the file has the picture's element and an empty frame");
+        assert_eq!(w.s(1).store().iter().filter(|e| matches!(e.kind, ElementKind::Image(_))).count(), 1);
+        // Back to the room tab, with the picture cached: embedded.
+        run(w.s(1), "tab.switch", json!({"tab": 0}));
+        w.cache(1, &bytes);
+        let out = save_to(w.s(1), "/saved/b2.json");
+        assert!(out.get("images_missing").is_none(), "{out}");
+        open_new_tab(w.s(1), "/saved/b2.json");
+        assert_eq!(w.s(1).store().file(&id).map(|f| f.bytes.len()), Some(bytes.len()));
+    }
+
+    #[test]
+    fn saving_an_online_room_asks_for_the_missing_pictures_and_still_does_not_refuse() {
+        let (mut w, _, _) = two();
+        let out = save_to(w.s(1), "/saved/online.json");
+        assert_eq!(out["images_missing"], 1, "{out}");
+    }
+}

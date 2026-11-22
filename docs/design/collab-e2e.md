@@ -734,7 +734,34 @@ L7  apps/drafftink-worker   host: Worker + Durable Object around `relay`; DO SQL
 - **`RoomClient`** holds either client, so `CollabSession`, `Output` (`SendText`), `TransportEvent` (`Text`) and `CollabEvent` (`Retention`) grew a variant.
 - **`collab.join_room` and `collab.connect`**: `room_missing` is not a command refusal, because the join returns before the relay answers. The client stops with `StopReason::RoomMissing` and the notice of section 10.4, and the person (or the startup path) joins again with `if_missing: "restore"` or `"create"`. `wrong_server_mode` is not a command refusal for the same reason; a plaintext join to a relay that refuses plaintext rooms is `UnsupportedVersion` with the server's text ("This server only hosts end-to-end encrypted rooms. Use a room link that has a key.").
 - **Workspace schema 2** stores the link (it holds the key) in `room.link`, the relay version as hex, and the Loro snapshot at `workspace.t<id>.loro`. A room tab without a readable snapshot comes back as a local copy. Startup matches a link to a restored tab by room id (`Session::room_tab_for_link`) and joins with `if_missing: "restore"`.
-- **Not built:** pictures as files and the `BlobTransport` (phase 2; the relay routes and the `BlobStore` exist), the peer fallback with `Direct`, the crash fence, `collab.delete_room`, the `Secrets` port and the Access service token, the laser flag as a presence field, and the `images` part of `collab.status`.
+- **Not built:** the peer fallback with `Direct`, the crash fence, `collab.delete_room`, the `Secrets` port and the Access service token, the laser flag as a presence field. Pictures as files and the `BlobTransport` were built in phase 2 (14.3).
+
+### 14.3 What phase 2 built, and where it differs from the text above (2026-11-22)
+
+Pictures of an encrypted room are files now. Differences and gaps, with the reason:
+
+**What exists**
+
+- **Schema 2 and `FilePolicy`** (`drafftink-doc`). `files[id]` holds `{mime, size}` and `bytes` is optional. The step `from: 1` sets `size` on every entry that has bytes. `FilePolicy::External` writes only the manifest to Loro and keeps the bytes in the view; `Embedded` is the default for local documents. `LoroStore` has `manifest`, `manifests`, `manifest_revision` and `supply_file` (bytes into the view, no Loro write, no undo).
+- **`BlobTransport`** (`drafftink-collab`): the port, with `NativeBlobTransport` (`ureq` and rustls on worker threads), `WebBlobTransport` (`fetch`, wasm only, covered by compilation) and `loopback_blobs()` for tests. `CollabSession::set_blobs` and `pump` move requests and answers.
+- **The client's picture logic** (`SealedClient`): `offer_image`, `want_image`, one `List` per connection, `PUT` for offers the relay lacks, `HEAD` before a `PUT` whose answer was lost, at most 3 downloads and 2 uploads in flight, retries after 1, 2, 4 s up to 2 minutes for `404`, `429`, `503` and network errors, `images()` for a status line, `Status::unsynced` while an upload is pending. `ImageEvent` is `Arrived`, `Damaged` or `Rejected { TooLarge | RoomFull }`.
+- **`Ns::Blobs`** in the `Storage` port, and `drafftink_io::picture::fit_into`, which shrinks a stored picture to a byte limit.
+- **Refusals the client reports:** `413` and the client's own check against `max_image_bytes` are `TooLarge`; `507` is `RoomFull`; a download that does not open or whose hash is not the id is `Damaged`.
+- **Tests:** `apps/drafftink-server/tests/blind.rs` (the canary through the real client and the native picture transport, on the filesystem and SQLite relays, plus the old hand-made `PUT`), `crates/collab/tests/blind_images.rs` (the same search over the in-memory stores), `apps/drafftink-server/tests/images.rs` (limits, `507`, `401`, damaged downloads, a restart, a lost answer, a late joiner, one name for one picture).
+
+**Differences and known gaps**
+
+- `Net::open_blob_transport` is a method of the `Net` port (default `Err(Unsupported)`), not a free-standing type, so each host hands the engine its own transport.
+- The room's client drops an offer once the relay has the name, and keeps no copy of the bytes. After a reseed (the relay forgot the room) the engine offers its pictures again from its blob cache.
+- A client reads the list once per connection. Two members that are online before a picture is uploaded and both offer it both upload; the relay overwrites the same name, so one name and one file are stored. A member that connects later finds the name in its list and sends nothing.
+- A `401` on a picture request ends the retries without an `ImageEvent`; it is counted in `images().failed`. `ImageEvent` has no 401 variant.
+- `remove_file` does not remove a manifest for which the view holds no bytes. Rooms delete no pictures in v1, so this is the intended reach.
+- A document entry with bytes but no `size` is still read (the size is taken from the bytes).
+- Extraction on join rebuilds the replicated store from the working store. The undo history is cleared, so the old history with its embedded bytes never reaches the room.
+- The doc crate's test that a schema-1 build refuses schema 2 goes through `migrate_to`, because an old build cannot be run in the same test.
+- **Engine glue** (`cmd/collab/pictures.rs`, `join_check.rs`, `images.rs`). The glue looks at the pictures only when the manifest revision changes, the client turns online, a picture arrives, a staged import ends, or (while a far picture waits) the camera moves. Held pictures are offered and cached in `Ns::Blobs`; missing ones come from the cache, else are downloaded when within one viewport. An arriving picture is no edit: the content fingerprint counts manifests as well as held bytes. A save of the workspace deletes cache entries that no tab references. `collab.status` has `images {uploading, downloading, waiting, failed, room_images, room_image_bytes}` and `loading.phase: "images"`.
+- **Commands.** One gate (`cmd/image_room.rs`) covers `image.insert`, `clipboard.paste`, `library.insert` and `doc.open` with merge: `image_too_large` (with the real size, and an offer to run again with the new argument `shrink: true`, which uses `fit_into`) and `room_images_full`, before the first change. `doc.export` has `missing_images: refuse | placeholder`, reads the cache first, and refuses `images_pending` (online; the shells re-run it through `Refusal::is_pending`, and after 30 s it becomes `images_unavailable`) or `images_unavailable`. `doc.save` embeds what the tab holds and reports `images_missing`. Join with embedded pictures refuses `local_too_large_for_room` before anything is sent. Leaving a room puts the policy back to `Embedded` and pulls the cached pictures into the tab. Named versions keep the file ids; `version.open` takes bytes from the tab or the cache and warns about the rest.
+- `clipboard.copy_as` is not gated. A batch step refused with `images_pending` fails the batch; only `render_pending` is waited for.
 
 ---
 

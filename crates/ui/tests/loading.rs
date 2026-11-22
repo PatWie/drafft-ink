@@ -26,6 +26,10 @@ fn the_status_object_of_each_phase_becomes_a_loading_state() {
         phase(json!({ "phase": "importing", "done": 3, "total": 12 })),
         Some(RoomLoading::Importing { done: 3, total: 12 })
     );
+    assert_eq!(
+        phase(json!({ "phase": "images", "done": 1, "total": 3 })),
+        Some(RoomLoading::Images { done: 1, total: 3 })
+    );
     for hostile in
         [json!({}), json!({ "phase": 3 }), json!({ "phase": "warp" }), json!({ "phase": "importing" }), json!("x")]
     {
@@ -54,6 +58,16 @@ fn the_percentage_is_the_share_of_items_shown_rounded_down() {
     assert_eq!(RoomLoading::Importing { done: 9, total: 3 }.fraction(), Some(1.0), "never above a whole");
     assert_eq!(RoomLoading::Syncing.fraction(), None);
     assert_eq!(RoomLoading::Receiving { bytes: 3 * 1024 * 1024 }.text(), "Receiving the room (3.0 MB)...");
+}
+
+#[test]
+fn pictures_still_coming_say_how_many_are_here() {
+    let loading = RoomLoading::Images { done: 1, total: 3 };
+    assert_eq!(loading.text(), "Loading pictures (1 of 3)...");
+    assert!((loading.fraction().unwrap_or_default() - 1.0 / 3.0).abs() < 1e-6);
+    let h = with_loading(Some(loading));
+    h.get_by_label("Loading pictures (1 of 3)...");
+    assert_eq!(RoomLoading::Images { done: 0, total: 0 }.fraction(), None);
 }
 
 #[test]

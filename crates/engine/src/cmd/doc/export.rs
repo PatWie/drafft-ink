@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use super::files::{self, base64_of};
 use crate::args;
+use crate::cmd::image::room::{self, MissingImages};
 use crate::ports::{FileRef, PortKind, RenderRequest};
 use crate::refusal::Refusal;
 use crate::session::{Ref, Session};
@@ -115,6 +116,10 @@ pub struct ExportArgs {
     pub embed_scene: Option<bool>,
     /// `inline` (default) returns the bytes; a file is written through the files port.
     pub to: Dest,
+    /// Only in an encrypted room, for pictures this device does not hold yet. `refuse` (default): the export is
+    /// refused with `images_pending` while they download, or `images_unavailable` when they cannot be loaded.
+    /// `placeholder`: export anyway; they show as empty frames and the output says how many (`images_missing`).
+    pub missing_images: MissingImages,
 }
 
 /// The bytes of an inline export.
@@ -153,6 +158,14 @@ pub struct ExportOut {
     /// Where it was written, for a file.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub saved_to: Option<FileRef>,
+    /// Pictures of an encrypted room that were left out because this device does not hold them
+    /// (`missing_images: "placeholder"`). Absent when none.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub images_missing: u32,
+}
+
+fn is_zero(n: &u32) -> bool {
+    *n == 0
 }
 
 fn no_renderer() -> Refusal {
@@ -317,6 +330,10 @@ pub(super) fn export(s: &mut Session, a: ExportArgs) -> Result<ExportOut, Refusa
         ));
     }
     let ids = chosen(s, id, &a)?;
+    // In a room the pictures this export shows must be here first (the cache, else the relay).
+    let used = room::used_by(s, &ids);
+    let images_missing = room::require_pictures(s, &used, a.missing_images)
+        .map_err(|r| room::offer_placeholder(r, id, serde_json::to_value(&a).ok()))?;
     let keep: HashSet<ElementId> = ids.iter().cloned().collect();
     let sub: Document = native::subset(&s.tab().doc.snapshot(), &keep);
     let elements = sub.elements.len();
@@ -380,6 +397,7 @@ pub(super) fn export(s: &mut Session, a: ExportArgs) -> Result<ExportOut, Refusa
         scene_embedded,
         bytes: None,
         saved_to: None,
+        images_missing,
     };
     match a.to {
         Dest::Inline(_) => out.bytes = Some(ExportBytes { base64: base64_of(&bytes), mime: a.format.mime() }),

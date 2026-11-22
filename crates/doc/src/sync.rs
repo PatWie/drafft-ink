@@ -9,13 +9,14 @@ use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
 
 use drafftink_scene::{
-    ChangeSet, Color, DocMeta, ElementId, FileEntry, FileId, MemoryStore, SceneRead, SceneStore, SceneTx, VersionId,
+    ChangeSet, Color, DocMeta, ElementId, FileId, FileManifest, MemoryStore, SceneRead, SceneStore, SceneTx, VersionId,
 };
 use loro::event::{Diff, DiffEvent};
 use loro::{Container, Index, LoroValue, ValueOrContainer};
 
 use crate::codec::read_element;
 use crate::error::DocError;
+use crate::files::{self, Stored};
 use crate::schema::{META_BACKGROUND, META_NAME, ROOT_ELEMENTS, ROOT_FILES, ROOT_META, ROOT_VERSIONS, SCHEMA_VERSION};
 use crate::staged::{Item, Staged};
 use crate::store::{Core, LoroStore, check_size, guard, guarded, import_fresh_pending};
@@ -85,19 +86,6 @@ fn collecting<T>(core: &Core, f: impl FnOnce() -> T) -> (T, Touched) {
     (out, t)
 }
 
-fn file_from_loro(v: &LoroValue) -> Option<FileEntry> {
-    let LoroValue::Map(m) = v else { return None };
-    let mime = match m.get("mime")? {
-        LoroValue::String(s) => s.to_string(),
-        _ => return None,
-    };
-    let bytes = match m.get("bytes")? {
-        LoroValue::Binary(b) => b.to_vec(),
-        _ => return None,
-    };
-    Some(FileEntry { mime, bytes: Arc::from(bytes) })
-}
-
 fn read_meta(core: &Core) -> DocMeta {
     let m = core.doc.get_map(ROOT_META);
     let default = DocMeta::default();
@@ -132,6 +120,7 @@ fn sync_view_inner(view: &mut MemoryStore, core: &mut Core, mut t: Touched) -> R
             t.files.insert(k.to_owned());
         });
         t.files.extend(view.files().map(|(id, _)| id.to_string()));
+        t.files.extend(core.manifests.keys().map(ToString::to_string));
         versions_map.for_each(|k, _| {
             t.versions.insert(k.to_owned());
         });
@@ -200,16 +189,20 @@ fn sync_view_inner(view: &mut MemoryStore, core: &mut Core, mut t: Touched) -> R
     for sid in &t.files {
         let Ok(fid) = FileId::new(sid) else { continue };
         let entry = match files_map.get(sid) {
-            Some(ValueOrContainer::Value(v)) => file_from_loro(&v),
+            Some(ValueOrContainer::Value(v)) => files::from_loro(&v),
             _ => None,
         };
         match entry {
             // A blob whose bytes do not hash to its key is ignored: keys are content hashes.
-            Some(f) if FileId::of(&f.bytes) == fid => {
+            Some(Stored::Full(f)) if FileId::of(&f.bytes) == fid => {
+                core.set_manifest(&fid, Some(FileManifest::of(&f)));
                 let _ = tx.put_file(f);
             }
-            Some(_) => {}
+            Some(Stored::Full(_)) => {}
+            // A description without bytes never removes bytes the view has: they hash to the key.
+            Some(Stored::Manifest(m)) => core.set_manifest(&fid, Some(m)),
             None => {
+                core.set_manifest(&fid, None);
                 tx.remove_file(&fid);
             }
         }
@@ -376,6 +369,7 @@ fn starts_later(core: &Core, bytes: &[u8]) -> Result<bool, DocError> {
 fn is_pristine(store: &LoroStore) -> bool {
     store.view.len_all() == 0
         && store.view.files().next().is_none()
+        && store.core.manifests.is_empty()
         && *store.view.meta() == DocMeta::default()
         && !store.can_undo()
         && !store.can_redo()

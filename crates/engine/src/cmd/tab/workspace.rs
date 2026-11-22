@@ -347,6 +347,7 @@ impl Session {
         if tab.doc.replicated_mut().replace_from_snapshot(&snapshot).is_err() {
             return;
         }
+        self.restore_room_pictures(tab);
         let relay_vv = text("relay_vv").and_then(from_hex).unwrap_or_default();
         let resume = drafftink_collab::Resume {
             last_seq: room.get("last_seq").and_then(Value::as_u64).unwrap_or(0),
@@ -359,6 +360,26 @@ impl Session {
             resume,
             joined_ms: room.get("joined_ms").and_then(Value::as_u64).unwrap_or(0),
         })));
+    }
+
+    /// A restored room tab holds its pictures as files: the replicated store takes the bytes the record embedded (the
+    /// working store has them from the JSON), and the blob cache gives the ones the record lacks (a picture that
+    /// arrived after the last write). Pictures it has not got stay missing, and the room is asked for them.
+    fn restore_room_pictures(&self, tab: &mut Tab) {
+        tab.doc.replicated_mut().set_file_policy(drafftink_doc::FilePolicy::External);
+        let manifests: Vec<_> = tab.doc.replicated().manifests().map(|(id, _)| id.clone()).collect();
+        for id in manifests {
+            let held = tab.doc.store().file(&id).cloned();
+            let entry = held.or_else(|| {
+                let bytes = self.ports.storage.as_ref()?.get(Ns::Blobs, id.as_str()).ok().flatten()?;
+                let mime = tab.doc.replicated().manifest(&id)?.mime.clone();
+                Some(drafftink_scene::FileEntry { mime, bytes: bytes.into() })
+            });
+            if let Some(entry) = entry {
+                // Both stores take it; a picture one of them has already is left as it is.
+                let _ = tab.doc.supply_file(entry);
+            }
+        }
     }
 
     /// Notices changes and decides whether a write is due now. Starts one when it is, and does a piece of the

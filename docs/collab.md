@@ -16,6 +16,7 @@ The engine side (the `collab` command family, `Session::collab_poll`, the `Net` 
 
 | `SealedClient` | The same kind of state machine for an end-to-end encrypted room (protocol v2, module `sealed`). See "Encrypted rooms" below. |
 | `RoomClient` | One type for the session and the engine: `Plain(CollabClient)` or `Sealed(SealedClient)`. Every method forwards. |
+| `BlobTransport` | The second pipe, for the pictures of an encrypted room: plain HTTP requests, `send` and `poll`. `NativeBlobTransport` (worker threads, `ureq` with rustls and ring), `WebBlobTransport` (browser `fetch`, wasm only), `loopback_blobs()` (in memory, for tests). |
 
 ## Encrypted rooms
 
@@ -27,7 +28,44 @@ The engine side (the `collab` command family, `Session::collab_poll`, the `Net` 
 
 On advice from the relay it seals a snapshot with the sequence number it covers and swaps it in by compare-and-set (`PutSnapshot`). A room that is empty (a new one, or an expired one restored from a local copy) is seeded the same way: one client wins, the others rejoin and merge. A record that cannot be opened, or that Loro refuses, is skipped, counted (`skipped()`) and shown once. `resume()` gives `{last_seq, relay_vv}` for the workspace record; `expires_at_ms()` and `expiring()` carry the retention state (`CollabEvent::Retention`).
 
-The keepalive is the text frame `ping` (`Transport::send_text`) and the answer `pong` (`TransportEvent::Text`). Not built yet: the peer-to-peer fallback when the relay's storage fails (a `Direct` request goes unanswered), the crash fence for a malformed update, and pictures as files (phase 2).
+The keepalive is the text frame `ping` (`Transport::send_text`) and the answer `pong` (`TransportEvent::Text`). Not built yet: the peer-to-peer fallback when the relay's storage fails (a `Direct` request goes unanswered) and the crash fence for a malformed update. Pictures are in the next section.
+
+## Pictures in encrypted rooms
+
+In an encrypted room the document holds only `{mime, size}` of a picture. The bytes are sealed with the room's image key and stored on the relay under a keyed name (`docs/design/collab-e2e.md` section 9). The sealed client does the transfer; the engine owns the local copy of the bytes. The client is sans-IO like the rest: it emits `BlobRequest`s and consumes `BlobResponse`s, and `CollabSession::set_blobs` plus `pump` move them through a `BlobTransport`. A plaintext room embeds pictures in the document, and its client ignores all of this (`images()` is zero).
+
+| Call | Meaning |
+|---|---|
+| `offer_image(now, id, bytes)` | "I hold these bytes." Uploads them unless the relay has the name. The same picture twice is one name and one request. Offering again retries a refused one. |
+| `want_image(now, id)` | "Show me this picture." Downloads it, opens it, checks `SHA-256(bytes) == id`, and tells the engine with `CollabEvent::Image(ImageEvent::Arrived { id, bytes })`. |
+| `images()` | `ImageProgress { uploading, downloading, waiting, failed, room_images, room_image_bytes }` for a status line. The room totals come from the list and from each `201`. |
+
+What the client does:
+
+- **One list per connection.** When the client is online it asks `GET /r/<room>/f`. An offer whose name is listed is done; the others upload (`PUT`). Bytes of an offer are let go once the relay has them, so after a room expired and was made again the engine offers its pictures again from its cache.
+- **Limits.** At most 3 downloads and 2 uploads in flight. An offer above `max_image_bytes` from `Joined.limits` is `ImageEvent::Rejected { why: TooLarge }` at once, with no request. The relay's own answers `413` and `507` end an upload for good (`Rejected { TooLarge | RoomFull }`). The room total and the picture count are the relay's to check (`507`).
+- **Retries.** `404` on a download (the manifest can reach a peer before the upload does), `429`, `503`, any other status and network failures are tried again after 1, 2, 4, 8 ... seconds, at most 2 minutes. `Retry-After` of a `429` is honoured (at least 1 s, at most 2 minutes). `401` is final (no event; counted in `failed`). A `PUT` whose answer was lost (network failure) is checked with `HEAD` before it is sent again: a `200` of the right length ends it, a `404` or another length sends the `PUT` again, which also overwrites a poisoned name. A request with no answer after 2 minutes counts as a network failure.
+- **Damaged pictures.** A download that does not open under its name (flipped bit, a picture moved to another name, garbage) or whose hash is not the id is `ImageEvent::Damaged`: the bytes are dropped and it is not asked for again.
+- **A reconnect** forgets requests in flight and keeps offers and wants. The new connection starts with a new list.
+- **Status.** `Status::unsynced` is true while an upload is pending, offline too. `next_wake_ms` carries every retry time, so an idle client with no pending picture asks for no wake.
+
+`NativeBlobTransport` runs blocking `ureq` calls on up to 5 worker threads and calls the wake hook after each answer. TLS is rustls with the ring provider and the bundled Mozilla roots (no aws-lc, no native-tls). Plain `http://` is only for this machine (the rule of `ws://`), unless `NativeBlobOptions::allow_insecure`. Redirects are not followed (the `Authorization` header would go along), no proxy from the environment is used, a body over `MAX_BLOB_BODY_BYTES` is a failure, and a request gives up after 100 s. `WebBlobTransport` uses `fetch` with `cache: no-store` and `redirect: error`. The token is in the header `Authorization: Drafft-Member <base64url>`, kept out of `Debug` output (`BlobAuth`) and out of failure texts. `ServerUrl::http_base()` maps `ws://host:port/ws` to `http://host:port` and `wss://` to `https://`.
+
+Tests: `tests/images.rs` runs the real relay core behind `loopback_blobs` in simulated time (limits, membership, damaged downloads, one name, resume after a drop, backoff of 1, 2, 4 s, `Retry-After`, lost answers and `HEAD`, concurrency, counts, the wake times). `apps/drafftink-server/tests/blobs.rs` runs `NativeBlobTransport` against the real server and against misbehaving ones, and `images.rs` there runs the whole client against the real server. The browser transport is covered by compilation only, like `WebTransport`.
+
+## How the engine drives the pictures
+
+`crates/engine/src/cmd/collab/pictures.rs` is the glue between the client, the tab and the local blob cache (`Ns::Blobs`, plaintext, key = file id). `Session::collab_poll` calls it after the pump. It does work only when something changed that matters: the manifest revision of the replicated store, the client turning online (the client dropped its offers, and a relay that expired is empty), a picture arriving, and, only while some missing picture waits for the camera, the camera or the revision of the document. An idle session compares four numbers per poll and does nothing else (test `an_idle_session_with_pictures_does_no_picture_work_per_poll`).
+
+For each manifest of the room:
+
+- The tab holds the bytes: `offer_image` (the client uploads unless the relay has the name) and a write to the blob cache.
+- The tab lacks them and the blob cache has them: they are taken from the cache (a reload, a picture seen before, offline).
+- Else `want_image`, when an element that shows the picture is within one viewport of the visible rectangle. A viewport the shell never sized counts everything as near. `want_room_images` (an export) ignores the camera.
+
+`ImageEvent::Arrived` goes to `TabDoc::supply_file` (the replicated view and the working store, no Loro write, no undo step, no edit: the logical revision, the saved state and the content fingerprint stay), the blob cache, and a scene redraw. The renderer draws the empty picture until the bytes are there, then encodes the element again: the working store's revision moves and the elements that show the picture are in `TabDoc::take_touched`. `Damaged` raises an info notice and the element keeps the empty picture. `Rejected` raises a problem notice with the plain texts of section 9.4. The content fingerprint counts the manifests besides the files of the working store, so a picture that arrives changes nothing.
+
+A tab that joins a room is rebuilt (`TabDoc::restart_replicated(FilePolicy::External)`) from its working store: the old Loro history holds the bytes of embedded pictures and must not reach the room. The pictures it holds are offered and uploaded sealed. A tab restored from the workspace has the policy set by `read_room`. Leaving a room puts the policy back to `Embedded` and takes the blob cache's pictures into the tab. The workspace save deletes the blob cache entries that no tab names (a full save, and the first write after a tab was closed). `collab.status` shows `images` and, while visible pictures come, `loading.phase = "images"`. The engine tests use `FakeRelay` (`cmd/collab/fake_relay.rs`), which serves the picture routes of the fake network with the relay core.
 
 ## How the engine drives it
 
@@ -120,7 +158,7 @@ Rules while a room loads: local edits are allowed and are sent; `doc.save` and `
 
 ## Known limits
 
-- Encrypted rooms: no peer fallback and no crash fence yet (`docs/design/collab-e2e.md` sections 8.2 and 8.5); a record that makes Loro assert still ends a wasm page.
+- Pictures: a client that wants nothing and offers nothing makes no picture request. The client keeps no copy of the bytes it has uploaded (the engine's blob cache is the copy), and the web build has no browser test. Encrypted rooms: no peer fallback and no crash fence yet (`docs/design/collab-e2e.md` sections 8.2 and 8.5); a record that makes Loro assert still ends a wasm page.
 
 - A very large room joined into an empty tab is taken in slices (next section). Importing a big update into a tab that already has content still happens inside `pump` on the caller's thread (about 25 us per element, 2.5 s at 100k elements): the engine holds it back for one poll so the app can draw "loading" first, but it cannot be cut, because merging into existing content needs the CRDT's own diff. The same holds for a trimmed snapshot that replaces a copy with its own work (`NeedsDecision`).
 - The one part of a staged import that cannot be sliced is the first call: about 10 ms plus 0.8 us per element to list the ids (80 ms at 100k elements), so it stays inside one 16 ms frame up to about 8,000 elements. Past that a web page has one long frame, once, until the import runs in a Web Worker.

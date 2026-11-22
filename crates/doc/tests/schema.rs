@@ -4,7 +4,7 @@
 mod common;
 
 use common::*;
-use drafftink_doc::LoroStore;
+use drafftink_doc::{FilePolicy, LoroStore};
 use drafftink_scene::*;
 use kurbo::Point;
 use loro::ToJson as _;
@@ -213,7 +213,7 @@ fn the_layout_is_flat_fields_and_omits_defaults() {
     let z = zs(1);
     add(&mut s, vec![rect("r1", &z[0])]);
     let j = s.debug_json();
-    assert_eq!(j["meta"]["schema"], 1);
+    assert_eq!(j["meta"]["schema"], 2);
     let r = &j["elements"]["r1"];
     assert_eq!(r["kind"], "rectangle");
     assert_eq!(r["x"], 10.0);
@@ -390,4 +390,99 @@ fn a_stroke_is_stored_as_flat_fields_with_packed_points_and_no_default_noise() {
     assert!(picture["kind.paint.000002-b.mode"] == "erase");
     assert!(picture.get("kind.paint.000002-b.pressures").is_none(), "no pressures, nothing stored: {picture}");
     assert!(picture.get("kind.paint.000001-a.mode").is_none(), "the default mode is not stored: {picture}");
+}
+
+/// The keys of the Loro `files` entry of `id`, from the deep value.
+fn entry_keys(s: &LoroStore, id: &FileId) -> Vec<String> {
+    let json = s.debug_json();
+    let mut keys: Vec<String> = json["files"][id.as_str()].as_object().unwrap().keys().cloned().collect();
+    keys.sort();
+    keys
+}
+
+#[test]
+fn an_embedded_entry_is_mime_size_and_bytes() {
+    let mut s = peer(1);
+    assert_eq!(s.file_policy(), FilePolicy::Embedded, "embedding is the default");
+    let (id, _) = put_picture(&mut s, 1, 4096);
+    assert_eq!(entry_keys(&s, &id), ["bytes", "mime", "size"]);
+    assert_eq!(s.debug_json()["files"][id.as_str()]["size"], 4096);
+    assert_eq!(s.manifest(&id), Some(&FileManifest { mime: "image/png".into(), size: 4096 }));
+}
+
+#[test]
+fn the_external_policy_writes_no_bytes_but_the_view_keeps_them() {
+    let mut s = peer(1);
+    s.set_file_policy(FilePolicy::External);
+    assert_eq!(s.file_policy(), FilePolicy::External);
+    let (id, entry) = put_picture(&mut s, 2, 4096);
+    assert_eq!(entry_keys(&s, &id), ["mime", "size"], "the Loro value has no bytes");
+    assert_eq!(s.debug_json()["files"][id.as_str()]["size"], 4096);
+    assert_eq!(s.file(&id), Some(&entry), "the view draws from the bytes it holds");
+    assert_eq!(s.manifest(&id), Some(&FileManifest::of(&entry)));
+    let snapshot = s.export_snapshot().unwrap();
+    assert!(snapshot.len() < 1500, "the bytes (4096, incompressible) are not in the history: {}", snapshot.len());
+    // A reader of the snapshot has the manifest and not the picture.
+    let reader = LoroStore::from_snapshot(&snapshot).unwrap();
+    assert!(reader.file(&id).is_none() && reader.manifest(&id).is_some());
+}
+
+#[test]
+fn changing_the_policy_affects_future_writes_only() {
+    let mut s = peer(1);
+    let (first, _) = put_picture(&mut s, 3, 200);
+    s.set_file_policy(FilePolicy::External);
+    let (second, _) = put_picture(&mut s, 4, 200);
+    s.set_file_policy(FilePolicy::Embedded);
+    let (third, _) = put_picture(&mut s, 5, 200);
+    assert_eq!(entry_keys(&s, &first), ["bytes", "mime", "size"]);
+    assert_eq!(entry_keys(&s, &second), ["mime", "size"]);
+    assert_eq!(entry_keys(&s, &third), ["bytes", "mime", "size"]);
+    assert_eq!(s.manifests().count(), 3);
+}
+
+#[test]
+fn a_document_loaded_with_the_external_policy_keeps_its_bytes_out_of_loro() {
+    let (id, entry) = picture(6, 3000);
+    let mut doc = Document::new();
+    doc.files.insert(id.clone(), entry.clone());
+    let z = zs(1);
+    doc.elements.push(image_of("img", &z[0], &id));
+    let s = LoroStore::from_document_with_policy(&doc, FilePolicy::External).unwrap();
+    assert_eq!(s.file_policy(), FilePolicy::External);
+    assert_eq!(entry_keys(&s, &id), ["mime", "size"]);
+    assert_eq!(s.file(&id), Some(&entry));
+    let read_back = content(&s);
+    assert!(read_back.files == doc.files && read_back.elements.len() == 1, "the scene read back has the picture");
+    // The plain constructor embeds.
+    let e = LoroStore::from_document(&doc).unwrap();
+    assert_eq!(e.file_policy(), FilePolicy::Embedded);
+    assert_eq!(entry_keys(&e, &id), ["bytes", "mime", "size"]);
+}
+
+#[test]
+fn removing_a_picture_removes_its_manifest() {
+    let mut s = peer(1);
+    s.set_file_policy(FilePolicy::External);
+    let (id, _) = put_picture(&mut s, 7, 50);
+    let seen = s.manifest_revision();
+    let mut tx = s.begin();
+    assert!(tx.remove_file(&id));
+    tx.commit().unwrap();
+    assert!(s.manifest(&id).is_none() && s.manifests().count() == 0);
+    assert!(s.manifest_revision() > seen);
+    assert!(s.debug_json()["files"].get(id.as_str()).is_none());
+}
+
+#[test]
+fn the_manifest_revision_moves_only_when_the_set_of_manifests_changes() {
+    let mut s = peer(1);
+    let start = s.manifest_revision();
+    add(&mut s, vec![rect("r", &zs(1)[0])]);
+    assert_eq!(s.manifest_revision(), start, "an element is no manifest");
+    put_picture(&mut s, 8, 10);
+    let one = s.manifest_revision();
+    assert!(one > start);
+    put_picture(&mut s, 8, 10);
+    assert_eq!(s.manifest_revision(), one, "the same picture again changes nothing");
 }

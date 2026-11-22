@@ -139,6 +139,8 @@ pub(super) struct Live {
     pub announced_hold: bool,
     /// The camera as the last follow step set it. A different camera means the user moved the view.
     pub follow_view: Option<View>,
+    /// What the pictures of an encrypted room need.
+    pub pictures: super::pictures::Pictures,
 }
 
 /// One point of the local laser.

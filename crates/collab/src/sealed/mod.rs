@@ -13,11 +13,13 @@
 //!   (`last_seq`). A reconnect joins with it and gets only what is new;
 //! * the relay cannot compact, so it asks one client to, and the client seals a snapshot that the relay swaps in by
 //!   compare-and-set;
-//! * an empty room (a new one, or an expired one restored from a local copy) is seeded with a snapshot.
+//! * an empty room (a new one, or an expired one restored from a local copy) is seeded with a snapshot;
+//! * pictures are files: [`images`] offers and downloads them over HTTP, one sealed file per picture.
 //!
-//! Not built yet (phase 2 and later): images as files, the peer-to-peer fallback when the relay's storage fails, and
-//! the crash fence for a malformed update.
+//! Not built yet: the peer-to-peer fallback when the relay's storage fails, and the crash fence for a malformed
+//! update.
 
+mod images;
 mod inbound;
 mod outbound;
 mod problems;
@@ -33,6 +35,7 @@ use drafftink_seal::{RoomKey, RoomKeys};
 use loro::VersionVector;
 
 use crate::awareness::{LocalPresence, PeerTable};
+use crate::blobs::BlobAuth;
 use crate::client::{
     CONNECT_TIMEOUT_MS, CollabEvent, FollowEnd, JOIN_TIMEOUT_MS, MAX_INFLIGHT, Output, SEND_DEBOUNCE_MS, STABLE_MS,
     Stats, TrimmedChoice,
@@ -40,6 +43,11 @@ use crate::client::{
 use crate::status::{ConnState, Problem, ProblemAction, Status, StopReason};
 use crate::transport::TransportEvent;
 use crate::url::ServerUrl;
+
+pub use images::{
+    BLOB_TIMEOUT_MS, IMAGE_RETRY_BASE_MS, IMAGE_RETRY_MAX_MS, ImageEvent, ImageProgress, ImageRefusal, MAX_DOWNLOADS,
+    MAX_UPLOADS,
+};
 
 /// A gap in the sequence numbers is only repaired when it stays for this long: the acknowledgement of this client's
 /// own record, which fills one such gap, can wait for the relay's next write.
@@ -190,6 +198,8 @@ pub struct SealedClient {
     relay_vv: VersionVector,
     pos: Position,
     uploads: Uploads,
+    /// The pictures of the room: offers, wants and their requests.
+    images: images::Images,
     /// Upload what the relay lacks at this time: a record was dropped by its rate limit.
     reupload_at: Option<u64>,
     /// The relay asked for a compaction up to this sequence number.
@@ -243,6 +253,8 @@ impl SealedClient {
         let presence = LocalPresence::new(cfg.user.clone());
         let rng = cfg.jitter_seed | 1;
         let pos = Position { last_seq: cfg.resume.last_seq, ..Position::default() };
+        let images =
+            images::Images::new(endpoint.http_base(), keys.room_id(), BlobAuth::member(keys.membership_token()));
         Ok(SealedClient {
             cfg,
             keys,
@@ -259,6 +271,7 @@ impl SealedClient {
             relay_vv,
             pos,
             uploads: Uploads::default(),
+            images,
             reupload_at: None,
             compact_for: None,
             compact_after_ms: 0,
@@ -345,6 +358,11 @@ impl SealedClient {
         self.expiring
     }
 
+    /// The limits the relay announced when this connection joined (the hard ceilings before that).
+    pub fn limits(&self) -> &RoomLimits {
+        &self.limits
+    }
+
     /// How many received changes could not be read and were skipped (a damaged record, or a malformed update).
     pub fn skipped(&self) -> u32 {
         self.skipped
@@ -404,6 +422,9 @@ impl SealedClient {
             }
             if self.compact_for.is_some() && self.snapshot_out.is_none() {
                 at(self.compact_after_ms);
+            }
+            if let Some(t) = self.images.next_wake() {
+                at(t);
             }
             if let Some(t) = self.presence.next_due(self.last_tick_ms, self.presence_interval(), !self.peers.is_empty())
             {
@@ -577,6 +598,7 @@ impl SealedClient {
         }
         self.maybe_compact(now_ms, store);
         self.send_presence_if_due(now_ms);
+        self.images_changed(now_ms);
     }
 
     /// Repairs a gap in the sequence numbers that stayed, and asks again when a page of the catch-up got no answer.
@@ -672,6 +694,7 @@ impl SealedClient {
         self.snapshot_out = None;
         self.stable_since = None;
         self.limits = RoomLimits::DEFAULT;
+        self.images.reset();
         self.presence.reset_sent();
         if !self.peers.is_empty() {
             self.peers.clear();
@@ -753,7 +776,8 @@ impl SealedClient {
             || !self.uploads.inflight.is_empty()
             || self.uploads.flush_at.is_some()
             || self.uploads.want_flush
-            || self.uploads.seed.is_some();
+            || self.uploads.seed.is_some()
+            || self.images.uploads_pending();
         let (state, stopped, text, retry_at_ms) = match self.phase {
             Phase::Idle => return Status::idle(),
             Phase::Backoff { until } => {

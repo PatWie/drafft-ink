@@ -15,7 +15,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::hash::{DefaultHasher, Hasher};
 use std::rc::Rc;
 
-use drafftink_scene::{ChangeSet, Element, ElementId, SceneRead};
+use drafftink_scene::{ChangeSet, Element, ElementId, FileId, SceneRead};
 
 /// Two independent 64-bit hashes that are added together, so the order of the parts does not matter.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -41,7 +41,7 @@ impl Sum {
 }
 
 /// The content of a document: its elements (tombstones included), its name and background, the ids of its image
-/// files (the id is the hash of the bytes) and its named versions. Equal fingerprints mean equal content.
+/// files (the id is the hash of the bytes, whether or not this device holds them yet) and its named versions. Equal fingerprints mean equal content.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Fingerprint {
     elements: Sum,
@@ -75,12 +75,22 @@ pub(crate) struct Tracker {
     per_element: Option<HashMap<ElementId, Sum>>,
     total: Sum,
     side: Option<Sum>,
+    /// The manifest revision `side` was built at.
+    side_manifests: u64,
+}
+
+/// The pictures a room's document names, which may be more than the working store holds bytes for.
+pub(crate) struct Manifests<'a> {
+    /// Counts the changes of the set of manifests; a different value means `side` must be built again.
+    pub(crate) revision: u64,
+    /// The ids, read only when `side` is built.
+    pub(crate) ids: &'a dyn Fn() -> Vec<FileId>,
 }
 
 impl Tracker {
     /// The fingerprint of `store` now. The first call reads the whole scene; later calls read only what `feed`
     /// recorded.
-    pub(crate) fn print<R: SceneRead>(&mut self, store: &R, feed: &Feed) -> Fingerprint {
+    pub(crate) fn print<R: SceneRead>(&mut self, store: &R, feed: &Feed, manifests: &Manifests<'_>) -> Fingerprint {
         let pending = std::mem::take(&mut *feed.borrow_mut());
         let mut buffer = Vec::new();
         match self.per_element.as_mut() {
@@ -108,8 +118,9 @@ impl Tracker {
                 }
             }
         }
-        if pending.side || self.side.is_none() {
-            self.side = Some(hash_side(store));
+        if pending.side || self.side.is_none() || self.side_manifests != manifests.revision {
+            self.side = Some(hash_side(store, &(manifests.ids)()));
+            self.side_manifests = manifests.revision;
         }
         Fingerprint {
             elements: self.total,
@@ -132,11 +143,14 @@ fn hash_element(element: &Element, buffer: &mut Vec<u8>) -> Sum {
     Sum::of(buffer)
 }
 
-/// The hash of the name, the background, the file ids and the named versions (each with the hash of its scene).
-fn hash_side<R: SceneRead>(store: &R) -> Sum {
+/// The hash of the name, the background, the file ids and the named versions (each with the hash of its scene). The
+/// file ids are those of the working store and of the manifests, so a picture whose bytes arrive later changes
+/// nothing: the document named it before.
+fn hash_side<R: SceneRead>(store: &R, manifests: &[FileId]) -> Sum {
     let meta = store.meta();
     let mut text = format!("{}\n{:?}", meta.name, meta.background);
-    for (id, _) in store.files() {
+    let ids: std::collections::BTreeSet<&FileId> = store.files().map(|(id, _)| id).chain(manifests).collect();
+    for id in ids {
         text.push('\n');
         text.push_str(&id.to_string());
     }

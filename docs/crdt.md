@@ -108,7 +108,11 @@ There is no shared order list. The z-order of an element is its `index` field, a
 
 - `meta.name` and `meta.background` are strings, absent while default ("Untitled", white). Last writer wins; name and background are independent keys. The name is a string, not a `LoroText`: nobody edits a document title concurrently character by character, and the old code's delete-all-then-insert was a bug source.
 - `meta.schema` is written once when a document is created (section 14).
-- `files[hash]` is written once per distinct picture and is immutable, since the key is the content hash. Two peers adding the same picture write the same value. On read, an entry whose bytes do not hash to its key, whose media type is not `image/*`, or whose size is over the limit, is ignored (section 8). Removing a blob is the caller's decision (`SceneTx::remove_file`); the store does not collect unused blobs.
+- `files[hash]` is a plain value (not a child map): `{mime, size}` and, optionally, `bytes`. `hash` is the SHA-256 of the picture's bytes. `mime` is a string (`image/*`), `size` an integer, the number of bytes (at most `MAX_FILE_BYTES`), `bytes` a binary. Two peers adding the same picture write the same value, so an entry is written once and not changed. Schema 1 had `{mime, bytes}`; schema 2 added `size` and made `bytes` optional (section 14).
+- **File policy.** `LoroStore::file_policy` (`FilePolicy`, set with `set_file_policy`, or at creation with `from_document_with_policy`) decides what a local `put_file` writes. `Embedded` (the default) writes `{mime, size, bytes}`: a local document, a `.drafftink` file and a snapshot are self-contained. `External` writes `{mime, size}` only, and the bytes stay in the view of this replica: a shared end-to-end encrypted room keeps pictures as separate sealed files (`docs/design/collab-e2e.md` section 9). A change of policy affects later writes only; older entries keep their bytes, which stay in the history.
+- **Reading.** An entry with bytes is accepted when the bytes hash to the key, are at most `MAX_FILE_BYTES`, and a `size`, if there is one, equals their length. An entry without bytes (a manifest) needs an integer `size` of at most `MAX_FILE_BYTES`. Both need an `image/*` media type. Anything else (a wrong type, a missing size, a size over the limit, `text/html`) is ignored like any bad data from a peer (section 8) and is not a manifest. A removed key removes the entry.
+- **Manifests and bytes.** `LoroStore::manifest(id)` and `manifests()` list every valid entry with or without bytes, and `manifest_revision()` counts the changes of that set (local commit, remote update, snapshot replace, staged import), so the caller knows when to look for missing bytes. `SceneRead::file(id)` and `files()` return only pictures whose bytes are in the view. A manifest-only entry never removes bytes the view holds (the bytes hash to the key, so they are the right ones). `supply_file(entry)` puts downloaded bytes into the view for an existing manifest when the hash, media type and size match: no Loro write, no undo step, no change notification (the view revision moves, so the picture is drawn). Removing a picture is `SceneTx::remove_file` and works on pictures the view holds; a manifest the view has no bytes for is not removed that way (the store does not collect unused blobs, and a room never deletes pictures in v1).
+- **Named versions** list file ids (section 7a) and are independent of the policy: a version keeps its ids when its pictures are `External`, and opens once the bytes are supplied.
 
 ## 7a. Named versions
 
@@ -263,14 +267,15 @@ Each commit adds its operations to Loro's log. With field-level writes this is s
 
 ## 14. Schema version and migrations
 
-- `meta.schema` holds the version (`SCHEMA_VERSION = 1`). `from_snapshot` reads it:
+- `meta.schema` holds the version (`SCHEMA_VERSION = 2`). `from_snapshot` reads it:
   - none and the document is empty: a new document, version written;
   - none and the document has data: refused (`NotADocument`);
   - greater than this build's: refused (`NewerSchema`, "Update the app to open it");
   - smaller: migrated with the steps in `schema::MIGRATIONS`, in order, in one `sys:open` commit that is not undoable; a missing step is `DocError::Migration` with the version it stopped at, and the document is not opened.
 - A step is `Migration { from, apply: fn(&LoroDoc) -> Result<(), DocError> }`: upgrade from `from` to `from + 1` with plain Loro operations. Rules: derive every value from the data (never from the clock, the peer id or randomness) and prefer adding keys to rewriting them, because two peers that open the same old document both migrate it, and the CRDT merges their identical writes (tested). Steps are idempotent.
 - A change to the stored layout needs a version bump when it adds a key to `style.*` or `kind.*`, changes the meaning or type of a key, or changes a default. Adding a top-level element key does not.
-- The built-in table is empty because version 1 is the first schema. `LoroStore::open_with_migrations` takes an explicit table for tests and tools.
+- The built-in table has one step. **From 1 to 2** (images in encrypted rooms): every `files` entry that has `bytes` and no `size` gets `size = bytes.len()`. It reads only the entry itself, skips entries that already have a size (so a second run writes nothing), and writes the same value on every peer, so two peers that migrate one document merge to one value (tested in `tests/migration.rs`). A schema-1 build refuses a schema-2 document (`NewerSchema`, "Update the app"); the collaboration server's `SERVED_SCHEMA` follows `SCHEMA_VERSION`. `LoroStore::open_with_migrations` takes an explicit table for tests and tools.
+- A schema-1 peer still connected to a document that moved to 2 can write an entry with `bytes` and no `size`. A schema-2 reader accepts it (the size is the length of the bytes).
 - The native file format has its own version (docs/model.md section 7). The two move independently.
 
 ## 15. Measurements

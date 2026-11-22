@@ -50,6 +50,7 @@ impl NativeStore {
             Ns::Autosave => "autosave",
             Ns::Settings => "settings",
             Ns::Library => "library",
+            Ns::Blobs => "blobs",
         };
         self.root.join(name)
     }
@@ -359,6 +360,21 @@ mod tests {
         }
         // Nothing escaped the root.
         assert!(!std::env::temp_dir().join("etc").exists());
+    }
+
+    #[test]
+    fn a_blob_keyed_by_a_file_id_is_stored_as_plain_bytes_under_blobs() {
+        let (d, mut s) = store();
+        let id = "ab".repeat(32);
+        assert_eq!(id.len(), 64);
+        s.put(Ns::Blobs, &id, b"picture").unwrap();
+        assert_eq!(s.get(Ns::Blobs, &id).unwrap().as_deref(), Some(&b"picture"[..]));
+        assert_eq!(std::fs::read(d.path().join("blobs").join(&id)).unwrap(), b"picture");
+        let listed = s.list(Ns::Blobs).unwrap();
+        assert_eq!((listed.len(), listed[0].name.as_str(), listed[0].size), (1, id.as_str(), 7));
+        assert!(s.list(Ns::Library).unwrap().is_empty());
+        s.delete(Ns::Blobs, &id).unwrap();
+        assert_eq!(s.get(Ns::Blobs, &id).unwrap(), None);
     }
 
     #[test]

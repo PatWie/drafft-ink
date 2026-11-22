@@ -859,7 +859,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         },
     )
     .available(|s| needs_storage(s, "library.insert"))
-    .refusals(&["no_such_item"])
+    .refusals(&["no_such_item", super::image::room::IMAGE_TOO_LARGE, super::image::room::ROOM_IMAGES_FULL])
     .example(r#"{"item":"Login box","at":[400,300]}"#),
     CommandSpec::new(
         "library.remove",

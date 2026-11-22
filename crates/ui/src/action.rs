@@ -469,12 +469,18 @@ impl UiState {
             self.waiting.retain(|c| c != call);
             return;
         };
-        if refusal.code == "render_pending" {
-            // Not an error: the picture is being drawn. The same call runs again in the next frame (the port wakes
-            // the app when it is done), and the dialog that asked stays as it is meanwhile.
+        if refusal.is_pending() {
+            // Not an error: the picture is being drawn, or the pictures of a room are downloading. The same call
+            // runs again in the next frame (the port or the room client wakes the app when it is done), and the
+            // dialog that asked stays as it is meanwhile.
             if waited.is_none() {
                 self.waiting.push(call.clone());
-                self.push_toast(Toast::note("Drawing the picture\u{2026}", now));
+                let note = if refusal.code == "images_pending" {
+                    "Loading the pictures of the room\u{2026}"
+                } else {
+                    "Drawing the picture\u{2026}"
+                };
+                self.push_toast(Toast::note(note, now));
             }
             return;
         }

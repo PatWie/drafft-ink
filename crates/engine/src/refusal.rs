@@ -183,6 +183,13 @@ impl Refusal {
         self
     }
 
+    /// True when the refusal means "not ready yet, run the command again": `render_pending` (a picture is being
+    /// drawn) and `images_pending` (pictures of a room are downloading). The shell that runs commands keeps such a
+    /// call and runs it again when the port or the client wakes it, and shows no error meanwhile.
+    pub fn is_pending(&self) -> bool {
+        matches!(self.code, "render_pending" | "images_pending")
+    }
+
     /// Sets the command id, replacing the one the constructor used. For a refusal about another id (an
     /// unknown command named in the arguments) raised by the command that was asked.
     #[must_use]
