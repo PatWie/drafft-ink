@@ -59,7 +59,7 @@ pub use client::{
 pub use native::{NativeOptions, NativeTransport, TlsOptions};
 pub use room_client::RoomClient;
 pub use sealed::{
-    BLOB_TIMEOUT_MS, CATCHUP_REPLY_TIMEOUT_MS, COMPACT_RETRY_MS, GAP_GRACE_MS, IMAGE_RETRY_BASE_MS, IMAGE_RETRY_MAX_MS,
+    BLOB_TIMEOUT_MS, CATCHUP_REPLY_TIMEOUT_MS, COMPACT_RETRY_MS, DeleteRoomError, GAP_GRACE_MS, IMAGE_RETRY_BASE_MS, IMAGE_RETRY_MAX_MS,
     ImageEvent, ImageProgress, ImageRefusal, MAX_DOWNLOADS, MAX_UPLOADS, Resume, SealedClient, SealedConfig,
     SealedConfigError,
 };

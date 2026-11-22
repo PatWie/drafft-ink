@@ -226,7 +226,21 @@ pub struct SealedClient {
     offline_reason: String,
     server_retry_ms: Option<u64>,
     problem: Option<Problem>,
+    /// `DeleteRoom` was sent on this connection and the relay has not answered. The relay answers by closing the
+    /// connection (deleted) or with `Forbidden` (this host does not delete rooms).
+    delete_sent: bool,
     stats: Stats,
+}
+
+/// Why a room cannot be deleted from here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum DeleteRoomError {
+    /// A plaintext room: protocol version 1 has no message for it.
+    #[error("Only an end-to-end encrypted room can be deleted from here.")]
+    NotEncrypted,
+    /// Not joined right now: the relay only takes the request from a member that is online.
+    #[error("This room is not connected right now, so it cannot be deleted.")]
+    NotOnline,
 }
 
 impl std::fmt::Debug for SealedClient {
@@ -293,6 +307,7 @@ impl SealedClient {
             offline_reason: String::new(),
             server_retry_ms: None,
             problem: None,
+            delete_sent: false,
             stats: Stats::default(),
         })
     }
@@ -486,6 +501,20 @@ impl SealedClient {
         }
     }
 
+    /// Asks the relay to delete the room for everyone: its records, its snapshot and its pictures. Only a relay that
+    /// allows it does (the private instance, `docs/design/collab-e2e.md` section 19.8). The relay answers by closing the
+    /// connection, which ends this client with [`StopReason::RoomDeleted`] and a [`CollabEvent::RoomDeleted`], or with
+    /// `Forbidden`, which raises a problem and leaves the room as it was. The relay sends no confirmation: a clean close
+    /// after the request is taken as the deletion.
+    pub fn delete_room(&mut self) -> Result<(), DeleteRoomError> {
+        if !matches!(self.phase, Phase::Online) {
+            return Err(DeleteRoomError::NotOnline);
+        }
+        self.delete_sent = true;
+        self.send(&drafftink_protocol::v2::ClientMessage::DeleteRoom);
+        Ok(())
+    }
+
     // ---- local inputs -----------------------------------------------------------------------------------------
 
     /// The document got a local commit. Call it after every commit; it is cheap.
@@ -658,6 +687,13 @@ impl SealedClient {
         if matches!(self.phase, Phase::Idle | Phase::Stopped(_) | Phase::Backoff { .. }) {
             return;
         }
+        if self.delete_sent && error.is_none() {
+            // The relay closes the connection after it deleted the room, and says nothing else. A broken connection
+            // (`error` set) proves nothing: the client reconnects, and a room that is gone is `RoomMissing`.
+            self.events.push(CollabEvent::RoomDeleted);
+            self.enter_stopped(StopReason::RoomDeleted, None);
+            return;
+        }
         let why = match (&self.phase, error) {
             (Phase::Connecting { .. }, _) => "Cannot reach the server".to_owned(),
             (_, Some(e)) => {
@@ -709,6 +745,7 @@ impl SealedClient {
         self.pos.gap_since = None;
         self.compact_for = None;
         self.snapshot_out = None;
+        self.delete_sent = false;
         self.stable_since = None;
         self.limits = RoomLimits::DEFAULT;
         self.images.reset();
@@ -829,6 +866,9 @@ impl SealedClient {
                     (Some(p), _) => p.text.clone(),
                     (None, StopReason::Left) => "Left the room. Working on this device only.".to_owned(),
                     (None, StopReason::Declined) => "Kept this copy. Not shared with the room.".to_owned(),
+                    (None, StopReason::RoomDeleted) => {
+                        "The room was deleted for everyone. This tab is a local copy now.".to_owned()
+                    }
                     (None, _) => "Sharing stopped.".to_owned(),
                 };
                 (ConnState::Stopped, Some(reason), text, None)

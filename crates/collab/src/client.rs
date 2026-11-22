@@ -226,6 +226,9 @@ pub enum CollabEvent {
     },
     /// A picture of a sealed room arrived, was damaged or was refused (`docs/design/collab-e2e.md` section 9).
     Image(ImageEvent),
+    /// The relay deleted the room on request (`SealedClient::delete_room`) and closed the connection. The client has
+    /// stopped with [`StopReason::RoomDeleted`]. The document in this tab is untouched.
+    RoomDeleted,
     /// The room's deadline moved, or the room is past it (a sealed room on a relay that deletes rooms).
     Retention {
         /// When the room is deleted if nobody visits, in milliseconds since the epoch. 0: never.
