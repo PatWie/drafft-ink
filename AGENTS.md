@@ -27,6 +27,7 @@ Drafft.ink is an infinite-canvas whiteboard in Rust (Vello on WebGPU, egui, Loro
 | Rendering, the frame loop, wasm size | `docs/performance.md`; the WebGL2 fallback for browsers without WebGPU: `docs/web-app.md` |
 | Agent bridge, MCP | `docs/agents.md` |
 | The headless program `drafftink-headless` (the collaboration server, headless MCP, the tools for documents) | `docs/cli.md`, `docs/server.md` |
+| The Cloudflare Worker (demo and private instance), deploy | `apps/drafftink-worker/README.md`, `docs/deploy-cloudflare.md` |
 | File formats | `docs/formats.md` |
 | Building, running, the desktop and web apps | `docs/building.md` |
 | Publishing to crates.io, the hand-drawn fonts (`hand-fonts`) | `docs/publishing.md` |
