@@ -326,7 +326,7 @@ fn bold_and_italic_runs_round_trip_and_documents_without_them_still_open() {
     let mut text = TextData::new("plain bold both");
     text.runs = vec![
         TextRun { start: 6, end: 10, bold: true, ..Default::default() },
-        TextRun { start: 11, end: 15, color: Some(Color::rgb(1, 2, 3)), bold: true, italic: true },
+        TextRun { start: 11, end: 15, color: Some(Color::rgb(1, 2, 3)), bold: true, italic: true, ..Default::default() },
     ];
     doc.elements = vec![Element::new(ElementId::new("t").unwrap(), ElementKind::Text(text), ZIndex::first())];
     let json = doc.to_json().unwrap();
@@ -359,7 +359,7 @@ fn char_styles_and_runs_convert_both_ways() {
         vec![
             TextRun { start: 1, end: 3, bold: true, ..Default::default() },
             TextRun { start: 3, end: 5, color: red.color, ..Default::default() },
-            TextRun { start: 5, end: 6, color: red.color, bold: false, italic: true },
+            TextRun { start: 5, end: 6, color: red.color, bold: false, italic: true, ..Default::default() },
         ]
     );
     let mut data = TextData::new("abcdefg");
