@@ -295,5 +295,6 @@ fn http_reply(response: ImageResponse, head: bool) -> BlobReply {
         body: if head { Vec::new() } else { body },
         content_length,
         retry_after_ms,
+        ..BlobReply::default()
     }
 }

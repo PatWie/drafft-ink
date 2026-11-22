@@ -10,8 +10,9 @@
 //! Layout: `address` (server address, room name, room link), `connection` (start and leave a room), `state`
 //! (what the session keeps), `poll` (driving the client), `pictures` (the pictures of an encrypted room), `join_check`
 //! (what a tab with pictures must pass to join one), `images` (what commands need of them), `view` (what the UI reads), `fake_server` (an
-//! in-memory server for tests).
+//! in-memory server for tests), `access` (the service token of a private server).
 
+mod access;
 mod address;
 mod connection;
 pub mod fake_server;
@@ -234,6 +235,7 @@ fn connect(s: &mut Session, a: ConnectArgs) -> Result<ConnectOut, Refusal> {
             s.ext.with::<CollabState, _>(|c| {
                 c.server = Some(server);
                 c.token = token;
+                c.room_deleted = None;
             });
             Ok(ConnectOut { changed: true, state: ConnectionState::Ready, url, room: None, link: None, e2e: false })
         }
@@ -705,6 +707,86 @@ fn share_link(s: &mut Session, a: ShareLinkArgs) -> Result<ShareLinkOut, Refusal
     Ok(ShareLinkOut { changed: false, copied, link: a.reveal.then_some(text) })
 }
 
+// ---- collab.delete_room ----
+
+/// Arguments of `collab.delete_room`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct DeleteRoomArgs {
+    /// Must be true: deleting removes the room and all its pictures for everyone, and cannot be undone. Default
+    /// false, which only says so.
+    pub confirm: bool,
+}
+
+/// Output of `collab.delete_room`.
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
+pub struct DeleteRoomOut {
+    /// Always false: nothing on this screen changes yet.
+    pub changed: bool,
+    /// Always true: the request was sent. The server answers later: it closes the connection (the room is deleted, and
+    /// `collab.status` shows `room_deleted`) or refuses (a notice says so and the room stays).
+    pub requested: bool,
+    /// The id of the room (never its key).
+    pub room: String,
+}
+
+/// The state check of `collab.delete_room`: the active tab is in a room.
+fn require_room_to_delete(s: &Session) -> Result<(), Refusal> {
+    match s.tab().ext.get::<RoomBinding>() {
+        Some(RoomBinding(Some(_))) => Ok(()),
+        _ => Err(Refusal::custom(
+            "not_in_room",
+            s.cmd(),
+            "This tab is not in a room, so there is no room to delete.",
+        )),
+    }
+}
+
+fn no_key_to_delete(id: &str) -> Refusal {
+    Refusal::custom(
+        "not_e2e",
+        id,
+        "This room has no key, so it cannot be deleted from here. Whoever runs the server can remove it.",
+    )
+}
+
+fn delete_room(s: &mut Session, a: DeleteRoomArgs) -> Result<DeleteRoomOut, Refusal> {
+    let id = s.cmd();
+    require_room_to_delete(s)?;
+    if s.tab().ext.get::<SealedBinding>().and_then(|b| b.0.as_ref()).is_none() {
+        return Err(no_key_to_delete(id));
+    }
+    if !a.confirm {
+        return Err(Refusal::custom(
+            "not_confirmed",
+            id,
+            "This deletes the room and all its pictures for everyone. Run it again with confirm=true.",
+        )
+        .suggesting("collab.delete_room", Some(json!({ "confirm": true }))));
+    }
+    let tab = s.tab().id;
+    let sent = s.ext.with::<CollabState, _>(|c| match c.live.as_mut() {
+        Some(live) if live.tab == tab => Some(live.session.client_mut().delete_room().map(|()| live.room.to_string())),
+        _ => None,
+    });
+    let room = match sent {
+        Some(Ok(room)) => room,
+        Some(Err(drafftink_collab::DeleteRoomError::NotEncrypted)) => {
+            return Err(no_key_to_delete(id));
+        }
+        None | Some(Err(drafftink_collab::DeleteRoomError::NotOnline)) => {
+            return Err(Refusal::custom(
+                "room_offline",
+                id,
+                "This room is not connected right now, so it cannot be deleted. Wait until `collab.status` says connected, then run it again.",
+            )
+            .suggesting("collab.status", None));
+        }
+    };
+    s.collab_poll();
+    Ok(DeleteRoomOut { changed: false, requested: true, room })
+}
+
 // ---- collab.status ----
 
 fn status(s: &mut Session, _: NoArgs) -> Result<CollabView, Refusal> {
@@ -720,6 +802,18 @@ const NET: Facts = Facts {
     batch: Batch::Never,
     redraw: Redraw::Overlay,
     palette: true,
+    ..Facts::READ_ONLY
+};
+/// The commands that keep the service tokens of private servers: a port, never the network, never in a batch (a
+/// failed batch must not leave a secret half stored), and not offered to agents (a token passed as an argument ends up
+/// in a transcript).
+const SECRETS: Facts = Facts {
+    reads_only: false,
+    mutates: Mutates::PORTS,
+    ports: PortSet::SECRETS,
+    batch: Batch::Never,
+    palette: false,
+    agent: false,
     ..Facts::READ_ONLY
 };
 const PRESENCE: Facts = Facts { ports: PortSet::NONE, ring: RingMode::Quiet, palette: false, ..NET };
@@ -835,6 +929,38 @@ pub const COMMANDS: &[CommandSpec] = &[
     .refusals(&["not_in_room", "not_e2e"])
     .example(r#"{"copy":true}"#),
     CommandSpec::new(
+        "collab.set_access",
+        "collab",
+        "Set access token",
+        "Stores the service token (client id and secret) of a private server, for that server only. It is sent with every connection and picture request to that server, and is never shown again.",
+        &Typed::new(access::set_access),
+        SECRETS,
+    )
+    .refusals(&["invalid_url", "io_failed"])
+    .secret_args(&["client_id", "client_secret"])
+    .example(r#"{"client_id":"CLIENT-ID","client_secret":"CLIENT-SECRET"}"#),
+    CommandSpec::new(
+        "collab.clear_access",
+        "collab",
+        "Remove access token",
+        "Removes the stored service token of a private server.",
+        &Typed::new(access::clear_access),
+        SECRETS,
+    )
+    .refusals(&["invalid_url", "io_failed", "not_found"])
+    .example(r#"{"server":"https://canvas.example.com"}"#),
+    CommandSpec::new(
+        "collab.delete_room",
+        "collab",
+        "Delete room",
+        "Deletes the end-to-end encrypted room of this tab and all its pictures for everyone, on a server that allows it. The tab keeps its drawing as a local copy. Needs confirm=true.",
+        &Typed::new(delete_room),
+        Facts { palette: false, agent: false, ..NET },
+    )
+    .available(require_room_to_delete)
+    .refusals(&["not_in_room", "not_e2e", "not_confirmed", "room_offline"])
+    .example(r#"{"confirm":true}"#),
+    CommandSpec::new(
         "collab.status",
         "collab",
         "Collab status",
@@ -854,3 +980,6 @@ mod sealed_tests;
 #[cfg(test)]
 #[path = "collab_pictures_tests.rs"]
 mod pictures_tests;
+#[cfg(test)]
+#[path = "collab_access_tests.rs"]
+mod access_tests;

@@ -312,6 +312,25 @@ fn the_token_is_never_recorded_or_shown() {
     assert!(!format!("{:?}", w.s(0).collab_view()).contains(TOKEN));
 }
 
+// ---- collab.delete_room ----
+
+#[test]
+fn a_plaintext_room_cannot_be_deleted_from_here() {
+    let mut w = World::new(1);
+    run(w.s(0), "collab.connect", json!({"url": URL}));
+    run(w.s(0), "collab.join_room", json!({"room": "plain-room"}));
+    w.settle();
+    for confirm in [false, true] {
+        let r = refuse(w.s(0), "collab.delete_room", json!({"confirm": confirm}));
+        assert_eq!(r.code, "not_e2e");
+        assert_eq!(
+            r.message,
+            "This room has no key, so it cannot be deleted from here. Whoever runs the server can remove it."
+        );
+    }
+    assert_eq!(state_of(w.s(0)), "connected", "the room is untouched");
+}
+
 // ---- collab.join_room and collab.leave_room ----
 
 #[test]
