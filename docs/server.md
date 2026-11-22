@@ -41,6 +41,30 @@ Every flag has an environment variable (`DRAFFTINK_` + the flag name in capitals
 | `--compact-entries` / `--compact-bytes` | 1000 / 8 MiB | Log size that triggers compaction. |
 | `--room-expiry-days` | off | Delete rooms nobody wrote to for this long. |
 
+## Encrypted rooms (relay mode)
+
+The same program also runs the relay of end-to-end encrypted rooms (`docs/design/collab-e2e.md`, protocol v2 in `docs/protocol.md` §11). The relay stores and forwards sealed records. It never reads a payload and never links Loro for them. The rules are in the sans-IO crate `drafftink-relay` (`crates/relay`); this program is its host: sockets, the clock, storage, and a task per loaded room. v1 `/ws` is unchanged.
+
+| Path | What |
+|---|---|
+| `/r/<id>/ws` | WebSocket of the sealed room `<id>` (22 characters, the hash of the membership token). Binary frames of protocol v2; the keepalive is the text frame `ping`, answered by `pong`. |
+| `/r/<id>/f` | `GET`: the room's pictures as `[{name, size}]`. |
+| `/r/<id>/f/<name>` | `PUT` a sealed picture (at most 4 MiB + 78 bytes: `201`, `{room_images, room_image_bytes}`), or `GET` it. Failures are `{"error": code, "message": text}` with `400`, `401`, `404`, `413`, `429` (with `Retry-After`), `503` or `507`. |
+
+Membership is checked **before** a room is loaded: the first frame must be a `Join` whose room is the one in the path and whose proof hashes to it, and an image request carries `Authorization: Drafft-Member <base64url token>` that must hash to the room in the path. A stranger, or a mistyped key, never starts a room task and creates nothing. `Join` with `mode = Open` on a room that does not exist answers `RoomMissing` and writes nothing.
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--room-ttl` | `never` | Delete an encrypted room this long after its last visit (a `Join`): `48h`, `2d`, `90m`, `30s`, or `never`. Edits, presence and picture requests do not move the deadline. |
+| `--room-grace` | `60s` | A room past its deadline is deleted this long after its last connection closed, so a page reload does not lose it. A rejoin inside the grace is a visit. |
+| `--no-plaintext-rooms` | off | `/ws` refuses plaintext rooms (`UnsupportedVersion`: "This server only hosts end-to-end encrypted rooms. Use a room link that has a key."). |
+
+The flags `--max-peers-per-room`, `--max-updates-per-sec`, `--max-room-bytes`, `--max-frame-bytes`, `--join-timeout-secs` and `--flush-interval-ms` (at most 1 s for sealed rooms: an `Ack` means stored) apply to sealed rooms as well. Access tokens (`--auth-token`) apply to plaintext rooms only: the key is the proof for a sealed one.
+
+Storage follows `--storage`: `filesystem` (`<data-dir>/relay/<room>/`: `meta`, `snapshot`, `seg-<first>-<last>` per flush, `images/<hex name>`, every file written to a temporary name, fsynced and renamed), `sqlite` (tables `sealed_rooms`, `sealed_snapshots`, `sealed_segments`, `sealed_images`; a snapshot swap is one transaction) or `memory`. `s3` does not hold sealed rooms yet; the sealed routes then answer `Unavailable`. A restart resumes stored rooms that have a deadline, so they are deleted on time even if nobody visits them.
+
+A client of a room that falls behind (its queue of 512 messages is full) is closed, not slowed down for the others: it rejoins with its last sequence number and catches up.
+
 ## Storage providers
 
 All providers implement `RoomStore` (`src/store/mod.rs`; contract in `docs/protocol.md` §6): a compacted snapshot plus an append-only update log. `tests/stores.rs` runs one conformance suite on each. A store must have one server writing to it.
@@ -81,5 +105,7 @@ A storage failure on load answers `Unavailable` and never overwrites stored data
 - `unsafe` is forbidden and `unwrap`/`expect`/`panic!` are denied in the crate's non-test code.
 
 ## Tests
+
+Encrypted rooms: `crates/relay/tests` (membership, sync, compaction, reseed, retention with simulated time, cost, hostile input, images), `apps/drafftink-server/tests/sealed.rs` (the routes with real sealed records), `relay_stores.rs` (one conformance suite for the memory, file and SQLite stores), `blind.rs` (the canary: after two clients draw, name themselves and upload a picture, every stored byte and every wire frame is searched for the marker, the name, the key in every spelling, the subkeys, the file id and the picture hash; zero hits), and `crates/collab/tests/sealed.rs` (the same scenarios on the loopback and against the real `serve` process).
 
 `cargo test -p drafftink-server --all-features` runs unit tests and the integration suites (they start the library, not a process) in `apps/drafftink-server/tests/`: `sync.rs` (join, catch-up, live edits, reconnect, awareness), `hostile.rs` (limits, garbage frames, slow reader, Origin, auth, static files), `persistence.rs` (restart and crash per provider, compaction, expiry, failing stores) and `stores.rs` (the conformance suite). `cargo test -p drafftink-headless --test serve` starts the real `drafftink-headless serve` on a free port and asks `/health`, the source offer and the web directory, and stops it with SIGTERM. The S3 cases run against an in-process S3 mock (`tests/common/mock_s3.rs`) and, when `DRAFFTINK_TEST_S3_ENDPOINT` is set, also against a real service (`DRAFFTINK_TEST_S3_BUCKET`, `DRAFFTINK_TEST_S3_ACCESS_KEY`, `DRAFFTINK_TEST_S3_SECRET_KEY`). Example: `docker run -p 9000:9000 -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin123 bitnamilegacy/minio`, create the bucket, then set the variables.

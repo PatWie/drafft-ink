@@ -358,6 +358,7 @@ const PAINT: Facts = Facts {
     palette: false,
     agent: true,
     doc_write: crate::spec::DocWrite::Edit,
+    secret_output: false,
 };
 
 /// The editor commands change no document: they open and close a mode.

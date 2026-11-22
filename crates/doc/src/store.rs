@@ -563,6 +563,17 @@ impl LoroStore {
         vv
     }
 
+    /// The version that the operations in `bytes` (an update or a snapshot) end at, encoded like
+    /// [`LoroStore::version_vector`]. It holds the peers that `bytes` has operations of, so it is no full version.
+    /// An end-to-end encrypted room uses it to know which operations the relay holds: everything it handed out.
+    pub fn blob_end_version(&self, bytes: &[u8]) -> Result<Vec<u8>, DocError> {
+        self.core.guard(|| {
+            loro::LoroDoc::decode_import_blob_meta(bytes, false)
+                .map(|meta| meta.partial_end_vv.encode())
+                .map_err(DocError::backend)
+        })?
+    }
+
     /// The operations committed since the last call, or `None` when there are none. A store made by `new` starts
     /// with nothing sent; a store opened from a snapshot starts with everything in the snapshot counted as sent.
     /// This is what the sync client sends after each commit.

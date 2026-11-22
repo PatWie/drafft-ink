@@ -391,6 +391,8 @@ fn compare_facts(spec: &CommandSpec, row: &[String], problems: &mut Vec<String>)
         agent,
         // Appendix A2 (`facts_match_appendix_a2`).
         doc_write: _,
+        // Declared next to the command (`secret_output_marks_only_commands_that_return_a_key`).
+        secret_output: _,
     } = spec.facts();
     let cell = |i: usize| row.get(i).map_or("", String::as_str);
     let mut text = |col: &str, i: usize, reg: &str| {

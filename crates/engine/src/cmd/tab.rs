@@ -32,6 +32,37 @@ pub const NEVER_SAVED: u64 = u64::MAX;
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RoomBinding(pub Option<String>);
 
+/// The room of an end-to-end encrypted tab: the key (the one secret), the server, and what the relay is known to
+/// hold. Set next to [`RoomBinding`]. The workspace record stores it, so a reload reconnects to the same tab.
+/// `Debug` never shows the key.
+#[derive(Debug, Default)]
+pub struct SealedBinding(pub Option<SealedRoom>);
+
+/// See [`SealedBinding`].
+#[derive(Debug)]
+pub struct SealedRoom {
+    /// The room key.
+    pub key: drafftink_seal::RoomKey,
+    /// The server address as the person gave it.
+    pub server: String,
+    /// The sequence number and relay version of the last connection.
+    pub resume: drafftink_collab::Resume,
+    /// When the room was last joined, in milliseconds since the epoch.
+    pub joined_ms: u64,
+}
+
+impl SealedRoom {
+    /// A copy of the room, key included.
+    pub fn duplicate(&self) -> Self {
+        SealedRoom {
+            key: drafftink_seal::RoomKey::from_bytes(*self.key.expose_bytes()),
+            server: self.server.clone(),
+            resume: self.resume.clone(),
+            joined_ms: self.joined_ms,
+        }
+    }
+}
+
 /// Names a tab.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
@@ -562,6 +593,7 @@ const TABS: Facts = Facts {
     palette: true,
     agent: true,
     doc_write: crate::spec::DocWrite::NotDocument,
+    secret_output: false,
 };
 
 /// The tab family.

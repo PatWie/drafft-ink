@@ -1614,7 +1614,9 @@ dependencies = [
  "drafftink-doc",
  "drafftink-profile",
  "drafftink-protocol",
+ "drafftink-relay",
  "drafftink-scene",
+ "drafftink-seal",
  "futures-util",
  "js-sys",
  "log",
@@ -1622,6 +1624,7 @@ dependencies = [
  "proptest",
  "rustls",
  "rustls-native-certs",
+ "serde_json",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
@@ -1698,7 +1701,9 @@ dependencies = [
  "drafftink-io",
  "drafftink-profile",
  "drafftink-protocol",
+ "drafftink-relay",
  "drafftink-scene",
+ "drafftink-seal",
  "drafftink-typeset",
  "loro",
  "png",
@@ -1835,6 +1840,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "drafftink-relay"
+version = "0.2.0"
+dependencies = [
+ "drafftink-protocol",
+ "proptest",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "drafftink-render"
 version = "0.2.0"
 dependencies = [
@@ -1912,14 +1926,20 @@ version = "0.2.0"
 dependencies = [
  "async-trait",
  "axum",
+ "base64ct",
  "clap",
+ "drafftink-collab",
  "drafftink-doc",
  "drafftink-protocol",
+ "drafftink-relay",
+ "drafftink-scene",
+ "drafftink-seal",
  "futures-util",
  "loro",
  "object_store",
  "rusqlite",
  "serde_json",
+ "sha2 0.10.9",
  "subtle",
  "tempfile",
  "thiserror 2.0.21",

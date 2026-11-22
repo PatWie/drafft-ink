@@ -1,0 +1,22 @@
+[package]
+name = "drafftink-relay"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "The blind relay of Drafft.ink's end-to-end encrypted rooms (L1): a sans-IO room core with membership, sequence numbers, a segment log, compare-and-set snapshots, presence bundling, rate limits and retention."
+readme = "README.md"
+keywords = ["collaboration", "relay", "end-to-end-encryption", "sans-io", "whiteboard"]
+categories = ["network-programming", "wasm"]
+
+[dependencies]
+drafftink-protocol = { path = "../protocol", version = "0.2.0" }
+thiserror.workspace = true
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+proptest.workspace = true

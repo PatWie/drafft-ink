@@ -8,6 +8,7 @@ use std::rc::Rc;
 
 use drafftink_collab::{AuthToken, CollabSession, Problem, ServerUrl, Transport, TransportError, TransportEvent};
 use drafftink_protocol::RoomId;
+use drafftink_protocol::v2::RoomId as SealedRoomId;
 
 use crate::state::{TabId, View};
 
@@ -69,6 +70,10 @@ impl Transport for GatedTransport {
         self.inner.send(frame)
     }
 
+    fn send_text(&mut self, text: &str) -> Result<(), TransportError> {
+        self.inner.send_text(text)
+    }
+
     fn close(&mut self) {
         self.inner.close();
     }
@@ -97,6 +102,25 @@ impl Transport for GatedTransport {
     }
 }
 
+/// The room a client runs: a name of a plaintext room, or the id of an end-to-end encrypted one. The id is public
+/// (it is in the address); the key is not here.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum RoomRef {
+    /// A plaintext room.
+    Plain(RoomId),
+    /// An encrypted room.
+    Sealed(SealedRoomId),
+}
+
+impl std::fmt::Display for RoomRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RoomRef::Plain(room) => room.fmt(f),
+            RoomRef::Sealed(room) => room.fmt(f),
+        }
+    }
+}
+
 /// The running client of one tab.
 pub(super) struct Live {
     /// The client with its transport.
@@ -104,7 +128,7 @@ pub(super) struct Live {
     /// The tab bound to the room.
     pub tab: TabId,
     /// The room.
-    pub room: RoomId,
+    pub room: RoomRef,
     /// Shared with the transport.
     pub gate: Rc<Cell<Gate>>,
     /// The tab's `TabDoc::local_writes` as last seen; a different value means the peers lack an update.

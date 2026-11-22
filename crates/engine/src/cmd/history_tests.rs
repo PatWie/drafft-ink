@@ -276,6 +276,7 @@ mod synthetic {
         palette: false,
         agent: true,
     doc_write: crate::spec::DocWrite::Edit,
+    secret_output: false,
     };
 
     const T: &[CommandSpec] = &[

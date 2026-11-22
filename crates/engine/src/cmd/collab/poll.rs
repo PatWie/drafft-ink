@@ -124,7 +124,7 @@ fn live_view(live: &Live, import: Option<ImportProgress>, now_ms: u64) -> Collab
     };
     CollabView {
         state,
-        url: Some(client.config().url.to_string()),
+        url: Some(client.url().to_string()),
         room: Some(live.room.to_string()),
         tab: Some(live.tab.to_string()),
         text: status.text.clone(),
@@ -132,6 +132,9 @@ fn live_view(live: &Live, import: Option<ImportProgress>, now_ms: u64) -> Collab
         unsynced: status.unsynced,
         loading,
         peers: client.peers().iter().map(|p| PeerView::of(p, now_ms, following == Some(p.id))).collect(),
+        e2e: client.sealed().is_some(),
+        expires_at_ms: client.sealed().map(drafftink_collab::SealedClient::expires_at_ms).filter(|ms| *ms > 0),
+        expiring: client.sealed().is_some_and(drafftink_collab::SealedClient::expiring),
         ..CollabView::disconnected()
     }
 }
@@ -149,6 +152,7 @@ fn poll_live(s: &mut Session, live: &mut Live, now: u64) -> Option<CollabPoll> {
         let tab = s.tab_by_id_mut(live.tab)?;
         live.session.pump(now, tab.doc.replicated_mut())
     };
+    remember_resume(s, live);
     let mut events: VecDeque<CollabEvent> = pump.events.into();
     while let Some(event) = events.pop_front() {
         handle(s, live, now, event, &mut events)?;
@@ -168,6 +172,20 @@ fn poll_live(s: &mut Session, live: &mut Live, now: u64) -> Option<CollabPoll> {
         wake = Some(wake.map_or(IMPORT_FRAME_MS, |w| w.min(IMPORT_FRAME_MS)));
     }
     Some(CollabPoll { redraw: pump.redraw || slice.changed, wake_in_ms: wake })
+}
+
+/// Keeps the tab's sealed binding up to date with what the client knows of the relay, so that the workspace record
+/// holds a point to resume from.
+fn remember_resume(s: &mut Session, live: &Live) {
+    let Some(sealed) = live.session.client().sealed() else { return };
+    let resume = sealed.resume();
+    if let Some(tab) = s.tab_by_id_mut(live.tab) {
+        tab.ext.with::<crate::cmd::tab::SealedBinding, _>(|binding| {
+            if let Some(room) = binding.0.as_mut() {
+                room.resume = resume;
+            }
+        });
+    }
 }
 
 /// The pause between two slices of a staged import: one frame, so the app draws and answers in between.
@@ -318,7 +336,7 @@ fn handle(s: &mut Session, live: &mut Live, now: u64, event: CollabEvent, rest: 
                 fatal: true,
             }));
         }
-        CollabEvent::Status(_) | CollabEvent::Presence => {}
+        CollabEvent::Status(_) | CollabEvent::Presence | CollabEvent::Retention { .. } => {}
     }
     Some(())
 }

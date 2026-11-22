@@ -1130,6 +1130,7 @@ const DOC: Facts = Facts {
     palette: false,
     agent: true,
     doc_write: crate::spec::DocWrite::Edit,
+    secret_output: false,
 };
 
 const ON_SELECTION: Facts = Facts { needs_selection: Selection::Required, palette: true, ..DOC };

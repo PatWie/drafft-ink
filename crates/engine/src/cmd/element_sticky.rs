@@ -215,6 +215,7 @@ const FACTS: Facts = Facts {
     palette: true,
     agent: true,
     doc_write: crate::spec::DocWrite::Edit,
+    secret_output: false,
 };
 
 const STICKY_KEYS: &[Binding] = &[Binding::new(&["N"], Scope::Canvas).with_args(r#"{"at":"$cursor","edit":true}"#)];

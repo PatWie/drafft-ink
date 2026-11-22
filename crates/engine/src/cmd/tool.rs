@@ -264,6 +264,7 @@ const TOOL: Facts = Facts {
     palette: true,
     agent: true,
     doc_write: crate::spec::DocWrite::NotDocument,
+    secret_output: false,
 };
 
 const SET_KEYS: &[Binding] = &[

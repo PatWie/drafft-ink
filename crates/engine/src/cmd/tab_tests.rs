@@ -119,6 +119,7 @@ const DOC: Facts = Facts {
     palette: false,
     agent: true,
     doc_write: crate::spec::DocWrite::Edit,
+    secret_output: false,
 };
 
 const OTHERS: &[CommandSpec] = &[
@@ -837,7 +838,7 @@ fn the_workspace_record_has_an_index_and_one_document_per_tab() {
     assert_eq!(key_names(&f), ["workspace", "workspace.t1", "workspace.t2", "workspace.t3"]);
     let idx = index(&f);
     assert_eq!(idx["format"], json!("drafftink-workspace"));
-    assert_eq!(idx["schema"], json!(1));
+    assert_eq!(idx["schema"], json!(2));
     assert_eq!(idx["active"], json!(1));
     assert_eq!(idx["saved_ms"], json!(now(&f)));
     let t0 = &idx["tabs"][0];

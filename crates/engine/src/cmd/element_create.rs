@@ -1051,6 +1051,7 @@ const DOC_OBSERVED: Facts = Facts {
     palette: false,
     agent: true,
     doc_write: crate::spec::DocWrite::Edit,
+    secret_output: false,
 };
 
 const CREATE: Facts = Facts { mutates: Mutates::DOC.with(Mutates::OBSERVED).with(Mutates::TOOL), ..DOC_OBSERVED };

@@ -55,6 +55,7 @@ impl Default for NativeOptions {
 
 enum Out {
     Frame(Vec<u8>),
+    Text(String),
     Close,
 }
 
@@ -166,6 +167,13 @@ impl Transport for NativeTransport {
     fn send(&mut self, frame: Vec<u8>) -> Result<(), TransportError> {
         match &self.conn {
             Some(tx) => tx.send(Out::Frame(frame)).map_err(|_| TransportError::NotOpen),
+            None => Err(TransportError::NotOpen),
+        }
+    }
+
+    fn send_text(&mut self, text: &str) -> Result<(), TransportError> {
+        match &self.conn {
+            Some(tx) => tx.send(Out::Text(text.to_owned())).map_err(|_| TransportError::NotOpen),
             None => Err(TransportError::NotOpen),
         }
     }
@@ -314,14 +322,20 @@ impl Connection {
                 () = self.shared.space.notified(), if !reading => {}
                 incoming = ws.next(), if reading => match incoming {
                     Some(Ok(Message::Binary(b))) => self.push(TransportEvent::Message(b.to_vec())),
+                    Some(Ok(Message::Text(t))) => self.push(TransportEvent::Text(t.as_str().to_owned())),
                     Some(Ok(Message::Close(_))) | None => return Ok(Ended::ByPeer),
-                    // Pings are answered by the library; the server sends no text.
+                    // Pings are answered by the library.
                     Some(Ok(_)) => {}
                     Some(Err(e)) => return Err(ConnectError::Socket(e.to_string())),
                 },
                 outgoing = rx.recv() => match outgoing {
                     Some(Out::Frame(f)) => {
                         if let Err(e) = ws.send(Message::Binary(f.into())).await {
+                            return Err(ConnectError::Socket(e.to_string()));
+                        }
+                    }
+                    Some(Out::Text(t)) => {
+                        if let Err(e) = ws.send(Message::Text(t.into())).await {
                             return Err(ConnectError::Socket(e.to_string()));
                         }
                     }

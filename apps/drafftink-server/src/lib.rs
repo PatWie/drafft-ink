@@ -19,6 +19,7 @@ pub mod outbox;
 pub mod room;
 mod run;
 mod schema;
+pub mod sealed;
 pub mod store;
 
 use std::net::SocketAddr;
@@ -63,6 +64,7 @@ pub struct ServerHandle {
     task: JoinHandle<()>,
     sweeper: Option<JoinHandle<()>>,
     manager: Arc<RoomManager>,
+    sealed: Arc<sealed::SealedHost>,
 }
 
 impl ServerHandle {
@@ -74,6 +76,11 @@ impl ServerHandle {
     /// The number of rooms currently loaded.
     pub async fn loaded_rooms(&self) -> usize {
         self.manager.loaded_rooms().await
+    }
+
+    /// The number of sealed rooms currently loaded.
+    pub async fn loaded_sealed_rooms(&self) -> usize {
+        self.sealed.loaded_rooms().await
     }
 
     /// Stops accepting connections, tells the peers, saves every room and returns.
@@ -111,7 +118,10 @@ pub async fn start_with_store(config: Config, store: Arc<dyn RoomStore>) -> Resu
     let addr = listener.local_addr().map_err(|source| StartError::Bind { addr: config.bind, source })?;
     let config = Arc::new(config);
     let manager = RoomManager::new(config.clone(), store.clone());
+    let sealed = sealed::SealedHost::new(config.clone())?;
+    sealed.resume().await;
     let state = Arc::new(http::AppState {
+        sealed: sealed.clone(),
         auth: auth::Auth::new(&config.auth_tokens),
         origin: OriginPolicy::new(&config),
         permits: Arc::new(Semaphore::new(config.limits.max_connections)),
@@ -122,10 +132,12 @@ pub async fn start_with_store(config: Config, store: Arc<dyn RoomStore>) -> Resu
     let app = http::router(state);
     let (stop, stopped) = oneshot::channel::<()>();
     let shutting = manager.clone();
+    let shutting_sealed = sealed.clone();
     let task = tokio::spawn(async move {
         let graceful = async move {
             let _ = stopped.await;
             shutting.shutdown().await;
+            shutting_sealed.shutdown().await;
         };
         if let Err(e) = axum::serve(listener, app).with_graceful_shutdown(graceful).await {
             warn!("server stopped with an error: {e}");
@@ -143,5 +155,5 @@ pub async fn start_with_store(config: Config, store: Arc<dyn RoomStore>) -> Resu
         })
     });
     info!("listening on {addr}, storing rooms in {}", store.name());
-    Ok(ServerHandle { addr, stop: Some(stop), task, sweeper, manager })
+    Ok(ServerHandle { addr, stop: Some(stop), task, sweeper, manager, sealed })
 }

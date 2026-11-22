@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use clap::ValueEnum;
 use drafftink_protocol as proto;
+use drafftink_relay::{FlushRules, RelayConfig, Retention};
 
 use crate::store::StorageConfig;
 
@@ -138,6 +139,11 @@ pub struct Config {
     pub limits: ServerLimits,
     /// Timers.
     pub timing: Timing,
+    /// Whether `/ws` hosts plaintext (protocol v1) rooms. Off with `--no-plaintext-rooms`: only sealed rooms
+    /// (`/r/<id>/ws`) are served.
+    pub plaintext_rooms: bool,
+    /// The policy of the sealed rooms: retention, flush rules, limits.
+    pub relay: RelayConfig,
 }
 
 impl Default for Config {
@@ -152,6 +158,8 @@ impl Default for Config {
             source_url: DEFAULT_SOURCE_URL.to_owned(),
             limits: ServerLimits::default(),
             timing: Timing::default(),
+            plaintext_rooms: true,
+            relay: RelayConfig::self_host(),
         }
     }
 }
@@ -196,6 +204,7 @@ impl Config {
         if self.auth_tokens.iter().any(|t| t.is_empty() || t.len() > proto::MAX_AUTH_TOKEN_BYTES) {
             return Err(bad(format!("auth tokens must be 1 to {} bytes", proto::MAX_AUTH_TOKEN_BYTES)));
         }
+        self.relay.validate().map_err(|e| bad(e.0))?;
         Ok(())
     }
 }
@@ -206,6 +215,42 @@ fn is_source_url(url: &str) -> bool {
     url.len() <= MAX_SOURCE_URL_BYTES
         && rest.is_some_and(|r| !r.is_empty())
         && url.bytes().all(|b| b.is_ascii_graphic())
+}
+
+/// A length of time on the command line: a number and a unit, `90s`, `30m`, `48h` or `2d`.
+pub fn parse_span(text: &str) -> Result<Duration, String> {
+    let text = text.trim();
+    let split = text.find(|c: char| !c.is_ascii_digit()).unwrap_or(text.len());
+    let (digits, unit) = text.split_at(split);
+    let amount: u64 =
+        digits.parse().map_err(|_| format!("{text:?} is not a length of time like 90s, 30m, 48h or 2d"))?;
+    let seconds = match unit {
+        "s" => 1,
+        "m" => 60,
+        "h" => 3600,
+        "d" => 86_400,
+        _ => return Err(format!("{text:?} is not a length of time like 90s, 30m, 48h or 2d")),
+    };
+    Ok(Duration::from_secs(amount.saturating_mul(seconds)))
+}
+
+/// How long a sealed room lives after its last visit: a length of time, or `never`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RoomTtl(pub Option<Duration>);
+
+impl std::str::FromStr for RoomTtl {
+    type Err = String;
+
+    fn from_str(text: &str) -> Result<Self, String> {
+        if text.trim().eq_ignore_ascii_case("never") {
+            return Ok(RoomTtl(None));
+        }
+        let span = parse_span(text)?;
+        if span.is_zero() {
+            return Err("a room ttl of zero would delete every room at once; use `never` to keep rooms".to_owned());
+        }
+        Ok(RoomTtl(Some(span)))
+    }
 }
 
 /// The storage provider named on the command line.
@@ -366,9 +411,23 @@ pub struct Args {
     #[arg(long, env = "DRAFFTINK_COMPACT_BYTES", default_value_t = Timing::default().compact_bytes)]
     pub compact_bytes: u64,
 
-    /// Delete rooms that nobody wrote to for this many days. Off by default.
+    /// Delete rooms that nobody wrote to for this many days. Off by default. Plaintext rooms only.
     #[arg(long, env = "DRAFFTINK_ROOM_EXPIRY_DAYS")]
     pub room_expiry_days: Option<u64>,
+
+    /// Delete an encrypted room this long after its last visit (a join): `48h`, `2d`, `90m`, or `never` to keep
+    /// rooms (the default). Edits do not move the deadline.
+    #[arg(long, env = "DRAFFTINK_ROOM_TTL", default_value = "never")]
+    pub room_ttl: RoomTtl,
+
+    /// A room past its deadline is deleted this long after its last person left, so that a page reload does not
+    /// lose the room.
+    #[arg(long, env = "DRAFFTINK_ROOM_GRACE", value_parser = parse_span, default_value = "60s")]
+    pub room_grace: Duration,
+
+    /// Host encrypted rooms only: `/ws` refuses plaintext (protocol v1) rooms.
+    #[arg(long, env = "DRAFFTINK_NO_PLAINTEXT_ROOMS")]
+    pub no_plaintext_rooms: bool,
 }
 
 impl Args {
@@ -445,6 +504,25 @@ impl Args {
             expire_after: self.room_expiry_days.map(|d| Duration::from_secs(d.saturating_mul(86_400))),
             ..Timing::default()
         };
+        let retention = match self.room_ttl.0 {
+            None => Retention::Never,
+            Some(ttl) => Retention::After { ttl, grace: self.room_grace, recheck: proto::ROOM_RECHECK },
+        };
+        let relay = RelayConfig {
+            retention,
+            // Sealed records are acknowledged when stored, so a long flush window shows as a long wait for the
+            // "saved" mark.
+            flush: FlushRules { interval_ms: self.flush_interval_ms.min(1000), ..RelayConfig::self_host().flush },
+            limits: drafftink_protocol::v2::RoomLimits {
+                max_frame_bytes: u32::try_from(self.max_frame_bytes).unwrap_or(u32::MAX),
+                max_updates_per_sec: self.max_updates_per_sec,
+                ..drafftink_protocol::v2::RoomLimits::DEFAULT
+            },
+            max_peers: self.max_peers_per_room,
+            max_room_state_bytes: self.max_room_bytes,
+            join_timeout_ms: self.join_timeout_secs.saturating_mul(1000),
+            ..RelayConfig::self_host()
+        };
         let config = Config {
             bind: self.bind,
             web_dir: self.web_dir,
@@ -455,6 +533,8 @@ impl Args {
             source_url: self.source_url,
             limits,
             timing,
+            plaintext_rooms: !self.no_plaintext_rooms,
+            relay,
         };
         config.validate()?;
         Ok(config)

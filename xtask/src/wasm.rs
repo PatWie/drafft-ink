@@ -48,6 +48,7 @@ mod tests {
         for name in [
             "drafftink-geom",
             "drafftink-seal",
+            "drafftink-relay",
             "drafftink-render",
             "drafftink-doc",
             "drafftink-engine",

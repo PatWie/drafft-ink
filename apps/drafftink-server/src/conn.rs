@@ -304,7 +304,14 @@ impl Conn {
         let ClientMessage::Join { min_version, max_version, room, client_id, auth_token, version, user } = msg else {
             return Flow::Close;
         };
-        // This server hosts plaintext rooms only (sealed rooms come with the relay core).
+        if !self.app.config.plaintext_rooms {
+            self.fail(
+                ErrorCode::UnsupportedVersion,
+                "This server only hosts end-to-end encrypted rooms. Use a room link that has a key.",
+            );
+            return Flow::Close;
+        }
+        // Sealed rooms are served on `/r/<id>/ws`; this route is the plaintext protocol.
         let Some(protocol_version) = negotiate_version_within(min_version, max_version, PROTOCOL_V1..=PROTOCOL_V1)
         else {
             self.fail(ErrorCode::UnsupportedVersion, "no protocol version in common");

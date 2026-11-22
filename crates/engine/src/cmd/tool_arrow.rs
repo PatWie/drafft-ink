@@ -110,6 +110,7 @@ pub const COMMANDS: &[CommandSpec] = &[CommandSpec::new(
         palette: true,
         agent: true,
     doc_write: crate::spec::DocWrite::NotDocument,
+    secret_output: false,
     },
 )
 .example(r#"{"arrow_type":"elbow","end_head":"triangle"}"#)];

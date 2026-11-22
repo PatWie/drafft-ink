@@ -202,6 +202,7 @@ const SET: Facts = Facts {
     palette: true,
     agent: true,
     doc_write: crate::spec::DocWrite::Edit,
+    secret_output: false,
 };
 
 const OPEN: Facts = Facts {

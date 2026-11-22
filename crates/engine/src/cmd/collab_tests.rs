@@ -325,9 +325,12 @@ fn join_room_needs_a_server_a_valid_name_and_no_current_room() {
     assert_eq!(refuse(w.s(0), "collab.join_room", json!({"room": "no way"})).code, "bad_args");
     let out = run(w.s(0), "collab.join_room", json!({}));
     let room = out["room"].as_str().unwrap().to_owned();
-    assert_eq!(room.len(), 10);
-    assert!(room.chars().all(|c| c.is_ascii_alphanumeric()));
-    assert_eq!(out["link"], format!("#room={room}&server=ws://127.0.0.1:3030/ws"));
+    // Omitting the room makes an encrypted room: its id is 16 bytes of base64url, and the link (which holds the key)
+    // is not in the output (`collab.share_link` makes it).
+    assert_eq!(room.len(), 22);
+    assert!(room.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_')));
+    assert_eq!(out["e2e"], true);
+    assert!(out.get("link").is_none(), "{out}");
     let r = refuse(w.s(0), "collab.join_room", json!({"room": "other"}));
     assert_eq!(r.code, "already_in_room");
     assert_eq!(r.message, format!("Already in room `{room}`. Leave it first with `collab.leave_room`."));

@@ -121,6 +121,7 @@ const DOC: Facts = Facts {
     palette: false,
     agent: true,
     doc_write: crate::spec::DocWrite::Edit,
+    secret_output: false,
 };
 
 const OTHERS: &[CommandSpec] = &[

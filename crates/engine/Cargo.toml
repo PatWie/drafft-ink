@@ -32,6 +32,7 @@ drafftink-io = { path = "../io", version = "0.2.0" }
 drafftink-typeset = { path = "../typeset", version = "0.2.0" }
 drafftink-profile = { path = "../profile", version = "0.2.0" }
 drafftink-collab = { path = "../collab", version = "0.2.0" }
+drafftink-seal = { path = "../seal", version = "0.2.0" }
 drafftink-protocol = { path = "../protocol", version = "0.2.0" }
 schemars.workspace = true
 serde.workspace = true
@@ -46,6 +47,7 @@ base64.workspace = true
 drafftink-typeset = { path = "../typeset", version = "0.2.0", features = ["embedded"] }
 
 [dev-dependencies]
+drafftink-relay = { path = "../relay", version = "0.2.0" }
 # The tests draw with the hand-drawn fonts (the Git repository has them; a package on crates.io does not, and a path-only
 # dev-dependency is not part of the package).
 drafftink-typeset = { path = "../typeset", features = ["hand-fonts"] }

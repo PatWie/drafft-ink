@@ -8,6 +8,11 @@
 //!      "tabs": [ { "id": 3, "key": "workspace.t3", "name": "Plan", "dirty": true, "revision": 12,
 //!                  "view": { "scroll": [0, 0], "zoom": 1.68 }, "selection": ["e1"] } ] }`
 //! * `workspace.t<id>`: one native document (the same JSON as a saved file) per tab.
+//! * `workspace.t<id>.loro` (schema 2): the Loro snapshot of a tab that is in an end-to-end encrypted room. The index
+//!   entry of that tab has `"room": { "link": "#room=<id>,<key>", "server": "wss://...", "last_seq": 12,
+//!   "relay_vv": "<hex>", "joined_ms": 1730000000000 }`. A restored tab is bound to its room again and reconnects to
+//!   it, and its copy has the same CRDT lineage as the room, so a restore of an expired room or a merge is safe. The
+//!   key is stored in the clear like the document next to it.
 //!
 //! Documents are separate keys so that a save writes only the tabs that changed since the last write.
 //! The index is written last, so a crash between the writes leaves the previous index pointing at
@@ -37,16 +42,28 @@ use crate::spec::Redraw;
 use crate::state::{Tab, TabId, clamp_zoom};
 use crate::store::TabDoc;
 
-/// The schema version of the index this build reads and writes.
-pub const SCHEMA: u32 = 1;
+/// The schema version of the index this build reads and writes. Schema 2 adds the room of an encrypted tab and its
+/// Loro snapshot (`workspace.t<id>.loro`); a record of schema 1 is read as before.
+pub const SCHEMA: u32 = 2;
 /// The storage key of the index.
 pub const INDEX_KEY: &str = "workspace";
 /// The prefix of the per-tab document keys.
 pub const TAB_KEY_PREFIX: &str = "workspace.t";
+/// The suffix of the key that holds a room tab's Loro snapshot, after the key of its document.
+pub const LORO_KEY_SUFFIX: &str = ".loro";
 /// Quiet time before a write, in milliseconds. A shorter `autosave.interval_s` wins.
 pub const QUIET_MS: u64 = 1000;
 /// Largest tab id a record may name. Restoring walks the id counter up to it.
 const MAX_RESTORED_ID: u32 = 1_000_000;
+
+/// Bytes as lowercase hex.
+pub(super) fn to_hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn from_hex(text: &str) -> Option<Vec<u8>> {
+    (0..text.len()).step_by(2).map(|i| u8::from_str_radix(text.get(i..i + 2)?, 16).ok()).collect()
+}
 
 fn tab_key(id: TabId) -> String {
     format!("{TAB_KEY_PREFIX}{}", id.0)
@@ -254,6 +271,7 @@ impl Session {
             st.last_change = None;
         });
         self.mark_dirty(Redraw::Scene);
+        self.resume_restored_room();
         Ok(report)
     }
 
@@ -301,6 +319,7 @@ impl Session {
                 t.view.zoom = clamp_zoom(z);
             }
         }
+        self.read_room(entry, id, &mut t);
         if let Some(sel) = entry.get("selection").and_then(Value::as_array) {
             for id in sel.iter().filter_map(Value::as_str).filter_map(|s| ElementId::new(s).ok()) {
                 if t.doc.store().get(&id).is_some_and(|e| !e.deleted) {
@@ -309,6 +328,37 @@ impl Session {
             }
         }
         Ok(t)
+    }
+
+    /// The room of a tab of the record, if it has one: binds the tab again and replaces its Loro store with the
+    /// saved snapshot, so that the copy shares the room's lineage. A room whose snapshot is missing or unreadable
+    /// is left out: the tab is a local copy, because a document without the room's history must not be merged
+    /// into it.
+    fn read_room(&self, entry: &Value, id: u32, tab: &mut Tab) {
+        let Some(room) = entry.get("room") else { return };
+        let text = |name: &str| room.get(name).and_then(Value::as_str);
+        let Some(link) = text("link").and_then(|l| drafftink_seal::RoomLink::parse(l).ok()) else { return };
+        let snapshot = self
+            .ports
+            .storage
+            .as_ref()
+            .and_then(|s| s.get(Ns::Autosave, &format!("{}{LORO_KEY_SUFFIX}", tab_key(TabId(id)))).ok().flatten());
+        let Some(snapshot) = snapshot else { return };
+        if tab.doc.replicated_mut().replace_from_snapshot(&snapshot).is_err() {
+            return;
+        }
+        let relay_vv = text("relay_vv").and_then(from_hex).unwrap_or_default();
+        let resume = drafftink_collab::Resume {
+            last_seq: room.get("last_seq").and_then(Value::as_u64).unwrap_or(0),
+            relay_vv,
+        };
+        tab.ext.set(crate::cmd::tab::RoomBinding(Some(link.id().to_string())));
+        tab.ext.set(crate::cmd::tab::SealedBinding(Some(crate::cmd::tab::SealedRoom {
+            key: link.into_key(),
+            server: text("server").unwrap_or_default().to_owned(),
+            resume,
+            joined_ms: room.get("joined_ms").and_then(Value::as_u64).unwrap_or(0),
+        })));
     }
 
     /// Notices changes and decides whether a write is due now. Starts one when it is, and does a piece of the

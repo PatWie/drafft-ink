@@ -14,6 +14,8 @@
 mod address;
 mod connection;
 pub mod fake_server;
+#[cfg(test)]
+mod fake_relay;
 mod poll;
 mod state;
 mod token;
@@ -26,20 +28,20 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use self::address::{AddressError, RoomName, resolve_server, room_link};
-use self::connection::{has_content, leave, user_from_settings};
+use self::address::{AddressError, RoomSpec, RoomSpecError, encode_server, resolve_server, room_link};
+use self::connection::{Target, has_content, leave, user_from_settings};
 use self::state::CollabState;
 use self::token::TokenArg;
 use crate::args;
 use crate::cmd::settings;
-use crate::cmd::tab::RoomBinding;
+use crate::cmd::tab::{RoomBinding, SealedBinding};
 use crate::ports::PortKind;
 use crate::refusal::{Refusal, echo};
 use crate::session::Session;
 use crate::spec::{Batch, CommandSpec, Facts, Gate, Mutates, NoArgs, PortSet, Redraw, RingMode, TextGate, Typed};
 
 pub use self::address::RoomLink;
-pub use self::connection::OnLocal;
+pub use self::connection::{IfMissing, OnLocal};
 pub use self::poll::CollabPoll;
 pub use self::state::CollabNotice;
 pub use self::view::{CollabView, ConnectionState, LaserDot, Loading, PeerView, TrailDot};
@@ -57,7 +59,7 @@ use crate::args::Pt;
 fn target_url(s: &Session) -> Option<String> {
     let st = s.ext.get::<CollabState>()?;
     match (&st.live, &st.server) {
-        (Some(live), _) => Some(live.session.client().config().url.to_string()),
+        (Some(live), _) => Some(live.session.client().url().to_string()),
         (None, Some(server)) => Some(server.to_string()),
         (None, None) => None,
     }
@@ -176,10 +178,15 @@ pub struct ConnectArgs {
     /// `ws://` or `wss://` address of the server, or a path such as `/ws` in the web app (this page's server).
     /// Omit it to use the setting `collab.server_url`.
     pub url: Option<String>,
-    /// The room to join at once. Omit it to only choose the server.
+    /// The room to join at once: the name of a plaintext room, or an encrypted room's link
+    /// (`https://drafft.ink/#room=<id>,<key>`) or `<id>,<key>`. The link holds the key, so it is never recorded or
+    /// shown. Omit it to only choose the server.
     pub room: Option<String>,
     /// What to do with content this tab already has when `room` is given.
     pub on_local: OnLocal,
+    /// What to do when an encrypted room does not exist (it expired): `refuse` (the default), `restore` it from this
+    /// tab's copy, or `create` an empty one.
+    pub if_missing: IfMissing,
     /// The access token, when the server asks for one. Kept with the server for the next `collab.join_room`.
     /// It is never recorded, shown or stored.
     pub token: Option<TokenArg>,
@@ -197,9 +204,12 @@ pub struct ConnectOut {
     /// The room, when one was given.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub room: Option<String>,
-    /// `#room=<id>&server=<url>`, when a room was given.
+    /// `#room=<id>&server=<url>`, when a plaintext room was given. An encrypted room has no link here: it would
+    /// hold the key. Use `collab.share_link`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub link: Option<String>,
+    /// True when the room is end-to-end encrypted.
+    pub e2e: bool,
 }
 
 fn connect(s: &mut Session, a: ConnectArgs) -> Result<ConnectOut, Refusal> {
@@ -209,11 +219,7 @@ fn connect(s: &mut Session, a: ConnectArgs) -> Result<ConnectOut, Refusal> {
         s.settings.get("collab.server_url").and_then(|v| v.as_str()).unwrap_or_default().to_owned()
     });
     let server = resolve_server(s.ports.net.as_deref(), &text).map_err(|e| invalid_url(id, &text, &e))?;
-    let room = a
-        .room
-        .as_deref()
-        .map(|r| RoomName::parse(r).map_err(|e| Refusal::bad_arg(id, "room", e.to_string())))
-        .transpose()?;
+    let room = a.room.as_deref().map(|r| parse_room(id, r)).transpose()?;
     let token = checked_token(id, a.token.as_ref())?;
     if let Some(url) = target_url(s) {
         return Err(already_connected(id, &url));
@@ -225,19 +231,36 @@ fn connect(s: &mut Session, a: ConnectArgs) -> Result<ConnectOut, Refusal> {
                 c.server = Some(server);
                 c.token = token;
             });
-            Ok(ConnectOut { changed: true, state: ConnectionState::Ready, url, room: None, link: None })
+            Ok(ConnectOut { changed: true, state: ConnectionState::Ready, url, room: None, link: None, e2e: false })
         }
-        Some(room) => {
-            let link = join(s, server, token, room.clone(), a.on_local)?;
+        Some(spec) => {
+            let started = join(s, server, token, spec, a.on_local, a.if_missing)?;
             Ok(ConnectOut {
                 changed: true,
                 state: ConnectionState::Connecting,
                 url,
-                room: Some(room.to_string()),
-                link: Some(link),
+                room: Some(started.room),
+                link: started.link,
+                e2e: started.e2e,
             })
         }
     }
+}
+
+/// The room argument as a room, or the refusal that says how to write it.
+fn parse_room(id: &str, text: &str) -> Result<RoomSpec, Refusal> {
+    RoomSpec::parse(text).map_err(|e| match e {
+        RoomSpecError::Name(e) => Refusal::bad_arg(id, "room", e.to_string()),
+        RoomSpecError::Link(_) => bad_room_link(id),
+    })
+}
+
+fn bad_room_link(id: &str) -> Refusal {
+    Refusal::custom(
+        "bad_room_link",
+        id,
+        "The room link is damaged or incomplete. A private room link looks like `https://drafft.ink/#room=<id>,<key>` and must include the key after the comma. Ask for the link again.",
+    )
 }
 
 // ---- collab.disconnect ----
@@ -264,10 +287,15 @@ fn disconnect(s: &mut Session, _: NoArgs) -> Result<DisconnectOut, Refusal> {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
 pub struct JoinArgs {
-    /// The room: 1 to 64 characters, letters, digits, `-` and `_`. Omit it to create a random one.
+    /// The room: a plain name (1 to 64 characters, letters, digits, `-` and `_`) for a plaintext room, or an
+    /// encrypted room's link or `<id>,<key>`. Omit it to create a new encrypted room with a fresh key. The link holds
+    /// the key, so it is never recorded or shown.
     pub room: Option<String>,
     /// What to do with content this tab already has.
     pub on_local: OnLocal,
+    /// What to do when an encrypted room does not exist (it expired): `refuse` (the default), `restore` it from this
+    /// tab's copy, or `create` an empty one.
+    pub if_missing: IfMissing,
     /// The access token for this room. Omit it to use the one given to `collab.connect`. It is never recorded,
     /// shown or stored.
     pub token: Option<TokenArg>,
@@ -278,10 +306,14 @@ pub struct JoinArgs {
 pub struct JoinOut {
     /// Always true.
     pub changed: bool,
-    /// The room.
+    /// The room: its name, or the id of an encrypted room (never the key).
     pub room: String,
-    /// `#room=<id>&server=<url>`: send it to somebody to invite them.
-    pub link: String,
+    /// `#room=<id>&server=<url>` for a plaintext room: send it to somebody to invite them. An encrypted room has no
+    /// link here, because the link holds the key. Use `collab.share_link`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub link: Option<String>,
+    /// True when the room is end-to-end encrypted.
+    pub e2e: bool,
     /// The tab bound to the room.
     pub tab: String,
 }
@@ -289,12 +321,9 @@ pub struct JoinOut {
 fn join_room(s: &mut Session, a: JoinArgs) -> Result<JoinOut, Refusal> {
     let id = s.cmd();
     require_net(s)?;
-    let room = match a.room.as_deref() {
-        Some(r) => RoomName::parse(r).map_err(|e| Refusal::bad_arg(id, "room", e.to_string()))?,
-        None => {
-            let bits = s.ports.net.as_mut().map_or(0, |n| n.random());
-            RoomName::generate(bits).map_err(|e| Refusal::internal(id, e.to_string()))?
-        }
+    let (spec, if_missing) = match a.room.as_deref() {
+        Some(r) => (parse_room(id, r)?, a.if_missing),
+        None => (RoomSpec::Sealed(new_room_link(s, id)?), IfMissing::Create),
     };
     if let Some(current) = live_room(s) {
         return Err(already_in_room(id, &current));
@@ -308,31 +337,64 @@ fn join_room(s: &mut Session, a: JoinArgs) -> Result<JoinOut, Refusal> {
         Some(t) => Some(t),
         None => s.ext.get::<CollabState>().and_then(|st| st.token.clone()),
     };
-    let link = join(s, server, token, room.clone(), a.on_local)?;
-    Ok(JoinOut { changed: true, room: room.to_string(), link, tab: s.tab().id.to_string() })
+    let started = join(s, server, token, spec, a.on_local, if_missing)?;
+    Ok(JoinOut { changed: true, room: started.room, link: started.link, e2e: started.e2e, tab: s.tab().id.to_string() })
 }
 
-/// The refusals and the start shared by `collab.join_room` and `collab.connect` with a room. Returns the link.
+/// A new room: a key of 256 random bits from the network port.
+fn new_room_link(s: &mut Session, id: &str) -> Result<drafftink_seal::RoomLink, Refusal> {
+    let Some(net) = s.ports.net.as_mut() else {
+        return Err(Refusal::internal(id, "no network port to take random bits from"));
+    };
+    let (high, low) = (net.random(), net.random());
+    let mut key = [0u8; 32];
+    key[..16].copy_from_slice(&high.to_be_bytes());
+    key[16..].copy_from_slice(&low.to_be_bytes());
+    Ok(drafftink_seal::RoomLink::new(drafftink_seal::RoomKey::from_bytes(key)))
+}
+
+/// What a start tells the caller.
+struct Started {
+    room: String,
+    link: Option<String>,
+    e2e: bool,
+}
+
+/// The refusals and the start shared by `collab.join_room` and `collab.connect` with a room.
 fn join(
     s: &mut Session,
     server: drafftink_collab::ServerUrl,
     token: Option<AuthToken>,
-    room: RoomName,
+    spec: RoomSpec,
     on_local: OnLocal,
-) -> Result<String, Refusal> {
+    if_missing: IfMissing,
+) -> Result<Started, Refusal> {
+    let shown = match &spec {
+        RoomSpec::Plain(name) => name.to_string(),
+        RoomSpec::Sealed(link) => link.id().to_string(),
+    };
     if on_local == OnLocal::Refuse && has_content(s) {
         return Err(Refusal::custom(
             "local_content",
             s.cmd(),
             format!(
-                "This tab already has content, which joining would merge into room `{room}`. Pass on_local=\"merge\" to merge it, on_local=\"discard\" to replace it with the room's content, or open a new tab first with `tab.new`."
+                "This tab already has content, which joining would merge into room `{shown}`. Pass on_local=\"merge\" to merge it, on_local=\"discard\" to replace it with the room's content, or open a new tab first with `tab.new`."
             ),
         )
         .suggesting("tab.new", None));
     }
-    let link = room_link(&room, &server);
-    connection::start(s, server, token, &room, on_local)?;
-    Ok(link)
+    match spec {
+        RoomSpec::Plain(room) => {
+            let link = room_link(&room, &server);
+            connection::start(s, server, token, Target::Plain(room), on_local)?;
+            Ok(Started { room: shown, link: Some(link), e2e: false })
+        }
+        RoomSpec::Sealed(link) => {
+            let key = link.into_key();
+            connection::start(s, server, token, Target::Sealed { key, if_missing, resume: Default::default() }, on_local)?;
+            Ok(Started { room: shown, link: None, e2e: true })
+        }
+    }
 }
 
 // ---- collab.leave_room ----
@@ -357,6 +419,7 @@ fn leave_room(s: &mut Session, _: NoArgs) -> Result<LeaveOut, Refusal> {
                 _ => return Err(not_in_room(id)),
             };
             s.tab_mut().ext.set(RoomBinding(None));
+            s.tab_mut().ext.set(SealedBinding(None));
             Ok(LeaveOut { changed: true, room })
         }
     }
@@ -554,6 +617,87 @@ fn follow(s: &mut Session, a: FollowArgs) -> Result<FollowOut, Refusal> {
     Ok(out)
 }
 
+impl Session {
+    /// The position of the tab (as `tab.list` counts) that is bound to the encrypted room `room` names: a link or
+    /// `<id>,<key>`. A shell uses it at start-up, so that a link to a room whose tab was restored opens that tab and
+    /// not a second one.
+    pub fn room_tab_for_link(&self, room: &str) -> Option<u32> {
+        let RoomSpec::Sealed(link) = RoomSpec::parse(room).ok()? else { return None };
+        let wanted = link.id();
+        let index = self.tabs.iter().position(|t| {
+            t.ext.get::<SealedBinding>().and_then(|b| b.0.as_ref()).is_some_and(|r| r.key.room_id() == wanted)
+        })?;
+        u32::try_from(index).ok()
+    }
+}
+
+// ---- collab.share_link ----
+
+/// The page that opens a room link.
+const LINK_ORIGIN: &str = "https://drafft.ink";
+
+/// Arguments of `collab.share_link`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct ShareLinkArgs {
+    /// Put the link on the clipboard. Default true.
+    pub copy: bool,
+    /// Also return the link in the output. Default false: the link holds the room key, so it stays out of logs and
+    /// transcripts unless asked for.
+    pub reveal: bool,
+}
+
+impl Default for ShareLinkArgs {
+    fn default() -> Self {
+        ShareLinkArgs { copy: true, reveal: false }
+    }
+}
+
+/// Output of `collab.share_link`.
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
+pub struct ShareLinkOut {
+    /// Always false: nothing on this screen changes.
+    pub changed: bool,
+    /// True when the link is on the clipboard.
+    pub copied: bool,
+    /// The link, only when `reveal` was set. It holds the room key.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub link: Option<String>,
+}
+
+fn share_link(s: &mut Session, a: ShareLinkArgs) -> Result<ShareLinkOut, Refusal> {
+    let id = s.cmd();
+    let Some(room) = s.tab().ext.get::<SealedBinding>().and_then(|b| b.0.as_ref()).map(crate::cmd::tab::SealedRoom::duplicate)
+    else {
+        return Err(match s.tab().ext.get::<RoomBinding>() {
+            Some(RoomBinding(Some(_))) => Refusal::custom("not_e2e", id, "This room has no key, so it has no private link."),
+            _ => not_in_room(id),
+        });
+    };
+    let link = drafftink_seal::RoomLink::new(room.key);
+    let mut text = link.url(LINK_ORIGIN).to_string();
+    // A self-hosted server goes into the link, so that whoever opens it finds the room there.
+    if let Ok(server) = drafftink_collab::ServerUrl::parse(&room.server, drafftink_collab::UrlPolicy { allow_insecure: true })
+        && server.host() != "drafft.ink"
+    {
+        text.push_str("&server=");
+        text.push_str(&encode_server(&server));
+    }
+    if a.copy {
+        s.require_port(PortKind::Clipboard, "the clipboard", "Pass copy=false and reveal=true to get the link in the output.")?;
+    }
+    let mut copied = false;
+    if a.copy
+        && let Some(clipboard) = s.ports.clipboard.as_mut()
+    {
+        clipboard
+            .write(crate::ports::ClipPayload::Text(text.clone()))
+            .map_err(|e| Refusal::io_failed(id, "write", "the clipboard", &e.to_string()))?;
+        copied = true;
+    }
+    Ok(ShareLinkOut { changed: false, copied, link: a.reveal.then_some(text) })
+}
+
 // ---- collab.status ----
 
 fn status(s: &mut Session, _: NoArgs) -> Result<CollabView, Refusal> {
@@ -584,8 +728,8 @@ pub const COMMANDS: &[CommandSpec] = &[
         NET,
     )
     .available(require_not_connected)
-    .refusals(&["invalid_url", "already_connected", "local_content"])
-    .secret_args(&["token"])
+    .refusals(&["invalid_url", "already_connected", "local_content", "bad_room_link"])
+    .secret_args(&["token", "room"])
     .example(r#"{"url":"wss://draw.example.com/ws","room":"team-sync"}"#),
     CommandSpec::new(
         "collab.disconnect",
@@ -613,8 +757,8 @@ pub const COMMANDS: &[CommandSpec] = &[
         },
     )
     .available(require_connected_and_roomless)
-    .refusals(&["not_connected", "already_in_room", "local_content"])
-    .secret_args(&["token"])
+    .refusals(&["not_connected", "already_in_room", "local_content", "bad_room_link"])
+    .secret_args(&["token", "room"])
     .example(r#"{"room":"team-sync","on_local":"merge"}"#),
     CommandSpec::new(
         "collab.leave_room",
@@ -663,6 +807,27 @@ pub const COMMANDS: &[CommandSpec] = &[
     .available(require_room_tab)
     .refusals(&["not_in_room", "no_such_peer"]),
     CommandSpec::new(
+        "collab.share_link",
+        "collab",
+        "Copy invite link",
+        "Copies the link of the end-to-end encrypted room of this tab to the clipboard. The link holds the room key; it is returned only with reveal=true.",
+        &Typed::new(share_link),
+        Facts {
+            mutates: Mutates::NONE,
+            reads_only: true,
+            ports: PortSet::CLIPBOARD,
+            batch: Batch::Never,
+            ring: RingMode::Quiet,
+            redraw: Redraw::None,
+            secret_output: true,
+            palette: true,
+            ..Facts::READ_ONLY
+        },
+    )
+    .available(require_room_tab)
+    .refusals(&["not_in_room", "not_e2e"])
+    .example(r#"{"copy":true}"#),
+    CommandSpec::new(
         "collab.status",
         "collab",
         "Collab status",
@@ -675,3 +840,7 @@ pub const COMMANDS: &[CommandSpec] = &[
 #[cfg(test)]
 #[path = "collab_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "collab_sealed_tests.rs"]
+mod sealed_tests;

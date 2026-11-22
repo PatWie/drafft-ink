@@ -298,4 +298,6 @@ Hard ceilings are constants in `drafftink-protocol` (`limits.rs`); a relay may a
 
 ### Tests
 
+The relay core that speaks it is `crates/relay` (`drafftink-relay`, L1), hosted by `drafftink-headless serve` (`docs/server.md`, "Encrypted rooms"); the client is `crates/collab/src/sealed` (`docs/collab.md`). The core sends `Error{Unauthorized}` for a proof that does not hash to the room and `RoomMissing` for `Open` on a room that does not exist; a `Join` whose `last_seq` is above the room's head (the room expired and was made again) is served as `last_seq = 0`; the catch-up request is limited to a burst of four and one a second.
+
 `crates/protocol/tests/v2.rs`: round trips and the wire bytes of every message; every truncation, every single-bit flip, 30,000 mutations and 50,000 random frames; huge length prefixes; each way a record can be wrong for its message; the `Join` handshake (same first five bytes, negotiation, `WrongLayout`); the membership check; error codes; the values of the constants. `crates/seal/tests/` holds the known-answer, tamper, replay, nonce, link, hostile and logging tests of the cipher side (`crates/seal/tests/vectors/README.md`).

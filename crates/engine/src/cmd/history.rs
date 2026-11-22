@@ -202,6 +202,7 @@ const STEP: Facts = Facts {
     palette: true,
     agent: true,
     doc_write: crate::spec::DocWrite::Managed,
+    secret_output: false,
 };
 
 const UNDO_KEYS: &[Binding] = &[Binding::new(&["Mod+Z"], Scope::Canvas)];

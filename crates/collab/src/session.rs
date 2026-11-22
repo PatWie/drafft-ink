@@ -3,7 +3,8 @@
 
 use drafftink_doc::LoroStore;
 
-use crate::client::{CollabClient, CollabEvent, Output};
+use crate::client::{CollabEvent, Output};
+use crate::room_client::RoomClient;
 use crate::transport::{Transport, TransportError, TransportEvent};
 
 /// What one [`CollabSession::pump`] produced.
@@ -21,7 +22,7 @@ pub struct Pump {
 
 /// A client with its transport.
 pub struct CollabSession<T: Transport> {
-    client: CollabClient,
+    client: RoomClient,
     transport: T,
 }
 
@@ -30,19 +31,19 @@ pub struct CollabSession<T: Transport> {
 const MAX_ROUNDS: usize = 16;
 
 impl<T: Transport> CollabSession<T> {
-    /// Joins a client and a transport.
-    pub fn new(client: CollabClient, transport: T) -> Self {
-        CollabSession { client, transport }
+    /// Joins a client (plaintext or sealed) and a transport.
+    pub fn new(client: impl Into<RoomClient>, transport: T) -> Self {
+        CollabSession { client: client.into(), transport }
     }
 
     /// The client, for reading state.
-    pub fn client(&self) -> &CollabClient {
+    pub fn client(&self) -> &RoomClient {
         &self.client
     }
 
     /// The client, for the local inputs (`local_changed`, presence, follow, `leave`). Call
     /// [`pump`](Self::pump) afterwards.
-    pub fn client_mut(&mut self) -> &mut CollabClient {
+    pub fn client_mut(&mut self) -> &mut RoomClient {
         &mut self.client
     }
 
@@ -81,6 +82,7 @@ impl<T: Transport> CollabSession<T> {
         let result = match output {
             Output::Connect(url) => self.transport.open(&url),
             Output::Send(frame) => self.transport.send(frame),
+            Output::SendText(text) => self.transport.send_text(text),
             Output::Close => {
                 self.transport.close();
                 Ok(())

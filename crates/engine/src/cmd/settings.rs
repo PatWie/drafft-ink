@@ -325,6 +325,7 @@ const WRITE: Facts = Facts {
     palette: false,
     agent: true,
     doc_write: crate::spec::DocWrite::NotDocument,
+    secret_output: false,
 };
 
 const TOGGLE_KEYS: &[Binding] = &[

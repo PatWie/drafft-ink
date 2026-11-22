@@ -306,6 +306,7 @@ const READ: Facts = Facts {
     palette: true,
     agent: true,
     doc_write: crate::spec::DocWrite::NotDocument,
+    secret_output: false,
 };
 
 /// Changing the document.

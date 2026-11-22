@@ -15,7 +15,7 @@ use std::collections::VecDeque;
 use drafftink_scene::{DocumentCheck, DocumentError, JsonJob, SharedDocument};
 use serde_json::{Value, json};
 
-use super::workspace::{INDEX_KEY, SCHEMA, TAB_KEY_PREFIX, WorkspaceSaved};
+use super::workspace::{INDEX_KEY, LORO_KEY_SUFFIX, SCHEMA, TAB_KEY_PREFIX, WorkspaceSaved, to_hex};
 use crate::ports::Ns;
 use crate::refusal::Refusal;
 use crate::session::Session;
@@ -82,10 +82,27 @@ pub(super) struct SaveJob {
     queue: VecDeque<Pending>,
     running: Option<Running>,
     written: Vec<Written>,
+    /// The Loro snapshots of room tabs that changed, by storage key.
+    snapshots: Vec<(String, Vec<u8>)>,
+    /// The keys of the snapshots every room tab has, so that cleanup keeps them.
+    snapshot_keys: Vec<String>,
 }
 
 fn document_error(tab: TabId, e: &DocumentError) -> Refusal {
     Refusal::internal(ID, format!("the document of tab {tab} cannot be written: {e}"))
+}
+
+/// The index entry of the room of an encrypted tab: the link (it holds the key), the server and where to resume.
+fn room_entry(tab: &crate::state::Tab) -> Option<Value> {
+    let room = tab.ext.get::<crate::cmd::tab::SealedBinding>()?.0.as_ref()?;
+    let link = drafftink_seal::RoomLink::new(drafftink_seal::RoomKey::from_bytes(*room.key.expose_bytes()));
+    Some(json!({
+        "link": link.fragment().as_str(),
+        "server": room.server,
+        "last_seq": room.resume.last_seq,
+        "relay_vv": to_hex(&room.resume.relay_vv),
+        "joined_ms": room.joined_ms,
+    }))
 }
 
 impl SaveJob {
@@ -107,7 +124,17 @@ impl SaveJob {
                 job.queue.push_back(Pending { meta: Meta { id: t.id, key: key.clone(), revision, name: name.clone() }, doc });
             }
             job.tabs.push(t.id);
-            job.entries.push(json!({
+            let room = room_entry(t);
+            if room.is_some() {
+                let loro_key = format!("{key}{LORO_KEY_SUFFIX}");
+                if written.get(&t.id) != Some(&(revision, name.clone()))
+                    && let Ok(bytes) = t.doc.replicated().export_snapshot()
+                {
+                    job.snapshots.push((loro_key.clone(), bytes));
+                }
+                job.snapshot_keys.push(loro_key);
+            }
+            let mut entry = json!({
                 "id": t.id.0,
                 "key": key,
                 "name": name,
@@ -115,7 +142,11 @@ impl SaveJob {
                 "revision": revision,
                 "view": { "scroll": [t.view.scroll.x, t.view.scroll.y], "zoom": t.view.zoom },
                 "selection": t.observed.selection.iter().map(drafftink_scene::ElementId::as_str).collect::<Vec<_>>(),
-            }));
+            });
+            if let (Some(room), Some(map)) = (room, entry.as_object_mut()) {
+                map.insert("room".to_owned(), room);
+            }
+            job.entries.push(entry);
         }
         (job, cost)
     }
@@ -175,6 +206,11 @@ impl SaveJob {
         let Some(storage) = s.ports.storage.as_mut() else {
             return Err(Refusal::internal(ID, "the storage port disappeared"));
         };
+        for (key, bytes) in self.snapshots {
+            storage
+                .put_later(Ns::Autosave, &key, bytes)
+                .map_err(|e| Refusal::io_failed(ID, "write", &format!("the workspace snapshot `{key}`"), &e.to_string()))?;
+        }
         let mut done = Vec::with_capacity(self.written.len());
         let documents_written = self.written.len();
         for Written { meta: Meta { id, key, revision, name }, bytes } in self.written {
@@ -189,7 +225,8 @@ impl SaveJob {
             .map_err(|e| Refusal::io_failed(ID, "write", "the workspace index", &e.to_string()))?;
         if cleanup {
             // Documents of closed tabs. A failure here only leaves garbage, which the next save removes.
-            let current: Vec<String> = self.tabs.iter().map(|t| format!("{TAB_KEY_PREFIX}{}", t.0)).collect();
+            let mut current: Vec<String> = self.tabs.iter().map(|t| format!("{TAB_KEY_PREFIX}{}", t.0)).collect();
+            current.extend(self.snapshot_keys.iter().cloned());
             if let Ok(listed) = storage.list(Ns::Autosave) {
                 for info in listed {
                     if info.name.starts_with(TAB_KEY_PREFIX) && !current.contains(&info.name) {
