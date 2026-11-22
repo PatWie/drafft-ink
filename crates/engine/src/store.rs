@@ -934,6 +934,31 @@ impl TabDoc {
         self.mirror(cs)
     }
 
+    /// Takes the bytes of a room picture that arrived (or came from the local blob cache) into the replicated view and
+    /// the working store, outside the journal and without a Loro write. `Ok(false)`: the document has no such
+    /// manifest, the bytes do not match it, or they are here already.
+    pub fn supply_file(&mut self, entry: FileEntry) -> Result<bool, DocError> {
+        let id = FileId::of(&entry.bytes);
+        if !self.loro.supply_file(entry.clone())? {
+            return Ok(false);
+        }
+        let mut tx = self.work.begin();
+        tx.put_file(entry).map_err(DocError::backend)?;
+        tx.commit().map_err(DocError::backend)?;
+        // The commit is no edit: the logical revision does not count it.
+        self.undone_commits += 1;
+        // The elements that show the picture draw it now.
+        let showing: Vec<ElementId> = self
+            .work
+            .iter_all()
+            .filter(|e| matches!(&e.kind, drafftink_scene::ElementKind::Image(i) if i.file_id.as_ref() == Some(&id)))
+            .map(|e| e.id.clone())
+            .collect();
+        self.touched.borrow_mut().extend(showing.iter().cloned());
+        self.outside_touched.borrow_mut().extend(showing);
+        Ok(true)
+    }
+
     /// Applies a remote update from a peer and brings the working store up to date. Returns what changed.
     pub fn apply_remote(&mut self, bytes: &[u8]) -> Result<ChangeSet, DocError> {
         let cs = self.loro.apply_remote(bytes)?;

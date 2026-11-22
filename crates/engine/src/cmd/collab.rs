@@ -12,6 +12,7 @@
 //! in-memory server for tests).
 
 mod address;
+pub(crate) mod images;
 mod connection;
 pub mod fake_server;
 #[cfg(test)]
