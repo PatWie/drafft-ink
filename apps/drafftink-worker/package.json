@@ -14,7 +14,8 @@
     "test": "vitest run",
     "test:access": "vitest run --project access",
     "dev": "bash scripts/dev.sh",
-    "smoke:private": "node scripts/private-smoke.mjs"
+    "smoke:private": "node scripts/private-smoke.mjs",
+    "pretypecheck": "test -f pkg/drafftink_worker_bg.wasm && test -f pkg-node/drafftink_worker.js || npm run build:wasm"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "1.9.0",
