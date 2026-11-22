@@ -8,12 +8,25 @@
 //! * the background is the version's.
 //!
 //! Nothing else changes: not the document name, the picture blobs, the other versions or the selection (the command
-//! drops selected ids that are gone). The elements of the version are consistent among themselves, and everything
-//! outside it ends up deleted, so the restored scene needs no repair.
+//! drops selected ids that are gone). The elements of the version are consistent among themselves when it was
+//! saved, and everything outside it ends up deleted, so the restored scene needs no repair. A version that came from
+//! a peer is not trusted: the scene is checked after the writes, and a scene that breaks a rule is refused.
 
 use std::collections::HashSet;
 
-use drafftink_scene::{Element, ElementId, ElementKind, FileId, SceneTx, StoreError, VersionScene};
+use drafftink_scene::{Element, ElementId, ElementKind, FileId, SceneTx, StoreError, VersionScene, validate_scene};
+
+/// Why a restore was refused.
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+pub enum RestoreError {
+    /// The store refused a write.
+    #[error(transparent)]
+    Store(#[from] StoreError),
+    /// The scene of the version breaks a rule of the model once it is in the document (a binding to an element it
+    /// does not hold, say). It is not applied.
+    #[error("its scene would break a rule of the document: {0}")]
+    Invalid(String),
+}
 
 /// What a restore changed.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -48,8 +61,9 @@ fn same(a: &Element, b: &Element) -> bool {
 /// Makes the scene of `tx` the scene of `version`. Writes nothing for what already matches.
 ///
 /// # Errors
-/// A store refusal. The caller rolls the transaction back, so a failed restore leaves the document as it was.
-pub fn restore<T: SceneTx>(tx: &mut T, version: &VersionScene) -> Result<Restored, StoreError> {
+/// A store refusal, or a scene that breaks a rule. The caller rolls the transaction back, so a failed restore leaves
+/// the document as it was.
+pub fn restore<T: SceneTx>(tx: &mut T, version: &VersionScene) -> Result<Restored, RestoreError> {
     let mut out = Restored::default();
     if tx.meta().background != version.background {
         tx.set_background(version.background);
@@ -98,6 +112,9 @@ pub fn restore<T: SceneTx>(tx: &mut T, version: &VersionScene) -> Result<Restore
     missing.sort();
     missing.dedup();
     out.missing_files = missing;
+    if let Some(issue) = validate_scene(tx).errors().next() {
+        return Err(RestoreError::Invalid(issue.to_string()));
+    }
     Ok(out)
 }
 
@@ -189,5 +206,31 @@ mod tests {
         run(&mut s, &scene);
         let doc = snapshot(&s);
         assert_eq!((doc.name.as_str(), doc.versions), ("Renamed document", vec![keep]));
+    }
+
+    #[test]
+    fn a_scene_that_breaks_a_rule_is_refused_and_a_dropped_transaction_leaves_the_store_alone() {
+        use drafftink_scene::{BindMode, Binding, LinearKind};
+        let mut arrow = Element::linear(
+            ElementId::new("arrow").unwrap(),
+            LinearKind::Arrow,
+            ZIndex::first(),
+            &[drafftink_geom::kurbo::Point::new(0.0, 0.0), drafftink_geom::kurbo::Point::new(9.0, 9.0)],
+        )
+        .unwrap();
+        if let ElementKind::Arrow(d) = &mut arrow.kind {
+            d.end_binding = Some(Binding {
+                target: ElementId::new("ghost").unwrap(),
+                mode: BindMode::Orbit,
+                fixed_point: [0.5, 0.5],
+            });
+        }
+        let scene = VersionScene { background: Color::WHITE, elements: vec![arrow] };
+        let mut s = MemoryStore::new();
+        let mut tx = s.begin();
+        let err = restore(&mut tx, &scene).unwrap_err();
+        drop(tx);
+        assert!(matches!(&err, RestoreError::Invalid(why) if why.contains("binding")), "{err}");
+        assert!(s.is_empty() && s.revision() == 0, "nothing was applied");
     }
 }

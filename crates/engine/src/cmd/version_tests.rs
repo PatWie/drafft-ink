@@ -436,3 +436,80 @@ fn exports_of_the_scene_carry_no_versions_and_excalidraw_says_it_dropped_them() 
     let text = String::from_utf8(s.ports.storage.as_ref().unwrap().get(crate::ports::Ns::Documents, "xl").unwrap().unwrap()).unwrap();
     assert!(!text.contains("Not in an export"));
 }
+
+#[test]
+fn a_version_whose_scene_breaks_a_rule_is_refused_by_restore_and_open_and_changes_nothing() {
+    use drafftink_scene::{
+        BindMode, Binding, Element, ElementKind, LinearKind, MemoryStore, NamedVersion, SceneStore, SceneTx, VersionId,
+        ZIndex,
+    };
+    // A peer's version: an arrow bound to an element the scene does not hold. Each element is valid alone.
+    let mut arrow = Element::linear(
+        ElementId::new("arrow").unwrap(),
+        LinearKind::Arrow,
+        ZIndex::first(),
+        &[drafftink_geom::kurbo::Point::new(0.0, 0.0), drafftink_geom::kurbo::Point::new(50.0, 20.0)],
+    )
+    .unwrap();
+    if let ElementKind::Arrow(d) = &mut arrow.kind {
+        d.start_binding =
+            Some(Binding { target: ElementId::new("ghost").unwrap(), mode: BindMode::Orbit, fixed_point: [0.5, 0.5] });
+    }
+    let mut peer = MemoryStore::new();
+    let mut tx = peer.begin();
+    tx.insert(arrow).unwrap();
+    tx.commit().unwrap();
+    let bad = NamedVersion::capture(VersionId::new("vbad").unwrap(), "Broken scene", 1, None, &peer).unwrap();
+
+    let (mut s, _) = two();
+    s.tab_mut().doc.edit::<(), drafftink_scene::StoreError>(|tx| tx.put_version(bad)).unwrap();
+    let before = s.fingerprint();
+    let depth = s.tab().doc.undo_depth();
+    for id in ["version.restore", "version.open"] {
+        let r = refuse(&mut s, id, json!({"id": "vbad"}));
+        assert_eq!(r.code, "version_unreadable", "{id}");
+        assert!(r.message.contains("Broken scene") && r.message.contains("binding"), "{}", r.message);
+    }
+    assert_eq!(s.fingerprint(), before, "the document is as it was");
+    assert_eq!((s.tabs.len(), s.tab().doc.undo_depth()), (1, depth), "no tab, no step");
+}
+
+#[test]
+fn an_author_the_model_would_refuse_is_left_out() {
+    let (mut s, _) = two();
+    // The setting accepts text with a control character; a version author may not.
+    crate::cmd::settings::set_internal(&mut s, "collab.user_name", &json!("A\nna")).unwrap();
+    let out = run(&mut s, "version.save", json!({"name": "x"}));
+    assert_eq!(out["version"].get("author"), None, "a name with a line break is no author");
+}
+
+#[test]
+fn two_sessions_that_name_a_version_at_the_same_time_both_keep_both() {
+    let (mut a, _) = two();
+    let (mut b, _) = testing::session();
+    // The fake ids are sequential in every session, so b would make the id a makes. Real ids are random.
+    b.ports.ids.version_id();
+    let snapshot = a.tab_mut().doc.replicated_mut().export_snapshot().unwrap();
+    b.tab_mut().doc.apply_remote(&snapshot).unwrap();
+    save(&mut a, "From a");
+    save(&mut b, "From b");
+    // Neither has seen the other's write. Now they exchange what the other lacks.
+    let from_a = a.tab().doc.replicated().export_updates_since(&b.tab().doc.replicated().version_vector().unwrap()).unwrap();
+    let from_b = b.tab().doc.replicated().export_updates_since(&a.tab().doc.replicated().version_vector().unwrap()).unwrap();
+    b.tab_mut().doc.apply_remote(&from_a).unwrap();
+    a.tab_mut().doc.apply_remote(&from_b).unwrap();
+    for s in [&mut a, &mut b] {
+        let mut now = names(s);
+        now.sort();
+        assert_eq!(now, ["From a", "From b"]);
+    }
+    assert_eq!(a.tab().doc.snapshot().versions, b.tab().doc.snapshot().versions, "the same list in the same order");
+    // A restore in one is a normal edit that the other receives, and it keeps both versions.
+    let id = run(&mut a, "version.list", json!({}))["versions"][0]["id"].as_str().unwrap().to_owned();
+    run(&mut a, "element.delete", json!({"ids": ["e1"]}));
+    run(&mut a, "version.restore", json!({"id": id}));
+    let update = a.tab().doc.replicated().export_updates_since(&b.tab().doc.replicated().version_vector().unwrap()).unwrap();
+    b.tab_mut().doc.apply_remote(&update).unwrap();
+    assert_eq!(live(&b), live(&a));
+    assert_eq!(names(&mut b).len(), 2);
+}

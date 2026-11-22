@@ -11,8 +11,10 @@
 //!   named version, so a restore can itself be taken back, or be undone by restoring the version made just before it.
 //! * `version.open` puts a version in a tab of its own, as an independent copy.
 
-use drafftink_edit::version as restore_rule;
-use drafftink_scene::limits::{MAX_NAME_CHARS, MAX_VERSIONS, MAX_VERSIONS_TOTAL_BYTES, MAX_VERSION_NAME_CHARS};
+use drafftink_edit::version::{self as restore_rule, RestoreError};
+use drafftink_scene::limits::{
+    MAX_NAME_CHARS, MAX_VERSION_AUTHOR_CHARS, MAX_VERSION_NAME_CHARS, MAX_VERSIONS, MAX_VERSIONS_TOTAL_BYTES,
+};
 use drafftink_scene::{
     Document, NamedVersion, SceneRead, SceneTx, StoreError, VersionError, VersionId, VersionRejection,
     VersionScene,
@@ -160,7 +162,12 @@ fn available_loaded(s: &Session) -> Result<(), Refusal> {
 
 /// The name other people see, when the user has set one: the author of a version.
 fn author(s: &Session) -> Option<String> {
-    s.settings.get("collab.user_name").and_then(Value::as_str).map(str::trim).filter(|n| !n.is_empty()).map(str::to_owned)
+    s.settings
+        .get("collab.user_name")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|n| !n.is_empty() && !n.chars().any(char::is_control))
+        .map(|n| n.chars().take(MAX_VERSION_AUTHOR_CHARS).collect())
 }
 
 // ---- version.save ----
@@ -317,6 +324,9 @@ fn open(s: &mut Session, a: OpenArgs) -> Result<OpenOut, Refusal> {
     let scene = v.open().map_err(|e| unreadable(id, &v, &e))?;
     let name = tab_name(&s.store().meta().name, &v.name);
     let doc = as_document(s, name.clone(), &v, scene);
+    if let Some(issue) = doc.validate().errors().next() {
+        return Err(unreadable(id, &v, &VersionError::Corrupt(issue.to_string())));
+    }
     let tab = tab_from(s, id, &doc)?;
     let tab_id = tab.id;
     activate_new(s, tab);
@@ -356,11 +366,10 @@ fn restore(s: &mut Session, a: RestoreArgs) -> Result<RestoreOut, Refusal> {
     let id = s.cmd();
     let v = find(s, id, &a.id)?;
     let scene = v.open().map_err(|e| unreadable(id, &v, &e))?;
-    let (r, _) = s
-        .tab_mut()
-        .doc
-        .edit::<_, StoreError>(|tx| restore_rule::restore(tx, &scene))
-        .map_err(|e| Refusal::internal(id, format!("restoring \"{}\" failed: {e}", echo(&v.name))))?;
+    let (r, _) = s.tab_mut().doc.edit::<_, RestoreError>(|tx| restore_rule::restore(tx, &scene)).map_err(|e| match e {
+        RestoreError::Invalid(why) => unreadable(id, &v, &VersionError::Corrupt(why)),
+        RestoreError::Store(e) => Refusal::internal(id, format!("restoring \"{}\" failed: {e}", echo(&v.name))),
+    })?;
     prune_selection(s);
     if !r.missing_files.is_empty() {
         s.warn(format!(
