@@ -13,10 +13,11 @@
 //!   (`last_seq`). A reconnect joins with it and gets only what is new;
 //! * the relay cannot compact, so it asks one client to, and the client seals a snapshot that the relay swaps in by
 //!   compare-and-set;
-//! * an empty room (a new one, or an expired one restored from a local copy) is seeded with a snapshot.
+//! * an empty room (a new one, or an expired one restored from a local copy) is seeded with a snapshot;
+//! * pictures are files: [`images`] offers and downloads them over HTTP, one sealed file per picture.
 //!
-//! Not built yet (phase 2 and later): images as files, the peer-to-peer fallback when the relay's storage fails, and
-//! the crash fence for a malformed update.
+//! Not built yet: the peer-to-peer fallback when the relay's storage fails, and the crash fence for a malformed
+//! update.
 
 mod images;
 mod inbound;

@@ -42,8 +42,7 @@ wasm-bindgen-futures.workspace = true
 web-sys = { workspace = true, features = [
     "WebSocket", "BinaryType", "MessageEvent", "CloseEvent", "Event", "ErrorEvent",
     # Pictures: `fetch`.
-    "Window", "Request", "RequestInit", "RequestMode", "RequestCache", "RequestRedirect", "Response", "Headers",
-    "AbortSignal",
+    "Request", "RequestInit", "RequestCache", "RequestRedirect", "Response", "Headers", "AbortSignal",
 ] }
 
 [dev-dependencies]
