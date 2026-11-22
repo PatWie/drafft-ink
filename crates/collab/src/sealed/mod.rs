@@ -348,6 +348,11 @@ impl SealedClient {
         Resume { last_seq: self.pos.last_seq, relay_vv: self.relay_vv.encode() }
     }
 
+    /// The sequence number the relay's snapshot covers, as far as this client knows. 0: the relay holds none.
+    pub fn snapshot_seq(&self) -> u64 {
+        self.pos.snapshot_seq
+    }
+
     /// When the relay deletes the room if nobody visits, in milliseconds since the epoch. 0: never or not known.
     pub fn expires_at_ms(&self) -> u64 {
         self.expires_at_ms

@@ -388,3 +388,101 @@ fn an_expired_room_is_refused_by_default_and_restored_from_the_copy_on_request()
     w.join(1, &link, json!({}));
     assert_eq!(elements(w.s(1)), 1);
 }
+
+// ---- a big drawing meets a newcomer ----
+
+/// Adds `count` rectangles to the session's document, each as its own commit as a person drawing would.
+fn add_many(s: &mut Session, count: usize) {
+    for _ in 0..count {
+        testing::add_rect(s, 0.0, 0.0, 100.0, 60.0).unwrap();
+    }
+}
+
+/// How the room holds the drawing when the second session arrives.
+#[derive(Clone, Copy, Debug)]
+enum Held {
+    /// The first session came with the whole drawing and merged it into the new room: one snapshot, no log.
+    Snapshot,
+    /// The first session drew it in the empty room before anything was sent: a tiny snapshot of the empty room and
+    /// one big record.
+    Record,
+    /// The first session drew it in ten parts and the relay compacted: a snapshot and a short tail.
+    Compacted,
+}
+
+fn big_room_joins(count: usize, held: Held) {
+    let mut config = RelayConfig::self_host();
+    config.flush.interval_ms = 0;
+    config.compact.records = 6;
+    config.compact.join_records = 100_000;
+    let mut w = World::with_config(2, config);
+    let link = match held {
+        Held::Snapshot => {
+            add_many(w.s(0), count);
+            run(w.s(0), "collab.connect", json!({"url": URL}));
+            run(w.s(0), "collab.join_room", json!({"on_local": "merge"}));
+            w.settle();
+            run(w.s(0), "collab.share_link", json!({"copy": false, "reveal": true}))["link"].as_str().unwrap().to_owned()
+        }
+        Held::Record => {
+            let link = w.create(0);
+            add_many(w.s(0), count);
+            w.settle();
+            link
+        }
+        Held::Compacted => {
+            let link = w.create(0);
+            for _ in 0..10 {
+                add_many(w.s(0), count / 10);
+                w.settle_for(400);
+            }
+            w.settle_for(20_000);
+            let meta = drafftink_relay::RelayStore::load_meta(&mut w.relay.store().clone()).unwrap().unwrap();
+            assert!(meta.has_snapshot && meta.snapshot_seq > 0, "the relay holds a snapshot: {meta:?}");
+            link
+        }
+    };
+    assert_eq!(elements(w.s(0)), count);
+    w.join(1, &link, json!({}));
+    w.settle_for(10_000);
+    assert_eq!(elements(w.s(1)), count, "{held:?} {count}: {}", run(w.s(1), "collab.status", json!({}))["text"]);
+    let status = run(w.s(1), "collab.status", json!({}));
+    assert_eq!(status["state"], "connected", "{status}");
+    assert_eq!(status["warnings"], json!([]), "{status}");
+}
+
+macro_rules! big_room_tests {
+    ($($name:ident: $count:expr, $held:expr;)*) => { $(#[test] fn $name() { big_room_joins($count, $held); })* };
+}
+
+big_room_tests! {
+    a_snapshot_of_1000_elements_reaches_a_newcomer: 1000, Held::Snapshot;
+    a_snapshot_of_3000_elements_reaches_a_newcomer: 3000, Held::Snapshot;
+    a_snapshot_of_10000_elements_reaches_a_newcomer: 10_000, Held::Snapshot;
+    one_record_of_1000_elements_reaches_a_newcomer: 1000, Held::Record;
+    one_record_of_3000_elements_reaches_a_newcomer: 3000, Held::Record;
+    one_record_of_10000_elements_reaches_a_newcomer: 10_000, Held::Record;
+    a_compacted_room_of_1000_elements_reaches_a_newcomer: 1000, Held::Compacted;
+    a_compacted_room_of_3000_elements_reaches_a_newcomer: 3000, Held::Compacted;
+    a_compacted_room_of_10000_elements_reaches_a_newcomer: 10_000, Held::Compacted;
+}
+
+#[test]
+fn a_drawing_over_what_a_room_holds_is_refused_in_plain_words_and_stays_on_this_device() {
+    let config = RelayConfig { max_room_state_bytes: 100_000, ..RelayConfig::self_host() };
+    let mut w = World::with_config(2, config);
+    let link = w.create(0);
+    add_many(w.s(0), 3000);
+    w.settle_for(10_000);
+    let status = run(w.s(0), "collab.status", json!({}));
+    assert_eq!(status["state"], "error", "{status}");
+    assert_eq!(status["unsynced"], true, "{status}");
+    let text = status["text"].as_str().unwrap();
+    assert!(text.contains("holds as much as a room may") && text.contains("Save a copy"), "{text}");
+    assert_eq!(status["error"], status["text"], "the error line says the same");
+    let notices = w.s(0).take_collab_notices();
+    assert!(notices.iter().any(|n| matches!(n, crate::cmd::collab::CollabNotice::Problem(p) if p.text == text)), "{notices:?}");
+    assert_eq!(elements(w.s(0)), 3000, "the drawing stays on this device");
+    w.join(1, &link, json!({}));
+    assert_eq!(elements(w.s(1)), 0, "the room holds nothing of it");
+}

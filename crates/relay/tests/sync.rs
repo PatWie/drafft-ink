@@ -259,3 +259,84 @@ fn leave_closes_and_tells_the_others() {
     assert!(h.is_closed(a));
     assert!(matches!(h.take(b)[0], ServerMessage::PeerLeft { .. }));
 }
+
+/// Every page of a catch-up that a relay sends fits the frame cap, and the pages together hold every record once.
+fn pages_of(h: &mut Harness, conn: drafftink_relay::ConnId, first: &[ServerMessage]) -> Vec<(usize, Vec<u64>, bool)> {
+    let mut pages = Vec::new();
+    let mut messages = first.to_vec();
+    loop {
+        let Some(ServerMessage::Catchup { snapshot, records, more, .. }) =
+            catchups(&messages).first().copied().cloned()
+        else {
+            panic!("{messages:?}")
+        };
+        let frame = ServerMessage::Catchup { snapshot: snapshot.clone(), records: records.clone(), head_seq: 0, more };
+        let len = frame.encode().unwrap().len();
+        assert!(len <= drafftink_protocol::MAX_FRAME_BYTES, "a page of {len} bytes does not fit a frame");
+        pages.push((len, records.iter().map(|r| r.seq).collect::<Vec<_>>(), more));
+        if !more {
+            return pages;
+        }
+        let after = records.last().map(|r| r.seq).or_else(|| snapshot.map(|s| s.covers_seq)).unwrap();
+        h.advance(2 * SECOND);
+        h.send(conn, &ClientMessage::Catchup { after_seq: after });
+        messages = h.take(conn);
+    }
+}
+
+#[test]
+fn big_records_are_paged_by_size_and_every_page_fits_a_frame() {
+    let mut cfg = RelayConfig::self_host();
+    cfg.max_room_updates_per_sec = 1000;
+    cfg.limits.max_updates_per_sec = 1000;
+    cfg.compact.records = 10_000;
+    cfg.compact.bytes = u64::MAX;
+    let mut h = Harness::new(cfg);
+    let a = h.open(1);
+    h.take(a);
+    let big = |ctr| record(RecordKind::Update, client(1), ctr, 0, 1536 * 1024);
+    for ctr in 1..=5 {
+        h.send(a, &ClientMessage::Append { record: big(ctr) });
+        h.advance(100);
+    }
+    let late = h.join(client(2), JoinMode::Open, 0);
+    let first = h.take(late);
+    let pages = pages_of(&mut h, late, &first);
+    let seqs: Vec<u64> = pages.iter().flat_map(|(_, seqs, _)| seqs.iter().copied()).collect();
+    assert_eq!(seqs, [1, 2, 3, 4, 5], "every record once and in order: {pages:?}");
+    assert!(pages.len() >= 2, "a page stops at 2 MiB, not at 64 records: {pages:?}");
+}
+
+#[test]
+fn a_snapshot_that_fills_the_frame_goes_alone_and_the_records_follow_in_the_next_page() {
+    let mut cfg = RelayConfig::self_host();
+    cfg.max_room_updates_per_sec = 1000;
+    cfg.limits.max_updates_per_sec = 1000;
+    cfg.compact.records = 10_000;
+    cfg.compact.bytes = u64::MAX;
+    let mut h = Harness::new(cfg);
+    let a = h.open(1);
+    h.take(a);
+    let filler = drafftink_protocol::MAX_SNAPSHOT_RECORD_BYTES - drafftink_protocol::SEAL_OVERHEAD;
+    h.send(
+        a,
+        &ClientMessage::PutSnapshot {
+            expected_snapshot_seq: 0,
+            record: record(RecordKind::Snapshot, client(1), 1, 0, filler),
+        },
+    );
+    assert!(matches!(
+        h.take(a).into_iter().find(|m| matches!(m, ServerMessage::SnapshotResult { .. })),
+        Some(ServerMessage::SnapshotResult { ok: true, .. })
+    ));
+    for ctr in 1..=3 {
+        h.send(a, &ClientMessage::Append { record: record(RecordKind::Update, client(1), ctr, 0, 1024 * 1024) });
+        h.advance(100);
+    }
+    let late = h.join(client(2), JoinMode::Open, 0);
+    let first = h.take(late);
+    let pages = pages_of(&mut h, late, &first);
+    assert!(pages[0].1.is_empty() && pages[0].2, "the snapshot left no room for a record: {pages:?}");
+    let seqs: Vec<u64> = pages.iter().flat_map(|(_, seqs, _)| seqs.iter().copied()).collect();
+    assert_eq!(seqs, [1, 2, 3], "{pages:?}");
+}
