@@ -33,6 +33,20 @@ impl Log {
     fn last_seq(&self) -> Option<u64> {
         self.pending.last().map(|r| r.seq)
     }
+
+    /// Forgets what waits for a write, and the acknowledgements that wait with it.
+    pub(super) fn drop_pending(&mut self) {
+        *self = Log::default();
+    }
+}
+
+/// Why a flush did not write.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum FlushError {
+    /// The store failed. The records stay in the buffer and the write is tried again after the retry time.
+    Failed,
+    /// The daily limit stopped the write. The room shed everybody and dropped the buffer ([`Relay::shed_everyone`]).
+    Shed,
 }
 
 /// The client that was asked to compact, and the ones asked before it.
@@ -88,7 +102,7 @@ impl<S: RelayStore, B: BlobStore> Relay<S, B> {
         self.log.first_pending_ms.get_or_insert(now_ms);
         self.log.pending.push(stored);
         if self.cfg.flush.interval_ms == 0 || self.log.bytes >= self.cfg.flush.max_bytes {
-            self.flush(now_ms, out);
+            let _ = self.flush(now_ms, out);
         }
     }
 
@@ -101,20 +115,28 @@ impl<S: RelayStore, B: BlobStore> Relay<S, B> {
         }
     }
 
-    /// Writes the buffer as one segment and acknowledges what it held. Returns false when the store failed: the
-    /// records stay in the buffer, and the write is tried again after [`FlushRules::retry_ms`].
-    pub(super) fn flush(&mut self, now_ms: u64, out: &mut Output) -> bool {
+    /// Writes the buffer as one segment and acknowledges what it held. When the store failed, the records stay in the
+    /// buffer, and the write is tried again after [`FlushRules::retry_ms`]. The daily limit is different: a retry
+    /// every second until midnight would only burn the host's calls, so [`Relay::shed_everyone`] stops the room.
+    pub(super) fn flush(&mut self, now_ms: u64, out: &mut Output) -> Result<(), FlushError> {
         if self.log.pending.is_empty() {
-            return true;
+            return Ok(());
         }
-        let Some(mut meta) = self.meta_now() else { return false };
+        let Some(mut meta) = self.meta_now() else { return Err(FlushError::Failed) };
         let segment = Segment { records: self.log.pending.clone() };
         meta.head_seq = segment.last_seq();
         meta.log_records = meta.log_records.saturating_add(u32::try_from(segment.records.len()).unwrap_or(u32::MAX));
         meta.log_bytes = meta.log_bytes.saturating_add(segment.bytes());
-        if self.store.append_segment(&segment, &meta).is_err() {
-            self.log.retry_at_ms = Some(now_ms.saturating_add(self.cfg.flush.retry_ms));
-            return false;
+        match self.quota.watch(self.store.append_segment(&segment, &meta)) {
+            Ok(()) => {}
+            Err(StoreError::DailyLimit) => {
+                self.shed_everyone(now_ms, out);
+                return Err(FlushError::Shed);
+            }
+            Err(_) => {
+                self.log.retry_at_ms = Some(now_ms.saturating_add(self.cfg.flush.retry_ms));
+                return Err(FlushError::Failed);
+            }
         }
         out.store_ops.push(StoreOp::AppendSegment {
             records: u32::try_from(segment.records.len()).unwrap_or(u32::MAX),
@@ -131,12 +153,26 @@ impl<S: RelayStore, B: BlobStore> Relay<S, B> {
             }
         }
         self.advise_after_write(now_ms, out);
-        true
+        Ok(())
+    }
+
+    /// Answers a connection whose request needed a flush that failed. After a shed there is nobody to answer.
+    pub(super) fn refuse_flush(
+        &mut self,
+        conn: ConnId,
+        now_ms: u64,
+        failure: FlushError,
+        close: bool,
+        out: &mut Output,
+    ) {
+        if failure == FlushError::Failed {
+            self.refuse(conn, now_ms, Self::unavailable(), close, out);
+        }
     }
 
     pub(super) fn flush_if_due(&mut self, now_ms: u64, out: &mut Output) {
         if self.log.next_flush(&self.cfg.flush).is_some_and(|due| due <= now_ms) {
-            self.flush(now_ms, out);
+            let _ = self.flush(now_ms, out);
         }
     }
 
@@ -165,8 +201,8 @@ impl<S: RelayStore, B: BlobStore> Relay<S, B> {
             return;
         }
         // The cover must refer to records that exist, so write the buffer first.
-        if !self.flush(now_ms, out) {
-            self.refuse(conn, now_ms, Self::unavailable(), false, out);
+        if let Err(failure) = self.flush(now_ms, out) {
+            self.refuse_flush(conn, now_ms, failure, false, out);
             return;
         }
         let covers_seq = header.covers_seq;
@@ -174,11 +210,11 @@ impl<S: RelayStore, B: BlobStore> Relay<S, B> {
         let snapshot = StoredSnapshot { covers_seq, record };
         let Some(meta) = self.meta_now() else { return };
         let swapped = if meta.accepts_snapshot(expected, covers_seq) {
-            match self.store.put_snapshot_cas(expected, &snapshot) {
+            match self.quota.watch(self.store.put_snapshot_cas(expected, &snapshot)) {
                 Ok(CasOutcome::Swapped(_)) => true,
                 Ok(CasOutcome::Stale) => false,
-                Err(_) => {
-                    self.refuse(conn, now_ms, Self::unavailable(), false, out);
+                Err(e) => {
+                    self.refuse_store(conn, now_ms, &e, false, out);
                     return;
                 }
             }
@@ -186,7 +222,7 @@ impl<S: RelayStore, B: BlobStore> Relay<S, B> {
             false
         };
         if swapped {
-            if let Ok(Some(stored)) = self.store.load_meta() {
+            if let Ok(Some(stored)) = self.quota.watch(self.store.load_meta()) {
                 self.meta = MetaState::Loaded(stored);
             }
             out.store_ops.push(StoreOp::PutSnapshot { covers_seq, bytes });
@@ -218,13 +254,13 @@ impl<S: RelayStore, B: BlobStore> Relay<S, B> {
             );
             return;
         }
-        if !self.flush(now_ms, out) {
-            self.refuse(conn, now_ms, Self::unavailable(), false, out);
+        if let Err(failure) = self.flush(now_ms, out) {
+            self.refuse_flush(conn, now_ms, failure, false, out);
             return;
         }
         match self.build_catchup(after_seq, false) {
             Ok(catchup) => out.send(conn, &catchup),
-            Err(_) => self.refuse(conn, now_ms, Self::unavailable(), false, out),
+            Err(e) => self.refuse_store(conn, now_ms, &e, false, out),
         }
     }
 
@@ -234,8 +270,10 @@ impl<S: RelayStore, B: BlobStore> Relay<S, B> {
         let meta = self.meta_now().ok_or_else(|| StoreError::backend("the room is not loaded"))?;
         let wants_snapshot = meta.has_snapshot && (meta.snapshot_seq > after_seq || (joining && after_seq == 0));
         let snapshot = if wants_snapshot {
-            let stored =
-                self.store.read_snapshot()?.ok_or_else(|| StoreError::Corrupt("the snapshot is missing".into()))?;
+            let stored = self
+                .quota
+                .watch(self.store.read_snapshot())?
+                .ok_or_else(|| StoreError::Corrupt("the snapshot is missing".into()))?;
             Some(CatchupSnapshot { covers_seq: stored.covers_seq, record: stored.record })
         } else {
             None
@@ -245,7 +283,7 @@ impl<S: RelayStore, B: BlobStore> Relay<S, B> {
         let room_left =
             MAX_FRAME_BYTES.saturating_sub(snapshot.as_ref().map_or(0, |s| s.record.len())).saturating_sub(64 * 1024);
         let target = CATCHUP_TARGET_BYTES.min(room_left);
-        let mut records = self.store.read_since(cursor, MAX_CATCHUP_RECORDS, target)?;
+        let mut records = self.quota.watch(self.store.read_since(cursor, MAX_CATCHUP_RECORDS, target))?;
         let mut used = 0usize;
         let fits = records
             .iter()

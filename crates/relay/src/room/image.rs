@@ -24,18 +24,18 @@ impl<S: RelayStore, B: BlobStore> Relay<S, B> {
         match self.load_meta() {
             Ok(Some(_)) => {}
             Ok(None) => return ImageResponse::status(ImageStatus::RoomMissing),
-            Err(_) => return ImageResponse::status(ImageStatus::Unavailable),
+            Err(e) => return Self::image_failure(&e, now_ms),
         }
         match request.op {
             ImageOp::Put { name, body } => self.put_image(now_ms, &name, body, out),
-            ImageOp::Get { name } => match self.blobs.get(&name) {
+            ImageOp::Get { name } => match self.quota.watch(self.blobs.get(&name)) {
                 Ok(Some(sealed)) => ImageResponse::with(ImageStatus::Ok, ImageBody::Sealed(sealed)),
                 Ok(None) => ImageResponse::status(ImageStatus::ImageMissing),
-                Err(_) => ImageResponse::status(ImageStatus::Unavailable),
+                Err(e) => Self::image_failure(&e, now_ms),
             },
-            ImageOp::List => match self.blobs.list() {
+            ImageOp::List => match self.quota.watch(self.blobs.list()) {
                 Ok(list) => ImageResponse::with(ImageStatus::Ok, ImageBody::List(list)),
-                Err(_) => ImageResponse::status(ImageStatus::Unavailable),
+                Err(e) => Self::image_failure(&e, now_ms),
             },
         }
     }
@@ -55,9 +55,11 @@ impl<S: RelayStore, B: BlobStore> Relay<S, B> {
                 body: ImageBody::Empty,
             };
         }
-        let (stats, existing) = match (self.blobs.stats(), self.blobs.head(name)) {
+        let stats = self.quota.watch(self.blobs.stats());
+        let existing = self.quota.watch(self.blobs.head(name));
+        let (stats, existing) = match (stats, existing) {
             (Ok(stats), Ok(existing)) => (stats, existing),
-            _ => return ImageResponse::status(ImageStatus::Unavailable),
+            (Err(e), _) | (_, Err(e)) => return Self::image_failure(&e, now_ms),
         };
         // Replacing an image is accounted as the difference, so a damaged name can be healed in a full room.
         let bytes_after = stats.bytes.saturating_sub(existing.unwrap_or(0)).saturating_add(body.len() as u64);
@@ -66,8 +68,8 @@ impl<S: RelayStore, B: BlobStore> Relay<S, B> {
         if bytes_after > limits.max_room_image_bytes || count_after > limits.max_room_images {
             return ImageResponse::status(ImageStatus::RoomFull);
         }
-        if self.blobs.put(name, body).is_err() {
-            return ImageResponse::status(ImageStatus::Unavailable);
+        if let Err(e) = self.quota.watch(self.blobs.put(name, body)) {
+            return Self::image_failure(&e, now_ms);
         }
         out.store_ops.push(StoreOp::PutImage { bytes: body.len() as u64 });
         let totals = crate::store::BlobStats { count: count_after, bytes: bytes_after };

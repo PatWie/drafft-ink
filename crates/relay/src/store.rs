@@ -3,7 +3,8 @@
 
 use drafftink_protocol::v2::{ImageName, StoredRecord};
 
-/// A storage failure. The core treats every one of them as "this room cannot be served or saved now".
+/// A storage failure. The core treats every one of them as "this room cannot be served or saved now", and
+/// [`DailyLimit`](StoreError::DailyLimit) is also told to people as such.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum StoreError {
     /// A read or write failed (disk, database, object store).
@@ -12,6 +13,11 @@ pub enum StoreError {
     /// Stored data does not have the shape this build wrote.
     #[error("stored data is damaged: {0}")]
     Corrupt(String),
+    /// The host's daily capacity is used up until 00:00 UTC (the free Cloudflare plan, for one). A retry soon does
+    /// not help, so the core does not retry: it tells people when the limit resets (see
+    /// [`ms_until_utc_midnight`](crate::ms_until_utc_midnight)) and stops writing.
+    #[error("the daily limit of the host is reached")]
+    DailyLimit,
 }
 
 impl StoreError {

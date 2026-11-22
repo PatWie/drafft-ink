@@ -2,13 +2,16 @@
 //!
 //! The module is split by concern. `mod.rs` holds the state, the entry points and the connection table; `join`
 //! handles `Join`; `log` handles records, snapshots, catch-up and compaction advice; `presence` bundles presence;
-//! `retention` applies the deadline policy; `image` serves the image routes.
+//! `retention` applies the deadline policy; `restore` rebuilds the connections after a hibernation; `image` serves the
+//! image routes.
 
 mod conn;
 mod image;
 mod join;
 mod log;
 mod presence;
+mod quota;
+mod restore;
 mod retention;
 
 use std::collections::BTreeMap;
@@ -20,6 +23,7 @@ use drafftink_protocol::{ClientId, DecodeError, KEEPALIVE_PING, KEEPALIVE_PONG};
 use self::conn::{Conn, Member, Phase};
 use self::log::{Advice, Log};
 use self::presence::Presence;
+use self::quota::QuotaWatch;
 use crate::config::RelayConfig;
 use crate::lifecycle::Lifecycle;
 use crate::rate::TokenBucket;
@@ -96,6 +100,10 @@ pub struct Output {
     pub wake_at: Option<u64>,
     /// The room was deleted during the call. The host forgets it.
     pub deleted: bool,
+    /// A store call failed with [`StoreError::DailyLimit`] during this call, whether or not a frame was sent for it
+    /// (a flush from a timer sends none). The host closes the connections it is told to close with WebSocket code
+    /// 1013 (try again later) and tells its edge that the daily capacity is gone.
+    pub quota_hit: bool,
 }
 
 impl Output {
@@ -155,6 +163,7 @@ pub struct Relay<S, B> {
     room_updates: TokenBucket,
     image_puts: TokenBucket,
     advice: Option<Advice>,
+    quota: QuotaWatch,
 }
 
 impl<S: RelayStore, B: BlobStore> Relay<S, B> {
@@ -181,6 +190,7 @@ impl<S: RelayStore, B: BlobStore> Relay<S, B> {
             room_updates,
             image_puts,
             advice: None,
+            quota: QuotaWatch::default(),
         }
     }
 
@@ -202,6 +212,13 @@ impl<S: RelayStore, B: BlobStore> Relay<S, B> {
     /// How many people have joined.
     pub fn member_count(&self) -> usize {
         self.members().count()
+    }
+
+    /// The client id and the join order of a joined connection, for a host that saves them with the socket and
+    /// gives them back to [`restore_member`](Self::restore_member). `None` for an unknown connection and for one
+    /// that has not joined.
+    pub fn member_of(&self, conn: ConnId) -> Option<(ClientId, u64)> {
+        self.members().find(|(id, _)| *id == conn).map(|(_, m)| (m.client_id, m.order))
     }
 
     /// The store, for the host and for tests.
@@ -285,7 +302,7 @@ impl<S: RelayStore, B: BlobStore> Relay<S, B> {
     /// The room stays as it is on disk.
     pub fn shutdown(&mut self, now_ms: u64) -> Output {
         let mut out = Output::default();
-        self.flush(now_ms, &mut out);
+        let _ = self.flush(now_ms, &mut out);
         let open: Vec<ConnId> = self.conns.keys().copied().collect();
         for conn in open {
             let text = "The relay is shutting down. Trying again soon.";
@@ -429,7 +446,7 @@ impl<S: RelayStore, B: BlobStore> Relay<S, B> {
             MetaState::Loaded(meta) => Ok(Some(meta)),
             MetaState::Missing => Ok(None),
             MetaState::Unloaded => {
-                let loaded = self.store.load_meta()?;
+                let loaded = self.quota.watch(self.store.load_meta())?;
                 self.meta = loaded.map_or(MetaState::Missing, MetaState::Loaded);
                 Ok(loaded)
             }
@@ -454,8 +471,9 @@ impl<S: RelayStore, B: BlobStore> Relay<S, B> {
 
     // ---- time -------------------------------------------------------------------------------------------------
 
-    fn finish(&self, now_ms: u64, mut out: Output) -> Output {
+    fn finish(&mut self, now_ms: u64, mut out: Output) -> Output {
         out.wake_at = self.next_wake(now_ms);
+        out.quota_hit = self.quota.take();
         out
     }
 

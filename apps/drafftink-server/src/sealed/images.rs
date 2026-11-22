@@ -56,6 +56,9 @@ fn message_for(status: ImageStatus) -> &'static str {
         ImageStatus::RateLimited => "Too many pictures at once. Trying again in a moment.",
         ImageStatus::BadRequest => "The request is not a sealed picture with a valid name.",
         ImageStatus::Unavailable => "The server cannot store pictures right now. Trying again soon.",
+        ImageStatus::DailyLimit => {
+            "The free demo server has reached its daily limit and resets at 00:00 UTC. Your pictures are saved on this device. Try again later."
+        }
         ImageStatus::Created | ImageStatus::Ok => "",
     }
 }
