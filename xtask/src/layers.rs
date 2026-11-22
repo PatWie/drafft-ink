@@ -162,7 +162,10 @@ pub const ALLOWED_EXTERNAL: &[(&str, &[&str])] = &[
     ("drafftink-profile", &["web-time"]),
     ("drafftink-protocol", &[]),
     // L1
-    ("drafftink-scene", &["base64", "kurbo", "peniko", "schemars", "sha2", "smallvec", "smol_str"]),
+    (
+        "drafftink-scene",
+        &["base64", "kurbo", "peniko", "schemars", "serde_path_to_error", "sha2", "smallvec", "smol_str"],
+    ),
     ("drafftink-typeset", &["kurbo", "parley", "peniko", "png", "ttf-parser"]),
     ("drafftink-sketch", &["getrandom", "kurbo", "roughr"]),
     // L2
