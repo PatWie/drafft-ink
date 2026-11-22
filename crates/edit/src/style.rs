@@ -26,7 +26,8 @@ use drafftink_scene::palette;
 use drafftink_scene::words::Article;
 use drafftink_scene::{
     Brush, Color, Element, ElementId, ElementKind, FillPattern, FontFamily, FontWeight, Kind, PressureMode, SceneRead,
-    SceneTx, Sloppiness, StoreError, StrokeStyle, Style, TextAlign, TextStyle, VerticalAlign,
+    MarkerColor, SceneTx, Sloppiness, SpanHighlight, StoreError, StrokeStyle, Style, TextAlign, TextRun, TextStyle,
+    VerticalAlign,
 };
 use drafftink_scene::{fill_paints, style_shows};
 
@@ -50,6 +51,7 @@ pub enum Prop {
     StrokeColor,
     FillColor,
     FillPattern,
+    Highlight,
     StrokeWidth,
     StrokeStyle,
     Sloppiness,
@@ -67,10 +69,11 @@ pub enum Prop {
 
 impl Prop {
     /// Every property, in canonical order.
-    pub const ALL: [Prop; 16] = [
+    pub const ALL: [Prop; 17] = [
         Prop::StrokeColor,
         Prop::FillColor,
         Prop::FillPattern,
+        Prop::Highlight,
         Prop::StrokeWidth,
         Prop::StrokeStyle,
         Prop::Sloppiness,
@@ -92,6 +95,7 @@ impl Prop {
             Prop::StrokeColor => "stroke_color",
             Prop::FillColor => "fill_color",
             Prop::FillPattern => "fill_pattern",
+            Prop::Highlight => "highlight",
             Prop::StrokeWidth => "stroke_width",
             Prop::StrokeStyle => "stroke_style",
             Prop::Sloppiness => "sloppiness",
@@ -133,6 +137,7 @@ impl Prop {
             Prop::FillColor | Prop::FillPattern => {
                 "rectangles, diamonds, ellipses, frames, freehand strokes and closed lines"
             }
+            Prop::Highlight => "every element except frames (a marker band behind it; text can have it per character)",
             Prop::StrokeWidth => "every element except text and math",
             Prop::StrokeStyle => "rectangles, diamonds, ellipses, frames, images, lines, arrows and freehand strokes",
             Prop::Sloppiness => "rectangles, diamonds, ellipses, frames, lines and arrows",
@@ -157,6 +162,7 @@ pub fn applies(e: &Element, prop: Prop) -> bool {
     match prop {
         Prop::StrokeColor => true,
         Prop::FillColor | Prop::FillPattern => fillable,
+        Prop::Highlight => k != Kind::Frame,
         Prop::StrokeWidth | Prop::StrokeStyle => !matches!(k, Kind::Text | Kind::Math),
         Prop::Sloppiness => !matches!(k, Kind::Image | Kind::Text | Kind::Math | Kind::Freehand),
         Prop::CornerRadius => {
@@ -288,6 +294,11 @@ pub struct StyleProps {
     /// How the fill is painted: solid, hachure, zigzag, cross_hatch, dots, dashed or zigzag_line.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fill_pattern: Option<FillPattern>,
+    /// The marker band behind the element: yellow, green, pink, blue or orange. `null` removes it. For text this
+    /// is the whole text; a part of a text is highlighted with `text.format`.
+    #[serde(deserialize_with = "double_option", skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<MarkerColor>")]
+    pub highlight: Option<Option<MarkerColor>>,
     /// Outline width in world units, above 0 (presets 1, 2, 4, 8).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stroke_width: Option<f64>,
@@ -416,6 +427,7 @@ impl StyleProps {
                 self.fill_color.and_then(|c| c.map_or(Some(Value::Null), |c| serde_json::to_value(c).ok()))
             }
             Prop::FillPattern => self.fill_pattern.and_then(|v| serde_json::to_value(v).ok()),
+            Prop::Highlight => self.highlight.map(|h| h.map_or(Value::Null, |m| json!(m.name()))),
             Prop::StrokeWidth => self.stroke_width.map(|v| json!(v)),
             Prop::StrokeStyle => self.stroke_style.and_then(|v| serde_json::to_value(v).ok()),
             Prop::Sloppiness => self.sloppiness.and_then(|v| serde_json::to_value(v).ok()),
@@ -467,6 +479,7 @@ impl StyleProps {
             stroke_color: self.stroke_color.filter(|_| keep(Prop::StrokeColor)),
             fill_color: self.fill_color.filter(|_| keep(Prop::FillColor)),
             fill_pattern: self.fill_pattern.filter(|_| keep(Prop::FillPattern)),
+            highlight: self.highlight.filter(|_| keep(Prop::Highlight)),
             stroke_width: self.stroke_width.filter(|_| keep(Prop::StrokeWidth)),
             stroke_style: self.stroke_style.filter(|_| keep(Prop::StrokeStyle)),
             sloppiness: self.sloppiness.filter(|_| keep(Prop::Sloppiness)),
@@ -493,6 +506,13 @@ impl StyleProps {
         }
         if let Some(v) = self.fill_pattern {
             e.style.fill_pattern = v;
+        }
+        if let Some(v) = self.highlight {
+            e.style.highlight = v;
+            // A text highlighted as a whole is highlighted all over: what its runs say of their own goes.
+            if let ElementKind::Text(t) = &mut e.kind {
+                clear_run_highlights(&mut t.runs);
+            }
         }
         if let Some(v) = self.stroke_width {
             e.style.stroke_width = v;
@@ -557,6 +577,14 @@ impl StyleProps {
     }
 }
 
+/// Takes the highlight of their own away from `runs`, and drops the runs that were only that.
+fn clear_run_highlights(runs: &mut Vec<TextRun>) {
+    for r in runs.iter_mut() {
+        r.highlight = SpanHighlight::Inherit;
+    }
+    runs.retain(|r| !r.style().is_plain());
+}
+
 /// The properties `e` supports, with their current values. A removed fill is `fill_color: Some(None)`.
 pub fn props_of(e: &Element) -> StyleProps {
     let mut p = StyleProps::default();
@@ -569,6 +597,9 @@ pub fn props_of(e: &Element) -> StyleProps {
     }
     if has(Prop::FillPattern) {
         p.fill_pattern = Some(e.style.fill_pattern);
+    }
+    if has(Prop::Highlight) {
+        p.highlight = Some(e.style.highlight);
     }
     if has(Prop::StrokeWidth) {
         p.stroke_width = Some(e.style.stroke_width);
@@ -797,6 +828,8 @@ impl StyleDefaults {
             stroke_color: Some(ColorArg(self.style.stroke_color)),
             fill_color: Some(self.style.fill_color.map(ColorArg)),
             fill_pattern: Some(self.style.fill_pattern),
+            // New elements are never highlighted by default, so the defaults have no highlight to report.
+            highlight: None,
             stroke_width: Some(self.style.stroke_width),
             stroke_style: Some(self.style.stroke_style),
             sloppiness: Some(self.style.sloppiness),

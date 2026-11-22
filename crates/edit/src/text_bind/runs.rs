@@ -1,6 +1,8 @@
 //! Style runs: ranges of characters that have their own colour, bold or italic.
 
-use drafftink_scene::{CharStyle, Color, ElementId, ElementKind, Kind, SceneTx, TextData, TextRun};
+use drafftink_scene::{
+    CharStyle, Color, ElementId, ElementKind, Kind, MarkerColor, SceneTx, SpanHighlight, TextData, TextRun,
+};
 
 use super::{TextBindError, TextMeasure, label_of, live, remeasure_text};
 use crate::target::TargetError;
@@ -119,6 +121,25 @@ pub fn format_range<T: SceneTx>(
     })
 }
 
+/// Highlights the characters `start..end` of a text with `color`, or with `None` takes the highlight off them
+/// (`highlight.apply`, `text.format`). The range counts Unicode scalar values (`char`s) from 0, like [`TextRun`]; `end`
+/// is one past the last character. Colours, bold and italic stay.
+///
+/// The rule for the result is [`SpanHighlight::resolve`]: the characters show `color` whatever the text's own
+/// highlight is. The runs record only what differs from the text's own, so highlighting a range with the colour
+/// that the whole text has writes nothing, and taking the highlight off part of a highlighted text writes a run
+/// that says "none". Returns false when nothing changed. No box changes: a highlight does not move glyphs.
+pub fn highlight_range<T: SceneTx>(
+    tx: &mut T,
+    id: &ElementId,
+    start: u32,
+    end: u32,
+    color: Option<MarkerColor>,
+) -> Result<bool, TextBindError> {
+    let element = live(tx, id)?.style.highlight;
+    restyle_range(tx, id, start, end, |s| CharStyle { highlight: SpanHighlight::for_result(color, element), ..s })
+}
+
 /// What [`format_texts`] did.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FormatReport {
@@ -189,14 +210,20 @@ pub fn format_texts<T: SceneTx, M: TextMeasure + ?Sized>(
 }
 
 /// Replaces all style runs of a text with the editor's final runs (`text.edit_end`). Later runs win where they
-/// overlap. Returns false when the runs are unchanged.
+/// overlap. A highlight of a run that only repeats the text's own is left out. Returns false when the runs are unchanged.
 pub fn replace_runs<T: SceneTx>(tx: &mut T, id: &ElementId, specs: &[TextRun]) -> Result<bool, TextBindError> {
     let len = editable_text_len(tx, id)?;
+    let element = live(tx, id)?.style.highlight;
     let mut styles = vec![CharStyle::default(); len];
     for r in specs {
         check_range(r.start, r.end, len)?;
+        // A highlight that only says what the whole text says is not stored.
+        let highlight = match r.highlight {
+            SpanHighlight::Inherit => SpanHighlight::Inherit,
+            own => SpanHighlight::for_result(own.resolve(element), element),
+        };
         if let Some(slice) = styles.get_mut(r.start as usize..r.end as usize) {
-            slice.fill(r.style());
+            slice.fill(CharStyle { highlight, ..r.style() });
         }
     }
     store_runs(tx, id, TextData::runs_from_char_styles(&styles, len))

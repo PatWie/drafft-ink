@@ -14,6 +14,7 @@
 //!   elements of every kind, binding of new arrow ends, placement).
 //! - `group`, `frame`, `zorder`, `arrange`, `transform`, `lifecycle`: groups, frames, z-order,
 //!   align/distribute/flip, move/resize/rotate of selections, duplicate/delete/lock rules.
+//! - `highlight`: the marker band of elements and of character ranges, in one step (`highlight.apply`).
 //! - `style`: style properties, applicability, defaults and themes (`style.*` commands).
 //! - `text_bind`, `flowchart`, `layout`, `query`: text measuring and wrapping, bound text, font steps, formulas and
 //!   colour runs; flowchart helpers, auto-layout for `diagram.create`, element queries (also by `@name`), hits
@@ -53,6 +54,7 @@ pub mod elbow;
 pub mod flowchart;
 pub mod frame;
 pub mod group;
+pub mod highlight;
 mod ids;
 pub mod layout;
 pub mod library;

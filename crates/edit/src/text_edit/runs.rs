@@ -172,7 +172,7 @@ mod tests {
 
     const RED: Color = Color::rgb(255, 0, 0);
     const BLUE: Color = Color::rgb(0, 0, 255);
-    const BOLD: CharStyle = CharStyle { color: None, bold: true, italic: false };
+    const BOLD: CharStyle = CharStyle { color: None, bold: true, italic: false, highlight: drafftink_scene::SpanHighlight::Inherit };
 
     fn coloured(color: Option<Color>) -> CharStyle {
         CharStyle { color, ..CharStyle::default() }
@@ -238,7 +238,7 @@ mod tests {
         assert_eq!(r.to_text_runs(text), runs.to_vec());
         assert_eq!(r.color_at(2), Some(RED));
         assert_eq!(r.color_at(6), None);
-        assert_eq!(r.style_at(7), CharStyle { color: Some(BLUE), bold: true, italic: true });
+        assert_eq!(r.style_at(7), CharStyle { color: Some(BLUE), bold: true, italic: true, ..Default::default() });
     }
 
     #[test]
@@ -255,7 +255,7 @@ mod tests {
         r.restyle(0..6, |s| CharStyle { bold: true, ..s });
         assert_eq!(
             styles(&r),
-            vec![(0..2, BOLD), (2..4, CharStyle { color: Some(RED), bold: true, italic: false }), (4..6, BOLD),]
+            vec![(0..2, BOLD), (2..4, CharStyle { color: Some(RED), bold: true, italic: false, ..Default::default() }), (4..6, BOLD),]
         );
         // Painting a bold stretch keeps it bold, and un-bolding the middle splits the run.
         r.paint(0..6, None);

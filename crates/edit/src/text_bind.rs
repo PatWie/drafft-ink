@@ -34,7 +34,7 @@ pub use font::{
 };
 pub use math::{MathMeasure, set_latex, set_math_size};
 pub use measure::{MonospaceMeasure, TextMeasure, measure_block, measure_lines, measure_text, wrap_text};
-pub use runs::{FormatReport, carry_runs, format_range, format_texts, replace_runs, style_range};
+pub use runs::{FormatReport, carry_runs, format_range, format_texts, highlight_range, replace_runs, style_range};
 
 use std::collections::HashMap;
 

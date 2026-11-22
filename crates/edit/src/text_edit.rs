@@ -16,6 +16,7 @@
 
 mod clicks;
 mod face;
+mod highlight;
 mod history;
 mod ime;
 mod keys;
