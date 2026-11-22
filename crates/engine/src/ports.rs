@@ -5,7 +5,7 @@
 //! commands that need it refuse with `port_unavailable`. Nothing here awaits: the shell resolves anything
 //! asynchronous before it calls a command.
 
-pub use drafftink_collab::{AccessCredentials, AccessOrigin};
+pub use drafftink_collab::{AccessCredentials, AccessError, AccessOrigin};
 use drafftink_collab::{BlobTransport, Transport};
 use drafftink_scene::{Color, Document, ElementId, IdSource};
 use schemars::JsonSchema;
@@ -277,6 +277,12 @@ pub trait Secrets {
     fn put(&mut self, origin: &AccessOrigin, credentials: AccessCredentials) -> Result<(), PortError>;
     /// Removes the token of `origin`. True when there was one. Removing a missing token is not an error.
     fn delete(&mut self, origin: &AccessOrigin) -> Result<bool, PortError>;
+    /// A token that is not stored for any origin: one the program was started with (a headless program reads it from
+    /// the environment). The session uses it only for the server of the setting `collab.server_url`, never for another
+    /// one. The default is none.
+    fn ambient(&self) -> Option<AccessCredentials> {
+        None
+    }
 }
 
 /// Names a port, for `CommandSpec::ports` and refusal text.
@@ -878,6 +884,7 @@ pub mod fake {
     #[derive(Debug, Clone, Default)]
     pub struct FakeSecrets {
         data: Arc<Mutex<BTreeMap<AccessOrigin, AccessCredentials>>>,
+        ambient: Arc<Mutex<Option<AccessCredentials>>>,
         fail: Arc<AtomicBool>,
     }
 
@@ -900,6 +907,11 @@ pub mod fake {
         /// True when none is stored.
         pub fn is_empty(&self) -> bool {
             self.len() == 0
+        }
+
+        /// Gives the store an ambient token, as a headless program started with one has.
+        pub fn set_ambient(&self, credentials: Option<AccessCredentials>) {
+            *lock(&self.ambient) = credentials;
         }
 
         /// Makes every later call fail (`true`) or work again (`false`), as a locked file would.
@@ -929,6 +941,9 @@ pub mod fake {
         fn delete(&mut self, origin: &AccessOrigin) -> Result<bool, PortError> {
             self.check()?;
             Ok(lock(&self.data).remove(origin).is_some())
+        }
+        fn ambient(&self) -> Option<AccessCredentials> {
+            lock(&self.ambient).clone()
         }
     }
 

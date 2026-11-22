@@ -15,3 +15,4 @@
 pub mod backend;
 pub mod cli;
 pub mod ports;
+pub mod secrets;

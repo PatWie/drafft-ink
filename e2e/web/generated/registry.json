@@ -1,5 +1,5 @@
 {
- "count": 175,
+ "count": 178,
  "families": [
   "arrange",
   "arrow",
@@ -49,12 +49,15 @@
   "clipboard.cut",
   "clipboard.paste",
   "clipboard.paste_style",
+  "collab.clear_access",
   "collab.connect",
+  "collab.delete_room",
   "collab.disconnect",
   "collab.follow",
   "collab.join_room",
   "collab.laser",
   "collab.leave_room",
+  "collab.set_access",
   "collab.set_pointer",
   "collab.set_user",
   "collab.share_link",

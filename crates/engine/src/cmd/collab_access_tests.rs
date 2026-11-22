@@ -205,6 +205,34 @@ fn the_token_reaches_the_transport_of_its_own_server_and_of_no_other() {
 }
 
 #[test]
+fn a_token_the_program_started_with_is_for_the_server_of_the_setting_only() {
+    let mut w = World::new(2);
+    let ambient = drafftink_collab::AccessCredentials::new(ID, SECRET).unwrap();
+    for (_, f) in &w.c {
+        f.secrets.set_ambient(Some(ambient.clone()));
+    }
+    // The default setting is the server of both sessions.
+    run(w.s(0), "settings.set", json!({"key": "collab.server_url", "value": URL}));
+    assert_eq!(run(w.s(0), "collab.status", json!({}))["access"], "service_token");
+    run(w.s(0), "collab.connect", json!({"url": URL}));
+    run(w.s(0), "collab.join_room", json!({}));
+    // The second session names another server by hand: the token is not for it.
+    run(w.s(1), "settings.set", json!({"key": "collab.server_url", "value": URL}));
+    run(w.s(1), "collab.connect", json!({"url": "ws://localhost:3030/ws"}));
+    assert_eq!(run(w.s(1), "collab.status", json!({}))["access"], "none");
+    run(w.s(1), "collab.join_room", json!({}));
+    w.settle();
+    let sent = |w: &World, i: usize| -> Vec<Option<String>> {
+        w.c[i].1.net.servers().iter().flat_map(|s| s.access_client_ids()).collect()
+    };
+    assert_eq!(sent(&w, 0), [Some(ID.to_owned())]);
+    assert_eq!(sent(&w, 1), [None]);
+    // Take it away and the status says so.
+    w.c[0].1.secrets.set_ambient(None);
+    assert_eq!(run(w.s(0), "collab.status", json!({}))["access"], "none");
+}
+
+#[test]
 fn a_store_that_cannot_be_read_means_no_token_is_sent_and_the_person_is_told() {
     let mut w = World::new(1);
     run(w.s(0), "collab.connect", json!({"url": URL}));

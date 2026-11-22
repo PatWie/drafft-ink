@@ -119,10 +119,8 @@ impl Transport for LoopbackTransport {
         l.from_client.clear();
         l.texts_from_client.clear();
         l.opens.push(url.to_string());
-        let sent = l
-            .access
-            .as_ref()
-            .and_then(|g| g.headers_for(&AccessOrigin::of(url)).map(|h| h.pairs()[0].1.to_owned()));
+        let sent =
+            l.access.as_ref().and_then(|g| g.headers_for(&AccessOrigin::of(url)).map(|h| h.pairs()[0].1.to_owned()));
         l.access_at_open.push(sent);
         l.open = false;
         if l.auto_accept {

@@ -63,23 +63,34 @@ pub enum AccessView {
     None,
 }
 
-/// What the transports of a new connection to `server` get: the stored token, bound to the origin it was stored for.
-/// `None` without a store or without a token for the origin.
-pub(super) fn grant_for(secrets: Option<&dyn Secrets>, server: &ServerUrl) -> Result<Option<AccessGrant>, PortError> {
-    let Some(secrets) = secrets else { return Ok(None) };
+/// What the transports of a new connection to `server` get: the token of the origin, bound to that origin. `None`
+/// without a store or without a token for it.
+pub(super) fn grant_for(s: &Session, server: &ServerUrl) -> Result<Option<AccessGrant>, PortError> {
     let origin = AccessOrigin::of(server);
-    Ok(secrets.get(&origin)?.map(|credentials| AccessGrant::new(origin, credentials)))
+    Ok(token_for(s, &origin)?.map(|credentials| AccessGrant::new(origin, credentials)))
+}
+
+/// The token for `origin`: the one stored for it, else the ambient one of the program when `origin` is the server of
+/// the setting `collab.server_url`.
+fn token_for(s: &Session, origin: &AccessOrigin) -> Result<Option<AccessCredentials>, PortError> {
+    let Some(secrets) = s.ports.secrets.as_deref() else { return Ok(None) };
+    if let Some(stored) = secrets.get(origin)? {
+        return Ok(Some(stored));
+    }
+    let setting = s.settings.get("collab.server_url").and_then(Value::as_str);
+    let is_setting = setting.and_then(|text| origin_of(s, s.cmd(), text).ok()).as_ref() == Some(origin);
+    Ok(secrets.ambient().filter(|_| is_setting))
 }
 
 impl Session {
     /// Whether a token is stored for the server this session uses (the chosen one, or the setting).
     pub(super) fn access_view(&self) -> AccessView {
-        let Some(secrets) = self.ports.secrets.as_deref() else {
+        if self.ports.secrets.is_none() {
             let page = self.ports.net.as_deref().and_then(|n| n.same_origin_url("/ws"));
             return if page.is_some() { AccessView::Browser } else { AccessView::None };
-        };
+        }
         let Some(origin) = self.server_origin(self.cmd()).ok() else { return AccessView::None };
-        match secrets.get(&origin) {
+        match token_for(self, &origin) {
             Ok(Some(_)) => AccessView::ServiceToken,
             _ => AccessView::None,
         }
@@ -173,7 +184,8 @@ pub(super) fn set_access(s: &mut Session, a: SetAccessArgs) -> Result<SetAccessO
         None => s.server_origin(id)?,
     };
     let secrets = secrets_mut(s)?;
-    let changed = secrets.get(&origin).map_err(|e| store_failed(id, "read", &e))?.as_ref() != Some(&credentials);
+    // A store that cannot be read (a damaged file) is no reason not to replace what it holds.
+    let changed = secrets.get(&origin).ok().flatten().as_ref() != Some(&credentials);
     if changed {
         secrets.put(&origin, credentials).map_err(|e| store_failed(id, "store", &e))?;
     }

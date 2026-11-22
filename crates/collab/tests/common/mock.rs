@@ -77,6 +77,8 @@ impl MockSocket {
     }
 }
 
+// The handshake callback of tungstenite answers a refusal with a whole HTTP response, which is what it is.
+#[allow(clippy::result_large_err)]
 fn serve_handshake(stream: TcpStream, log: &Log, answer: &Handshake) {
     let callback = |request: &Request, response: Response| -> Result<Response, ErrorResponse> {
         let headers = request.headers().iter().map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_owned()));
@@ -97,7 +99,6 @@ fn serve_handshake(stream: TcpStream, log: &Log, answer: &Handshake) {
         while socket.read().is_ok() {}
     }
 }
-
 
 /// A plain HTTP server on a loopback port that records each request and answers every one the same way.
 pub struct MockHttp {
@@ -161,4 +162,3 @@ fn serve_http(mut stream: TcpStream, log: &Log, status: u16, location: Option<&s
     );
     let _ = stream.write_all(reply.as_bytes());
 }
-

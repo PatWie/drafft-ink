@@ -12,8 +12,8 @@ use std::time::{Duration, Instant};
 use common::live::{PATIENCE, Server, Waker};
 use common::{ids, rect};
 use drafftink_collab::{
-    AccessDenial, CollabEvent, CollabSession, ConnState, LoopbackServer, NativeTransport, Resume, SealedClient, SealedConfig,
-    ServerUrl, StopReason, Transport, TransportEvent, UrlPolicy, loopback,
+    AccessDenial, CollabEvent, CollabSession, ConnState, LoopbackServer, NativeTransport, Resume, SealedClient,
+    SealedConfig, ServerUrl, StopReason, Transport, TransportEvent, UrlPolicy, loopback,
 };
 use drafftink_doc::LoroStore;
 use drafftink_protocol::ClientId;
@@ -467,7 +467,10 @@ fn a_host_that_refuses_to_delete_rooms_says_so_and_keeps_the_room(rig: &mut dyn 
             _ => None,
         })
         .collect();
-    assert_eq!(told, [("This server does not allow deleting rooms.", drafftink_collab::ProblemAction::AskAdmin, false)]);
+    assert_eq!(
+        told,
+        [("This server does not allow deleting rooms.", drafftink_collab::ProblemAction::AskAdmin, false)]
+    );
     // The room is as it was: this client joins it again, a newcomer finds the drawing, and nobody stopped.
     rig.drive(&mut [&mut a], "a back online", &|p| p[0].settled());
     let mut b = peer(rig, 2, JoinMode::Open, None, Resume::default());
@@ -640,7 +643,10 @@ fn the_wrong_key_is_unauthorized_and_stops_the_client() {
 #[test]
 fn a_private_server_that_turns_the_connection_away_stops_the_client_and_says_what_to_do() {
     for (denial, words) in [
-        (AccessDenial::Required, "This server is private. Open Preferences, Collaboration, and enter the access token for"),
+        (
+            AccessDenial::Required,
+            "This server is private. Open Preferences, Collaboration, and enter the access token for",
+        ),
         (AccessDenial::Rejected, "The server did not accept the access token."),
     ] {
         let (transport, server) = loopback();

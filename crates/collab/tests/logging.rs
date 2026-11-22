@@ -1,4 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+// The mock servers use real sockets and the real clock.
+#![allow(clippy::disallowed_methods)]
 //! The access token and the service token of a private server never reach a log line, at any level.
 
 mod common;
@@ -9,8 +11,8 @@ use std::time::{Duration, Instant};
 use common::live::*;
 use common::mock::*;
 use common::*;
-use drafftink_protocol::v2::MembershipToken;
 use drafftink_collab::*;
+use drafftink_protocol::v2::MembershipToken;
 use drafftink_protocol::{ErrorCode, ServerMessage};
 
 static LOG: Mutex<Vec<String>> = Mutex::new(Vec::new());
@@ -51,9 +53,16 @@ fn wait_for<T>(mut f: impl FnMut() -> Option<T>) -> T {
 /// redirect to a login page, and picture requests that are served and turned away.
 fn use_the_service_token() {
     let grant = |origin: &str| {
-        AccessGrant::new(AccessOrigin::parse(origin).unwrap(), AccessCredentials::new(ACCESS_ID, ACCESS_SECRET).unwrap())
+        AccessGrant::new(
+            AccessOrigin::parse(origin).unwrap(),
+            AccessCredentials::new(ACCESS_ID, ACCESS_SECRET).unwrap(),
+        )
     };
-    for answer in [Handshake::Accept, refuse(401, None, r#"{"error":"access_invalid"}"#), refuse(302, Some("http://127.0.0.1:9/login"), "")] {
+    for answer in [
+        Handshake::Accept,
+        refuse(401, None, r#"{"error":"access_invalid"}"#),
+        refuse(302, Some("http://127.0.0.1:9/login"), ""),
+    ] {
         let server = MockSocket::start(answer);
         let mut transport = NativeTransport::new(Arc::new(|| {}));
         transport.set_access(Some(grant(&server.origin())));
@@ -80,7 +89,11 @@ fn use_the_service_token() {
         assert!(!format!("{answer:?}").contains(ACCESS_SECRET));
     }
     let credentials = AccessCredentials::new(ACCESS_ID, ACCESS_SECRET).unwrap();
-    let shown = format!("{credentials:?} {:?} {:?}", grant("https://canvas.example.com"), AccessError::TooLong(AccessField::ClientSecret));
+    let shown = format!(
+        "{credentials:?} {:?} {:?}",
+        grant("https://canvas.example.com"),
+        AccessError::TooLong(AccessField::ClientSecret)
+    );
     assert!(shown.contains("AccessCredentials(<hidden>)"));
     log::debug!("{shown}");
 }

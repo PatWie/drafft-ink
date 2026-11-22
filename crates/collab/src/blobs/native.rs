@@ -184,9 +184,12 @@ fn execute(agent: &ureq::Agent, request: &BlobRequest, access: Option<&AccessGra
     let token = access.and_then(|grant| grant_headers(grant, &request.url));
     let sent_access = token.is_some();
     let response = match &request.op {
-        BlobOp::Put(body) => with_access(agent.put(&request.url).header(header::AUTHORIZATION, auth), token)
-            .send(body.as_slice()),
-        BlobOp::Get | BlobOp::List => with_access(agent.get(&request.url).header(header::AUTHORIZATION, auth), token).call(),
+        BlobOp::Put(body) => {
+            with_access(agent.put(&request.url).header(header::AUTHORIZATION, auth), token).send(body.as_slice())
+        }
+        BlobOp::Get | BlobOp::List => {
+            with_access(agent.get(&request.url).header(header::AUTHORIZATION, auth), token).call()
+        }
         BlobOp::Head => with_access(agent.head(&request.url).header(header::AUTHORIZATION, auth), token).call(),
     }
     .map_err(|e| e.to_string())?;
@@ -210,7 +213,10 @@ fn grant_headers<'a>(grant: &'a AccessGrant, url: &str) -> Option<[(&'static str
 }
 
 /// Adds the service token headers to a request builder.
-fn with_access<B>(mut request: ureq::RequestBuilder<B>, token: Option<[(&'static str, &str); 2]>) -> ureq::RequestBuilder<B> {
+fn with_access<B>(
+    mut request: ureq::RequestBuilder<B>,
+    token: Option<[(&'static str, &str); 2]>,
+) -> ureq::RequestBuilder<B> {
     for (name, value) in token.into_iter().flatten() {
         request = request.header(name, value);
     }

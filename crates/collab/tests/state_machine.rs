@@ -487,7 +487,10 @@ fn rate_limited_pauses_updates_then_repairs_by_reconciling() {
 #[test]
 fn a_server_that_turns_the_connection_away_stops_the_client_and_names_the_server() {
     for (denial, words) in [
-        (AccessDenial::Required, "This server is private. Open Preferences, Collaboration, and enter the access token for 127.0.0.1."),
+        (
+            AccessDenial::Required,
+            "This server is private. Open Preferences, Collaboration, and enter the access token for 127.0.0.1.",
+        ),
         (AccessDenial::Rejected, "The server did not accept the access token."),
     ] {
         let mut h = Harness::new();

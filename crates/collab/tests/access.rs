@@ -1,4 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+// The mock servers use real sockets and the real clock.
+#![allow(clippy::disallowed_methods)]
 //! The service token of a private server on the wire: the WebSocket handshake and the picture requests, against local
 //! mock servers that record what they receive. The token goes only to the origin it was stored for, only over TLS or to
 //! this machine, and a redirect is never followed.
@@ -144,7 +146,10 @@ fn every_kind_of_picture_request_carries_the_token_to_its_origin() {
         assert_eq!(r.headers.get("cf-access-client-secret").map(String::as_str), Some(SECRET), "{r:?}");
         assert!(r.headers.get("authorization").is_some_and(|a| a.starts_with("Drafft-Member ")), "{r:?}");
     }
-    assert_eq!(log.iter().map(|r| r.first_line.split(' ').next().unwrap()).collect::<Vec<_>>(), ["GET", "GET", "HEAD", "PUT"]);
+    assert_eq!(
+        log.iter().map(|r| r.first_line.split(' ').next().unwrap()).collect::<Vec<_>>(),
+        ["GET", "GET", "HEAD", "PUT"]
+    );
 }
 
 #[test]

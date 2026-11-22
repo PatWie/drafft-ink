@@ -935,6 +935,35 @@ export namespace ClipboardPasteStyle {
   };
 }
 
+/** Removes the stored service token of a private server. */
+export namespace CollabClearAccess {
+  /** Arguments of `collab.clear_access`. */
+  export type Args = {
+    /** The server whose token is removed. Omit it for the server this session uses. */
+    server?: string | null;
+  };
+  /** How a person sees whether this session has a token for the server. Never a value. */
+  type O_AccessView = "service_token" | "browser" | "none";
+  /** Output of `collab.clear_access`. */
+  export type Output = {
+    /** Always `none`. */
+    access: O_AccessView;
+    /** Always true. */
+    changed: boolean;
+    /** Ids of elements the command made. */
+    created?: string[];
+    /** Ids of elements the command removed. */
+    deleted?: string[];
+    /** The origin whose token was removed. */
+    server: string;
+    /** The label of the undo step the command pushed. */
+    undo_label?: string;
+    /** Non-fatal notes. */
+    warnings?: string[];
+    [key: string]: unknown;
+  };
+}
+
 /** Chooses the collaboration server and, when a room is given, joins it. Returns at once; the connection comes up in the background. */
 export namespace CollabConnect {
   /** What to do when the encrypted room the link names does not exist: it expired, or the link is incomplete. */
@@ -997,6 +1026,39 @@ export namespace CollabConnect {
     undo_label?: string;
     /** The server address. */
     url: string;
+    /** Non-fatal notes. */
+    warnings?: string[];
+    [key: string]: unknown;
+  };
+}
+
+/** Deletes the end-to-end encrypted room of this tab and all its pictures for everyone, on a server that allows it. The tab keeps its drawing as a local copy. Needs confirm=true. */
+export namespace CollabDeleteRoom {
+  /** Arguments of `collab.delete_room`. */
+  export type Args = {
+    /**
+     * Must be true: deleting removes the room and all its pictures for everyone, and cannot be undone. Default
+     * false, which only says so.
+     */
+    confirm?: boolean;
+  };
+  /** Output of `collab.delete_room`. */
+  export type Output = {
+    /** Always false: nothing on this screen changes yet. */
+    changed: boolean;
+    /** Ids of elements the command made. */
+    created?: string[];
+    /** Ids of elements the command removed. */
+    deleted?: string[];
+    /**
+     * Always true: the request was sent. The server answers later: it closes the connection (the room is deleted, and
+     * `collab.status` shows `room_deleted`) or refuses (a notice says so and the room stays).
+     */
+    requested: boolean;
+    /** The id of the room (never its key). */
+    room: string;
+    /** The label of the undo step the command pushed. */
+    undo_label?: string;
     /** Non-fatal notes. */
     warnings?: string[];
     [key: string]: unknown;
@@ -1158,6 +1220,47 @@ export namespace CollabLeaveRoom {
   };
 }
 
+/** Stores the service token (client id and secret) of a private server, for that server only. It is sent with every connection and picture request to that server, and is never shown again. */
+export namespace CollabSetAccess {
+  /**
+   * A secret value as a command argument. `Debug` and `Serialize` print a placeholder, and a value that is not text
+   * is refused without quoting it (serde's own message for a wrong type quotes the value).
+   */
+  type A_SecretText = string;
+  /** Arguments of `collab.set_access`. */
+  export type Args = {
+    /** The client id of the service token (1 to 512 printable ASCII characters). */
+    client_id: A_SecretText;
+    /** The client secret of the service token (1 to 512 printable ASCII characters). It is never shown. */
+    client_secret: A_SecretText;
+    /**
+     * The server the token is for: `https://host[:port]`, or its `wss://` address. Omit it for the server this
+     * session uses (the chosen one, else the setting `collab.server_url`). The token goes to that origin only.
+     */
+    server?: string | null;
+  };
+  /** How a person sees whether this session has a token for the server. Never a value. */
+  type O_AccessView = "service_token" | "browser" | "none";
+  /** Output of `collab.set_access`. */
+  export type Output = {
+    /** Always `service_token`. */
+    access: O_AccessView;
+    /** False when the same token was stored already. */
+    changed: boolean;
+    /** Ids of elements the command made. */
+    created?: string[];
+    /** Ids of elements the command removed. */
+    deleted?: string[];
+    /** The origin the token is stored for. */
+    server: string;
+    /** The label of the undo step the command pushed. */
+    undo_label?: string;
+    /** Non-fatal notes. */
+    warnings?: string[];
+    [key: string]: unknown;
+  };
+}
+
 /** Publishes the pointer position in world coordinates to the room, or clears it with null. Ephemeral. */
 export namespace CollabSetPointer {
   /** Which pointer the person is using. */
@@ -1254,6 +1357,8 @@ export namespace CollabShareLink {
 export namespace CollabStatus {
   /** An argument struct with no fields, for commands that take none. */
   export type Args = Record<string, never>;
+  /** How a person sees whether this session has a token for the server. Never a value. */
+  type O_AccessView = "service_token" | "browser" | "none";
   /** Where the connection to the server is. */
   type O_ConnectionState = "disconnected" | "ready" | "connecting" | "connected" | "error";
   /** Where the pictures of an encrypted room stand. All zero for a plaintext room, which embeds them. */
@@ -1346,6 +1451,11 @@ export namespace CollabStatus {
   };
   /** Everything the UI shows about collaboration. */
   export type Output = {
+    /**
+     * Whether a service token is stored for the server (a private instance): `service_token`, `none`, or `browser`
+     * in the web app, where the browser carries the sign-in. Never a value.
+     */
+    access: O_AccessView;
     /** True when the command changed any state. */
     changed?: boolean;
     /** Ids of elements the command made. */
@@ -1373,6 +1483,11 @@ export namespace CollabStatus {
     peers: O_PeerView[];
     /** The room this session is in. */
     room?: string | null;
+    /**
+     * The room this tab was in was deleted on request (`collab.delete_room`). The tab is a local copy now. Cleared by
+     * the next `collab.connect` or `collab.disconnect`.
+     */
+    room_deleted: boolean;
     /** The connection. */
     state: O_ConnectionState;
     /** The tab bound to the room, as `tab.list` shows it (`t1`). */
@@ -8534,12 +8649,15 @@ export interface CommandTable {
   "clipboard.cut": { args: ClipboardCut.Args; output: ClipboardCut.Output };
   "clipboard.paste": { args: ClipboardPaste.Args; output: ClipboardPaste.Output };
   "clipboard.paste_style": { args: ClipboardPasteStyle.Args; output: ClipboardPasteStyle.Output };
+  "collab.clear_access": { args: CollabClearAccess.Args; output: CollabClearAccess.Output };
   "collab.connect": { args: CollabConnect.Args; output: CollabConnect.Output };
+  "collab.delete_room": { args: CollabDeleteRoom.Args; output: CollabDeleteRoom.Output };
   "collab.disconnect": { args: CollabDisconnect.Args; output: CollabDisconnect.Output };
   "collab.follow": { args: CollabFollow.Args; output: CollabFollow.Output };
   "collab.join_room": { args: CollabJoinRoom.Args; output: CollabJoinRoom.Output };
   "collab.laser": { args: CollabLaser.Args; output: CollabLaser.Output };
   "collab.leave_room": { args: CollabLeaveRoom.Args; output: CollabLeaveRoom.Output };
+  "collab.set_access": { args: CollabSetAccess.Args; output: CollabSetAccess.Output };
   "collab.set_pointer": { args: CollabSetPointer.Args; output: CollabSetPointer.Output };
   "collab.set_user": { args: CollabSetUser.Args; output: CollabSetUser.Output };
   "collab.share_link": { args: CollabShareLink.Args; output: CollabShareLink.Output };
@@ -8693,7 +8811,7 @@ export interface CommandTable {
 export type CommandId = keyof CommandTable;
 
 /** Commands whose arguments may all be left out. */
-export type OptionalArgsId = "arrow.delete_point" | "arrow.edit_points" | "arrow.reroute" | "arrow.swap_heads" | "clipboard.copy" | "clipboard.copy_as" | "clipboard.copy_style" | "clipboard.cut" | "clipboard.paste" | "clipboard.paste_style" | "collab.connect" | "collab.disconnect" | "collab.follow" | "collab.join_room" | "collab.leave_room" | "collab.set_pointer" | "collab.set_user" | "collab.share_link" | "collab.status" | "doc.autosave" | "doc.clear" | "doc.export" | "doc.inspect" | "doc.list" | "doc.new" | "doc.outline" | "doc.save" | "doc.show_intro" | "element.convert" | "element.create_sticky" | "element.delete" | "element.duplicate" | "element.lock" | "element.move" | "element.open_link" | "element.query" | "element.set_bounds" | "element.set_link" | "element.unlock_all" | "engine.commands" | "engine.recent" | "engine.state" | "frame.remove" | "frame.select_children" | "frame.unwrap" | "frame.wrap" | "gesture.cancel" | "gesture.end" | "group.create" | "group.enter" | "group.exit" | "group.set_name" | "group.ungroup" | "highlight.apply" | "history.clear" | "history.redo" | "history.state" | "history.undo" | "image.crop" | "image.crop_begin" | "image.crop_end" | "image.paint" | "image.paint_begin" | "image.paint_brush" | "image.paint_end" | "image.reset_crop" | "image.reset_paint" | "layout.apply" | "library.add" | "library.export" | "library.list" | "library.remove" | "perf.stats" | "selection.all" | "selection.clear" | "selection.get" | "selection.select" | "settings.get" | "settings.reset" | "style.get" | "style.list_themes" | "tab.close" | "tab.duplicate" | "tab.list" | "tab.new" | "text.edit_begin" | "text.edit_end" | "text.format" | "text.wrap_in_container" | "tool.cancel" | "tool.hold" | "tool.lock" | "tool.release" | "tool.set_arrow" | "tool.set_marker" | "version.list" | "view.center" | "view.get" | "view.screenshot" | "view.set" | "view.set_view_only" | "view.zoom_at" | "view.zoom_in" | "view.zoom_out" | "view.zoom_reset" | "view.zoom_to_fit";
+export type OptionalArgsId = "arrow.delete_point" | "arrow.edit_points" | "arrow.reroute" | "arrow.swap_heads" | "clipboard.copy" | "clipboard.copy_as" | "clipboard.copy_style" | "clipboard.cut" | "clipboard.paste" | "clipboard.paste_style" | "collab.clear_access" | "collab.connect" | "collab.delete_room" | "collab.disconnect" | "collab.follow" | "collab.join_room" | "collab.leave_room" | "collab.set_pointer" | "collab.set_user" | "collab.share_link" | "collab.status" | "doc.autosave" | "doc.clear" | "doc.export" | "doc.inspect" | "doc.list" | "doc.new" | "doc.outline" | "doc.save" | "doc.show_intro" | "element.convert" | "element.create_sticky" | "element.delete" | "element.duplicate" | "element.lock" | "element.move" | "element.open_link" | "element.query" | "element.set_bounds" | "element.set_link" | "element.unlock_all" | "engine.commands" | "engine.recent" | "engine.state" | "frame.remove" | "frame.select_children" | "frame.unwrap" | "frame.wrap" | "gesture.cancel" | "gesture.end" | "group.create" | "group.enter" | "group.exit" | "group.set_name" | "group.ungroup" | "highlight.apply" | "history.clear" | "history.redo" | "history.state" | "history.undo" | "image.crop" | "image.crop_begin" | "image.crop_end" | "image.paint" | "image.paint_begin" | "image.paint_brush" | "image.paint_end" | "image.reset_crop" | "image.reset_paint" | "layout.apply" | "library.add" | "library.export" | "library.list" | "library.remove" | "perf.stats" | "selection.all" | "selection.clear" | "selection.get" | "selection.select" | "settings.get" | "settings.reset" | "style.get" | "style.list_themes" | "tab.close" | "tab.duplicate" | "tab.list" | "tab.new" | "text.edit_begin" | "text.edit_end" | "text.format" | "text.wrap_in_container" | "tool.cancel" | "tool.hold" | "tool.lock" | "tool.release" | "tool.set_arrow" | "tool.set_marker" | "version.list" | "view.center" | "view.get" | "view.screenshot" | "view.set" | "view.set_view_only" | "view.zoom_at" | "view.zoom_in" | "view.zoom_out" | "view.zoom_reset" | "view.zoom_to_fit";
 
 /** The registry size when the types were made; a spec can compare it with `commands()`. */
-export declare const COMMAND_COUNT: 175;
+export declare const COMMAND_COUNT: 178;

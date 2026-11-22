@@ -212,7 +212,7 @@ fn prepare(
     user: UserInfo,
 ) -> Result<Prepared, StartError> {
     // The service token of a private server, bound to its origin. The transports send it to that origin only.
-    let access = grant_for(s.ports.secrets.as_deref(), server).unwrap_or_else(|e| {
+    let access = grant_for(s, server).unwrap_or_else(|e| {
         // The token is not sent, and the server will say it is private. The person learns why.
         s.collab_notify(CollabNotice::Info(format!("The stored access token could not be read, so none is sent: {e}.")));
         None
