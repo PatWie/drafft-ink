@@ -83,6 +83,8 @@ pub struct Harness {
     pub texts: Vec<(ConnId, &'static str)>,
     pub wake_at: Option<u64>,
     pub deleted: bool,
+    /// Whether any call told the host that a store call hit the daily limit.
+    pub quota_hit: bool,
     /// Connections whose client pings every 20 s while the clock moves.
     pub pingers: Vec<ConnId>,
     next_conn: u64,
@@ -109,9 +111,33 @@ impl Harness {
             texts: Vec::new(),
             wake_at: None,
             deleted: false,
+            quota_hit: false,
             pingers: Vec::new(),
             next_conn: 0,
         }
+    }
+
+    /// The object woke: a new core over the same stores, with the clock, the connection numbers and the pingers of
+    /// `old`. Nothing is restored yet.
+    pub fn wake_from(old: Harness) -> Self {
+        let cfg = old.relay.config().clone();
+        let mut woken = Self::on(cfg, old.store.clone(), old.blobs.clone());
+        woken.now = old.now;
+        woken.next_conn = old.next_conn;
+        woken.pingers = old.pingers.clone();
+        woken
+    }
+
+    /// Restores a joined connection (`Relay::restore_member`).
+    pub fn restore_member(&mut self, conn: ConnId, client_id: ClientId, order: u64, last_heard_ms: u64) {
+        let out = self.relay.restore_member(conn, client_id, order, last_heard_ms, self.now);
+        self.absorb(out);
+    }
+
+    /// Restores a connection that had not joined (`Relay::restore_waiting`).
+    pub fn restore_waiting(&mut self, conn: ConnId, connected_at_ms: u64) {
+        let out = self.relay.restore_waiting(conn, connected_at_ms, self.now);
+        self.absorb(out);
     }
 
     pub fn self_host() -> Self {
@@ -122,6 +148,7 @@ impl Harness {
         self.ops.extend(out.store_ops);
         self.wake_at = out.wake_at;
         self.deleted |= out.deleted;
+        self.quota_hit |= out.quota_hit;
         for effect in out.effects {
             match effect {
                 Effect::Send { conn, frame } => {
