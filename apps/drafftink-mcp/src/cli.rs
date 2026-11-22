@@ -186,11 +186,7 @@ fn run(backend: Result<Backend, CliError>, program: Program) -> Result<(), CliEr
 /// start or the transport failed.
 fn finish(backend: Result<Backend, CliError>, program: Program, name: &str) -> ExitCode {
     // Another logger may be installed already (the desktop app's); then that one stays.
-    // The WebSocket and HTTP libraries print whole requests and frames at `trace` (headers of the access token, the
-    // first frame with the room's token). Whatever RUST_LOG says, they stay at `debug`, which does not.
-    let _ = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn"))
-        .parse_filters("tungstenite=debug,ureq=debug,ureq_proto=debug")
-        .try_init();
+    let _ = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).try_init();
     match run(backend, program) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {

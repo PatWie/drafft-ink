@@ -169,9 +169,7 @@ fn main() -> ExitCode {
     match Launch::from(Cli::parse()) {
         Launch::Tool(tool) => tool.run(),
         Launch::Window(args) => {
-            // The WebSocket and HTTP libraries print whole requests and frames at `trace` (headers of the access token,
-            // the first frame with the room's token). Whatever RUST_LOG says, they stay at `debug`, which does not.
-            env_logger::Builder::from_default_env().parse_filters("tungstenite=debug,ureq=debug,ureq_proto=debug").init();
+            env_logger::init();
             match run(*args) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(e) => {
