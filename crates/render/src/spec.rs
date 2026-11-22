@@ -86,7 +86,8 @@ fn spans(t: &TextData) -> Vec<typeset::Span> {
     let byte = |char_index: u32| at.get(char_index as usize).copied().unwrap_or(t.content.len());
     t.runs
         .iter()
-        .filter(|run| !run.style().is_plain())
+        // A run that only highlights changes no glyph, so the layout never sees it (and is not made again for it).
+        .filter(|run| run.styles_glyphs())
         .map(|run| typeset::Span {
             range: byte(run.start)..byte(run.end),
             style: typeset::SpanStyle::run(run.color.map(rgba8), run.bold, run.italic),
@@ -270,6 +271,13 @@ fn sane(v: f64) -> f64 {
 /// stroke, arrow heads and text overhang are all included, so an index of [`paint_bounds`] never culls a visible
 /// element.
 pub fn paint_margin(e: &Element) -> Margin {
+    let m = ink_margin(e);
+    let reach = crate::marker::reach(e);
+    Margin { left: m.left + reach, top: m.top + reach, right: m.right + reach, bottom: m.bottom + reach }
+}
+
+/// The margin of the element's own ink, without its highlight band.
+fn ink_margin(e: &Element) -> Margin {
     let t = &e.transform;
     let (w, h) = (sane(t.w), sane(t.h));
     let diag = w.hypot(h);

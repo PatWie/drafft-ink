@@ -584,6 +584,7 @@ fn fully_set_elements() -> Vec<Element> {
             stroke_style: StrokeStyle::Dashed,
             fill_color: Some(Color::rgb(4, 5, 6)),
             fill_pattern: FillPattern::Hachure,
+            highlight: Some(MarkerColor::Yellow),
             sloppiness: Sloppiness::Cartoonist,
             opacity: 0.8,
             corner_radius: 4.0,
