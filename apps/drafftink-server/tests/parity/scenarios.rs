@@ -159,6 +159,7 @@ pub fn images(relay: &mut Relay) {
 pub fn expire(relay: &mut Relay) {
     let (ttl, grace, slack) = (relay.life.ttl(), relay.life.grace(), relay.traits.deletion_slack);
     let room = Room::new(relay);
+    let visited = Instant::now();
     let mut a = room.client(1, JoinMode::Create);
     room.draw(&mut a, "gone-soon", 10.0);
     room.settle(&mut [&mut a]);
@@ -166,6 +167,17 @@ pub fn expire(relay: &mut Relay) {
     a.session.client_mut().leave(room.clock.now(), &mut a.store);
     room.idle(&mut [&mut a], Duration::from_millis(500));
     drop(a);
+
+    // Not early: while the deadline is far, the room is there. Listing the pictures is no visit, so it moves nothing.
+    // (On a machine too slow to get here in time the check is left out and says so.)
+    let list = format!("/r/{}/f", room.keys.room_id());
+    let member = [("Authorization", member_header(&room.keys))];
+    if visited.elapsed() + Duration::from_secs(1) < ttl {
+        let status = http::request(relay.addr, "GET", &list, &member, &[]).status;
+        assert_eq!(status, 200, "the room is not deleted before its deadline");
+    } else {
+        eprintln!("expire: the machine is too slow to look at the room before its deadline; that check is skipped");
+    }
 
     // No probe in between: every join is a visit and would move the deadline.
     let until = left_at + ttl + grace + slack;
@@ -180,6 +192,12 @@ pub fn expire(relay: &mut Relay) {
         Some(StopReason::RoomMissing),
         "the room was deleted after its deadline: {:?}",
         opener.session.client().status()
+    );
+
+    assert_eq!(
+        http::request(relay.addr, "GET", &list, &member, &[]).status,
+        404,
+        "the picture route finds no room either"
     );
 
     let mut maker = room.client(3, JoinMode::Create);

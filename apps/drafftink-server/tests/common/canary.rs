@@ -256,6 +256,7 @@ pub fn assert_blind_relay(session: &Session, stored_under: &Path) {
         stored.len(),
         stored_under.display()
     );
+    eprintln!("canary: searched {} items, {size} bytes, under {}", stored.len(), stored_under.display());
     let evidence = Evidence::new(stored, &session.taps);
     assert!(evidence.wire.len() > 10, "frames were recorded: {}", evidence.wire.len());
     assert!(
