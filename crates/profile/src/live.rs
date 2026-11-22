@@ -115,6 +115,7 @@ pub(crate) fn frame_records() -> Vec<crate::frame::FrameRecord> {
 #[cfg(all(test, feature = "enabled"))]
 mod tests {
     use super::*;
+    use crate::clock::fake::FakeClock;
     use crate::names::{Counter, RedrawReason};
     use crate::test_lock;
 
@@ -154,34 +155,29 @@ mod tests {
 
     #[test]
     fn a_phase_inside_another_counts_for_itself_only() {
+        const MS: u64 = 1_000_000;
         let _l = test_lock();
+        let clock = FakeClock::install();
         reset();
         spans::set_enabled(true);
         work::redraw(RedrawReason::Gesture);
-        // Sleeps overrun on a loaded machine, so each part is held against the time it really took, not against
-        // the time asked for.
-        let timed = |ms: u64| {
-            let started = crate::clock::now_ns();
-            std::thread::sleep(std::time::Duration::from_millis(ms));
-            (crate::clock::now_ns() - started) as f64 / 1e6
-        };
-        let (mut own, mut inner) = (0.0, 0.0);
         begin_frame();
+        clock.advance(MS / 2); // in the frame, outside every phase
         in_phase(Phase::Ui, || {
-            own += timed(2);
-            in_phase(Phase::Encode, || inner += timed(6));
+            clock.advance(2 * MS);
+            in_phase(Phase::Encode, || clock.advance(6 * MS));
+            clock.advance(MS); // the outer phase's own time between its children
             // A second inner phase after the first one ended.
-            in_phase(Phase::Encode, || inner += timed(2));
+            in_phase(Phase::Encode, || clock.advance(2 * MS));
         });
         end_frame();
         spans::set_enabled(false);
         let s = snapshot();
-        let (ui, encode, other) =
-            (s.frames.phase_ms["ui"].max_ms, s.frames.phase_ms["encode"].max_ms, s.frames.phase_ms["other"].max_ms);
-        let slack = 2.0;
-        assert!(encode >= inner && encode < inner + slack, "encode {encode} for {inner} ms slept");
-        assert!(ui >= own && ui < own + slack, "ui keeps its own time only: {ui} for {own} ms slept");
-        assert!(other < slack, "the phases add up to the frame: other {other}");
+        let ms = |name: &str| s.frames.phase_ms[name].max_ms;
+        assert_eq!(ms("encode"), 8.0, "both inner phases count for encode");
+        assert_eq!(ms("ui"), 3.0, "ui keeps its own time only");
+        assert_eq!(ms("other"), 0.5, "the time outside every phase stays in other");
+        assert_eq!(ms("ui") + ms("encode") + ms("other"), s.frames.frame_ms.max_ms, "the phases add up to the frame");
     }
 
     #[test]
