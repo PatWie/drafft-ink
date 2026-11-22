@@ -8,15 +8,18 @@
 //! document is sent.
 //!
 //! Layout: `address` (server address, room name, room link), `connection` (start and leave a room), `state`
-//! (what the session keeps), `poll` (driving the client), `view` (what the UI reads), `fake_server` (an
+//! (what the session keeps), `poll` (driving the client), `pictures` (the pictures of an encrypted room), `join_check`
+//! (what a tab with pictures must pass to join one), `images` (what commands need of them), `view` (what the UI reads), `fake_server` (an
 //! in-memory server for tests).
 
 mod address;
-pub(crate) mod images;
 mod connection;
 pub mod fake_server;
 #[cfg(test)]
 mod fake_relay;
+pub(crate) mod images;
+mod join_check;
+mod pictures;
 mod poll;
 mod state;
 mod token;
@@ -45,7 +48,7 @@ pub use self::address::RoomLink;
 pub use self::connection::{IfMissing, OnLocal};
 pub use self::poll::CollabPoll;
 pub use self::state::CollabNotice;
-pub use self::view::{CollabView, ConnectionState, LaserDot, Loading, PeerView, TrailDot};
+pub use self::view::{CollabView, ConnectionState, ImagesView, LaserDot, Loading, PeerView, TrailDot};
 
 /// Most points one `collab.laser` call takes.
 const MAX_LASER_POINTS: usize = 1024;
@@ -419,8 +422,11 @@ fn leave_room(s: &mut Session, _: NoArgs) -> Result<LeaveOut, Refusal> {
                 Some(RoomBinding(Some(r))) => r.clone(),
                 _ => return Err(not_in_room(id)),
             };
+            let tab = s.tab().id;
+            connection::keep_pictures(s, tab);
             s.tab_mut().ext.set(RoomBinding(None));
             s.tab_mut().ext.set(SealedBinding(None));
+            s.tab_mut().doc.replicated_mut().set_file_policy(drafftink_doc::FilePolicy::Embedded);
             Ok(LeaveOut { changed: true, room })
         }
     }
@@ -729,7 +735,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         NET,
     )
     .available(require_not_connected)
-    .refusals(&["invalid_url", "already_connected", "local_content", "bad_room_link"])
+    .refusals(&["invalid_url", "already_connected", "local_content", "bad_room_link", "local_too_large_for_room"])
     .secret_args(&["token", "room"])
     .example(r#"{"url":"wss://draw.example.com/ws","room":"team-sync"}"#),
     CommandSpec::new(
@@ -758,7 +764,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         },
     )
     .available(require_connected_and_roomless)
-    .refusals(&["not_connected", "already_in_room", "local_content", "bad_room_link"])
+    .refusals(&["not_connected", "already_in_room", "local_content", "bad_room_link", "local_too_large_for_room"])
     .secret_args(&["token", "room"])
     .example(r#"{"room":"team-sync","on_local":"merge"}"#),
     CommandSpec::new(
@@ -845,3 +851,6 @@ mod tests;
 #[cfg(test)]
 #[path = "collab_sealed_tests.rs"]
 mod sealed_tests;
+#[cfg(test)]
+#[path = "collab_pictures_tests.rs"]
+mod pictures_tests;

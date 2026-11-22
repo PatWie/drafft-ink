@@ -4,9 +4,12 @@
 
 use std::sync::Arc;
 
-use drafftink_collab::LoopbackServer;
-use drafftink_protocol::v2::RoomId;
-use drafftink_relay::{ConnId, Effect, MemoryBlobStore, MemoryRelayStore, Output, Relay, RelayConfig};
+use drafftink_collab::{BlobOp, BlobReply, BlobRequest, LoopbackBlobServer, LoopbackServer};
+use drafftink_protocol::v2::{ImageName, Proof, RoomId};
+use drafftink_relay::{
+    BlobStore, ConnId, Effect, ImageBody, ImageOp, ImageRequest, ImageResponse, ImageStatus, MemoryBlobStore,
+    MemoryRelayStore, Output, Relay, RelayConfig,
+};
 
 use crate::ports::fake::FakeNet;
 
@@ -22,8 +25,19 @@ struct Link {
 pub struct FakeRelay {
     config: RelayConfig,
     relay: Option<Relay<MemoryRelayStore, MemoryBlobStore>>,
+    room: Option<RoomId>,
     store: MemoryRelayStore,
+    blobs: MemoryBlobStore,
     links: Vec<Link>,
+    /// The picture requests of every session, as the HTTP routes of the real host would take them.
+    blob_links: Vec<Arc<LoopbackBlobServer>>,
+    /// Requests wait unanswered while this is set (a slow network).
+    hold_blobs: bool,
+    /// Uploads wait while this is set: the manifest of a picture reaches the others before its bytes do.
+    hold_puts: bool,
+    held_puts: Vec<(Arc<LoopbackBlobServer>, BlobRequest)>,
+    /// How many picture requests were answered, for a test of an idle session.
+    blob_requests: usize,
     next_conn: u64,
     wake_at: Option<u64>,
 }
@@ -31,7 +45,54 @@ pub struct FakeRelay {
 impl FakeRelay {
     /// A relay with this policy and no room yet.
     pub fn new(config: RelayConfig) -> Self {
-        Self { config, relay: None, store: MemoryRelayStore::new(), links: Vec::new(), next_conn: 0, wake_at: None }
+        Self {
+            config,
+            relay: None,
+            room: None,
+            store: MemoryRelayStore::new(),
+            blobs: MemoryBlobStore::new(),
+            links: Vec::new(),
+            blob_links: Vec::new(),
+            hold_blobs: false,
+            hold_puts: false,
+            held_puts: Vec::new(),
+            blob_requests: 0,
+            next_conn: 0,
+            wake_at: None,
+        }
+    }
+
+    /// The sealed pictures the relay stores, by name.
+    pub fn sealed_pictures(&self) -> Vec<(ImageName, Vec<u8>)> {
+        let mut blobs = self.blobs.clone();
+        let names = blobs.list().unwrap_or_default();
+        names.into_iter().filter_map(|i| blobs.get(&i.name).ok().flatten().map(|b| (i.name, b))).collect()
+    }
+
+    /// Holds every picture request unanswered (or serves them again).
+    pub fn hold_blobs(&mut self, on: bool) {
+        self.hold_blobs = on;
+    }
+
+    /// Keeps uploads waiting (reads are answered): a picture is announced before it is there. Releasing serves them.
+    pub fn hold_puts(&mut self, on: bool) {
+        self.hold_puts = on;
+    }
+
+    /// How many picture requests the relay has answered.
+    pub fn blob_requests(&self) -> usize {
+        self.blob_requests
+    }
+
+    /// Flips one bit of every stored picture, as a hostile or failing store would.
+    pub fn damage_pictures(&mut self) {
+        let mut blobs = self.blobs.clone();
+        for (name, mut bytes) in self.sealed_pictures() {
+            if let Some(last) = bytes.last_mut() {
+                *last ^= 1;
+            }
+            let _ = blobs.put(&name, &bytes);
+        }
     }
 
     /// What the relay stored, for a test that looks for what must not be there.
@@ -51,6 +112,11 @@ impl FakeRelay {
                 self.links.push(Link { end, opens: 0, conn: None });
             }
         }
+        for end in net.blob_servers() {
+            if !self.blob_links.iter().any(|l| Arc::ptr_eq(l, &end)) {
+                self.blob_links.push(end);
+            }
+        }
     }
 
     /// The id of the room in `/r/<id>/ws`.
@@ -64,6 +130,7 @@ impl FakeRelay {
         for i in 0..self.links.len() {
             busy |= self.step_link(i, now_ms);
         }
+        busy |= self.serve_blobs(now_ms);
         if let (Some(relay), Some(at)) = (self.relay.as_mut(), self.wake_at)
             && at <= now_ms
         {
@@ -85,7 +152,8 @@ impl FakeRelay {
             if self.relay.is_none()
                 && let Some(room) = end.last_url().as_deref().and_then(Self::room_of)
             {
-                self.relay = Some(Relay::new(room, self.config.clone(), self.store.clone(), MemoryBlobStore::new()));
+                self.room = Some(room);
+                self.relay = Some(Relay::new(room, self.config.clone(), self.store.clone(), self.blobs.clone()));
             }
             self.next_conn += 1;
             let conn = ConnId(self.next_conn);
@@ -120,6 +188,52 @@ impl FakeRelay {
             }
         }
         busy
+    }
+
+    /// Answers the picture requests like the HTTP routes of a host: `PUT`, `GET` and `HEAD` of
+    /// `/r/<room>/f/<name>` and `GET` of `/r/<room>/f`, with the membership token in `Authorization`.
+    fn serve_blobs(&mut self, now_ms: u64) -> bool {
+        if self.hold_blobs {
+            return false;
+        }
+        let mut busy = false;
+        let mut due: Vec<(Arc<LoopbackBlobServer>, BlobRequest)> = Vec::new();
+        if !self.hold_puts {
+            due.append(&mut self.held_puts);
+        }
+        for end in &self.blob_links {
+            due.extend(end.take_requests().into_iter().map(|request| (Arc::clone(end), request)));
+        }
+        for (end, request) in due {
+            if self.hold_puts && matches!(request.op, BlobOp::Put(_)) {
+                self.held_puts.push((end, request));
+                continue;
+            }
+            busy = true;
+            self.blob_requests += 1;
+            let reply = self.blob_reply(now_ms, &request);
+            end.respond(request.id, Ok(reply));
+        }
+        busy
+    }
+
+    fn blob_reply(&mut self, now_ms: u64, request: &BlobRequest) -> BlobReply {
+        let status = |status: u16| BlobReply { status, ..BlobReply::default() };
+        let (Some(relay), Some(room)) = (self.relay.as_mut(), self.room.as_ref()) else { return status(404) };
+        let Some((_, path)) = request.url.split_once(&format!("/r/{room}/f")) else { return status(404) };
+        let Some(token) = request.auth.token() else { return status(401) };
+        let proof = Proof::token(&token);
+        let head = matches!(request.op, BlobOp::Head);
+        let name = path.strip_prefix('/').map(str::parse::<ImageName>);
+        let op = match (&request.op, name) {
+            (BlobOp::Put(body), Some(Ok(name))) => ImageOp::Put { name, body },
+            (BlobOp::Get | BlobOp::Head, Some(Ok(name))) => ImageOp::Get { name },
+            (BlobOp::List, None) => ImageOp::List,
+            _ => return status(400),
+        };
+        let (response, out) = relay.image_request(now_ms, ImageRequest { proof: &proof, op });
+        self.apply(out);
+        http_reply(response, head)
     }
 
     fn drop_conn(&mut self, i: usize, now_ms: u64) {
@@ -158,5 +272,28 @@ impl FakeRelay {
 
     fn end_of(&self, conn: ConnId) -> Option<Arc<LoopbackServer>> {
         self.links.iter().find(|l| l.conn == Some(conn)).map(|l| Arc::clone(&l.end))
+    }
+}
+
+/// The HTTP form of an answer: the status, the sealed bytes or JSON, and `Retry-After` in whole seconds.
+fn http_reply(response: ImageResponse, head: bool) -> BlobReply {
+    let retry_after_ms = response.retry_after_ms.map(|ms| u64::from(ms).div_ceil(1000).max(1) * 1000);
+    let json = |v: serde_json::Value| v.to_string().into_bytes();
+    let body = match (response.status, response.body) {
+        (ImageStatus::Ok, ImageBody::Sealed(bytes)) => bytes,
+        (ImageStatus::Ok, ImageBody::List(list)) => {
+            json(list.iter().map(|i| serde_json::json!({ "name": i.name.to_string(), "size": i.size })).collect())
+        }
+        (ImageStatus::Created, ImageBody::Totals(t)) => {
+            json(serde_json::json!({ "room_images": t.count, "room_image_bytes": t.bytes }))
+        }
+        (status, _) => json(serde_json::json!({ "error": status.code() })),
+    };
+    let content_length = u64::try_from(body.len()).ok();
+    BlobReply {
+        status: response.status.http(),
+        body: if head { Vec::new() } else { body },
+        content_length,
+        retry_after_ms,
     }
 }

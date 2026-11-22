@@ -4,6 +4,7 @@
 
 use egui::{Align2, Area, Context, Id, Order, ProgressBar, RichText, vec2};
 
+use crate::model::RoomLoading;
 use crate::state::UiState;
 use crate::theme::TextSize;
 use crate::widgets::{Cx, panel_frame};
@@ -15,17 +16,19 @@ const BAR_WIDTH: f32 = 240.0;
 pub fn show(ctx: &Context, cx: &mut Cx<'_>, _st: &mut UiState) {
     let Some(loading) = cx.model.collab.loading else { return };
     let pal = cx.pal;
-    Area::new(Id::unique("room_loading")).anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0)).order(Order::Tooltip).show(
-        ctx,
-        |ui| {
-            panel_frame(&pal).show(ui, |ui| {
-                ui.set_width(BAR_WIDTH);
-                ui.label(RichText::new(loading.text()).size(TextSize::Label.points()).color(pal.text));
-                if let Some(fraction) = loading.fraction() {
-                    ui.add_space(6.0);
-                    ui.add(ProgressBar::new(fraction).desired_width(BAR_WIDTH));
-                }
-            });
-        },
-    );
+    // The room is usable while its pictures come, so that hint sits at the bottom and leaves the drawing free.
+    let (anchor, offset) = match loading {
+        RoomLoading::Images { .. } => (Align2::CENTER_BOTTOM, vec2(0.0, -48.0)),
+        _ => (Align2::CENTER_CENTER, vec2(0.0, 0.0)),
+    };
+    Area::new(Id::unique("room_loading")).anchor(anchor, offset).order(Order::Tooltip).show(ctx, |ui| {
+        panel_frame(&pal).show(ui, |ui| {
+            ui.set_width(BAR_WIDTH);
+            ui.label(RichText::new(loading.text()).size(TextSize::Label.points()).color(pal.text));
+            if let Some(fraction) = loading.fraction() {
+                ui.add_space(6.0);
+                ui.add(ProgressBar::new(fraction).desired_width(BAR_WIDTH));
+            }
+        });
+    });
 }

@@ -28,14 +28,14 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
 use drafftink_canvas::SceneIndex;
-use drafftink_doc::{DocError, LoroStore, LoroTx};
+use drafftink_doc::{DocError, FilePolicy, LoroStore, LoroTx};
 use drafftink_geom::kurbo::Point;
 use drafftink_scene::{
     Change, ChangeKind, ChangeSet, DerivedIndex, DocMeta, Document, Element, ElementId, Fields, FileEntry, FileId,
     MemoryStore, NamedVersion, SceneRead, SceneStore, SceneTx, StoreError, VersionId, ZIndex,
 };
 
-use crate::fingerprint::{Feed, Fingerprint, Tracker};
+use crate::fingerprint::{Feed, Fingerprint, Manifests, Tracker};
 use crate::state::Observed;
 
 /// The replicated store behind a tab: the CRDT truth, undo history and sync.
@@ -409,7 +409,14 @@ impl TabDoc {
     /// the whole scene; later calls cost what changed since the previous one.
     pub fn fingerprint(&self) -> Fingerprint {
         match self.print.try_borrow_mut() {
-            Ok(mut tracker) => tracker.print(&self.work, &self.print_feed),
+            Ok(mut tracker) => {
+                let ids = || self.loro.manifests().map(|(id, _)| id.clone()).collect();
+                tracker.print(
+                    &self.work,
+                    &self.print_feed,
+                    &Manifests { revision: self.loro.manifest_revision(), ids: &ids },
+                )
+            }
             // Called from inside itself, which cannot happen; a fingerprint nothing equals reads as changed.
             Err(_) => Fingerprint::default(),
         }
@@ -934,6 +941,21 @@ impl TabDoc {
         self.mirror(cs)
     }
 
+    /// Replaces the replicated store with a fresh one built from the working store, with `policy` for the bytes of
+    /// pictures. The new store has no history: nothing of the old Loro history (the bytes of pictures that were
+    /// embedded, deleted elements, undo steps) goes with it. A tab that joins an encrypted room does this first, so that
+    /// the bytes of its pictures never reach the room. Undo is empty afterwards. The working store is untouched.
+    pub fn restart_replicated(&mut self, policy: FilePolicy) -> Result<(), StoreError> {
+        let doc = self.snapshot();
+        let mut fresh = DocStore::from_document_with_policy(&doc, policy)?;
+        fresh.set_undo_depth(self.depth);
+        self.loro = fresh;
+        self.undo_revs.clear();
+        self.redo_revs.clear();
+        self.last_coalesce = None;
+        Ok(())
+    }
+
     /// Takes the bytes of a room picture that arrived (or came from the local blob cache) into the replicated view and
     /// the working store, outside the journal and without a Loro write. `Ok(false)`: the document has no such
     /// manifest, the bytes do not match it, or they are here already.
@@ -941,6 +963,10 @@ impl TabDoc {
         let id = FileId::of(&entry.bytes);
         if !self.loro.supply_file(entry.clone())? {
             return Ok(false);
+        }
+        if self.work.file(&id).is_some() {
+            // The working store had the bytes already (a restored tab): only the replicated view lacked them.
+            return Ok(true);
         }
         let mut tx = self.work.begin();
         tx.put_file(entry).map_err(DocError::backend)?;

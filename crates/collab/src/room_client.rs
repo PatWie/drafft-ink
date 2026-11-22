@@ -221,6 +221,14 @@ impl RoomClient {
         }
     }
 
+    /// The limits of an encrypted room as its relay announced them. `None` for a plaintext client.
+    pub fn room_limits(&self) -> Option<&drafftink_protocol::v2::RoomLimits> {
+        match self {
+            RoomClient::Sealed(c) => Some(c.limits()),
+            RoomClient::Plain(_) => None,
+        }
+    }
+
     /// Where the picture transfers stand. All zero for a plaintext client.
     pub fn images(&self) -> ImageProgress {
         match self {

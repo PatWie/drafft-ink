@@ -15,23 +15,28 @@ use crate::services::Services;
 use crate::session::Session;
 use crate::testing;
 
-const URL: &str = "ws://127.0.0.1:3030/ws";
+pub(super) const URL: &str = "ws://127.0.0.1:3030/ws";
 
-fn run(s: &mut Session, id: &str, args: Value) -> Value {
+pub(super) fn run(s: &mut Session, id: &str, args: Value) -> Value {
     s.execute(id, args).unwrap_or_else(|r| panic!("{id} was refused: {} ({})", r.message, r.code))
 }
 
-fn refuse(s: &mut Session, id: &str, args: Value) -> Refusal {
+pub(super) fn refuse(s: &mut Session, id: &str, args: Value) -> Refusal {
     s.execute(id, args).expect_err("the command should be refused")
 }
 
-struct World {
-    relay: FakeRelay,
-    c: Vec<(Session, Fakes)>,
+pub(super) struct World {
+    pub(super) relay: FakeRelay,
+    pub(super) c: Vec<(Session, Fakes)>,
 }
 
 impl World {
-    fn new(n: usize) -> Self {
+    pub(super) fn new(n: usize) -> Self {
+        Self::with_config(n, RelayConfig::self_host())
+    }
+
+    /// `n` sessions and a relay with this policy.
+    pub(super) fn with_config(n: usize, config: RelayConfig) -> Self {
         let c = (0..n)
             .map(|i| {
                 let (mut s, fakes) = testing::session();
@@ -41,11 +46,16 @@ impl World {
                 (s, fakes)
             })
             .collect();
-        World { relay: FakeRelay::new(RelayConfig::self_host()), c }
+        World { relay: FakeRelay::new(config), c }
     }
 
-    fn settle(&mut self) {
-        for _ in 0..80 {
+    pub(super) fn settle(&mut self) {
+        self.settle_for(3200);
+    }
+
+    /// Runs the sessions and the relay for `ms` of simulated time, in steps of 40 ms.
+    pub(super) fn settle_for(&mut self, ms: u64) {
+        for _ in 0..ms / 40 {
             for (s, f) in &mut self.c {
                 f.clock.advance_ms(40);
                 s.collab_poll();
@@ -56,12 +66,12 @@ impl World {
         }
     }
 
-    fn s(&mut self, i: usize) -> &mut Session {
+    pub(super) fn s(&mut self, i: usize) -> &mut Session {
         &mut self.c[i].0
     }
 
     /// Session `i` makes a new encrypted room and returns its link.
-    fn create(&mut self, i: usize) -> String {
+    pub(super) fn create(&mut self, i: usize) -> String {
         run(self.s(i), "collab.connect", json!({"url": URL}));
         let out = run(self.s(i), "collab.join_room", json!({}));
         assert_eq!(out["e2e"], true);
@@ -71,7 +81,7 @@ impl World {
     }
 
     /// Session `i` joins the room of `link`.
-    fn join(&mut self, i: usize, link: &str, extra: Value) {
+    pub(super) fn join(&mut self, i: usize, link: &str, extra: Value) {
         run(self.s(i), "collab.connect", json!({"url": URL}));
         let mut args = json!({"room": link});
         if let (Value::Object(a), Value::Object(e)) = (&mut args, extra) {
@@ -86,7 +96,7 @@ fn key_of(link: &str) -> String {
     link.split_once(',').expect("a link with a key").1.split('&').next().expect("key text").to_owned()
 }
 
-fn elements(s: &Session) -> usize {
+pub(super) fn elements(s: &Session) -> usize {
     s.store().iter().count()
 }
 
@@ -223,7 +233,7 @@ fn only_share_link_has_a_secret_output_and_it_is_quiet() {
 
 // ---- the workspace record ----
 
-fn reload(fakes: &Fakes) -> Session {
+pub(super) fn reload(fakes: &Fakes) -> Session {
     Session::with_services(fakes.ports(), Services::fake())
 }
 

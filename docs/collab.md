@@ -53,6 +53,20 @@ What the client does:
 
 Tests: `tests/images.rs` runs the real relay core behind `loopback_blobs` in simulated time (limits, membership, damaged downloads, one name, resume after a drop, backoff of 1, 2, 4 s, `Retry-After`, lost answers and `HEAD`, concurrency, counts, the wake times). `apps/drafftink-server/tests/blobs.rs` runs `NativeBlobTransport` against the real server and against misbehaving ones. The browser transport is covered by compilation only, like `WebTransport`.
 
+## How the engine drives the pictures
+
+`crates/engine/src/cmd/collab/pictures.rs` is the glue between the client, the tab and the local blob cache (`Ns::Blobs`, plaintext, key = file id). `Session::collab_poll` calls it after the pump. It does work only when something changed that matters: the manifest revision of the replicated store, the client turning online (the client dropped its offers, and a relay that expired is empty), a picture arriving, and, only while some missing picture waits for the camera, the camera or the revision of the document. An idle session compares four numbers per poll and does nothing else (test `an_idle_session_with_pictures_does_no_picture_work_per_poll`).
+
+For each manifest of the room:
+
+- The tab holds the bytes: `offer_image` (the client uploads unless the relay has the name) and a write to the blob cache.
+- The tab lacks them and the blob cache has them: they are taken from the cache (a reload, a picture seen before, offline).
+- Else `want_image`, when an element that shows the picture is within one viewport of the visible rectangle. A viewport the shell never sized counts everything as near. `want_room_images` (an export) ignores the camera.
+
+`ImageEvent::Arrived` goes to `TabDoc::supply_file` (the replicated view and the working store, no Loro write, no undo step, no edit: the logical revision, the saved state and the content fingerprint stay), the blob cache, and a scene redraw. The renderer draws the empty picture until the bytes are there, then encodes the element again: the working store's revision moves and the elements that show the picture are in `TabDoc::take_touched`. `Damaged` raises an info notice and the element keeps the empty picture. `Rejected` raises a problem notice with the plain texts of section 9.4. The content fingerprint counts the manifests besides the files of the working store, so a picture that arrives changes nothing.
+
+A tab that joins a room is rebuilt (`TabDoc::restart_replicated(FilePolicy::External)`) from its working store: the old Loro history holds the bytes of embedded pictures and must not reach the room. The pictures it holds are offered and uploaded sealed. A tab restored from the workspace has the policy set by `read_room`. Leaving a room puts the policy back to `Embedded` and takes the blob cache's pictures into the tab. The workspace save deletes the blob cache entries that no tab names (a full save, and the first write after a tab was closed). `collab.status` shows `images` and, while visible pictures come, `loading.phase = "images"`. The engine tests use `FakeRelay` (`cmd/collab/fake_relay.rs`), which serves the picture routes of the fake network with the relay core.
+
 ## How the engine drives it
 
 ```text

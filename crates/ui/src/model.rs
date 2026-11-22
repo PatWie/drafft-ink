@@ -366,6 +366,13 @@ pub enum RoomLoading {
         /// All items of the room.
         total: usize,
     },
+    /// The room is usable; pictures in the visible area are still coming.
+    Images {
+        /// Pictures of the visible area that are here.
+        done: u32,
+        /// Pictures the visible area shows.
+        total: u32,
+    },
 }
 
 impl RoomLoading {
@@ -380,6 +387,10 @@ impl RoomLoading {
                 done: usize::try_from(count("done")?).ok()?,
                 total: usize::try_from(count("total")?).ok()?,
             }),
+            "images" => Some(RoomLoading::Images {
+                done: u32::try_from(count("done")?).ok()?,
+                total: u32::try_from(count("total")?).ok()?,
+            }),
             _ => None,
         }
     }
@@ -388,6 +399,7 @@ impl RoomLoading {
     pub fn fraction(&self) -> Option<f32> {
         match *self {
             RoomLoading::Importing { done, total } if total > 0 => Some((done as f32 / total as f32).clamp(0.0, 1.0)),
+            RoomLoading::Images { done, total } if total > 0 => Some((done as f32 / total as f32).clamp(0.0, 1.0)),
             _ => None,
         }
     }
@@ -402,6 +414,7 @@ impl RoomLoading {
                 Some(f) => format!("Loading the room: {}%", (f * 100.0).floor() as u32),
                 None => "Loading the room...".to_owned(),
             },
+            RoomLoading::Images { done, total } => format!("Loading pictures ({done} of {total})..."),
         }
     }
 }

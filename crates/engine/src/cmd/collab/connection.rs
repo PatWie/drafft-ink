@@ -4,9 +4,10 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use drafftink_collab::{
-    AuthToken, CollabClient, CollabConfig, CollabSession, ConfigError, Resume, SealedClient, SealedConfig,
-    SealedConfigError, ServerUrl,
+    AuthToken, BlobTransport, CollabClient, CollabConfig, CollabSession, ConfigError, Resume, SealedClient,
+    SealedConfig, SealedConfigError, ServerUrl,
 };
+use drafftink_doc::FilePolicy;
 use drafftink_protocol::v2::JoinMode;
 use drafftink_protocol::{ClientId, UserInfo};
 use drafftink_seal::RoomKey;
@@ -14,8 +15,10 @@ use drafftink_scene::{Color, SceneRead};
 use serde_json::Value;
 
 use super::address::RoomName;
+use super::join_check::check_local_pictures;
+use super::pictures::Pictures;
 use super::poll::finish_import;
-use super::state::{CollabState, GatedTransport, Live, RoomRef, stage_threshold};
+use super::state::{CollabNotice, CollabState, GatedTransport, Live, RoomRef, stage_threshold};
 use crate::cmd::tab::{RoomBinding, SealedBinding, SealedRoom};
 use crate::ports::PortError;
 use crate::refusal::Refusal;
@@ -118,18 +121,34 @@ pub(super) fn start(
 ) -> Result<(), Refusal> {
     let id = s.cmd();
     let user = user_from_settings(s);
-    let (transport, client, room, binding) = prepare(s, &server, token.clone(), target, on_local, user).map_err(|e| match e {
-        StartError::Port(p) => Refusal::io_failed(id, "open a connection", "the server", &p.to_string()),
-        StartError::Config(c) => Refusal::internal(id, c.to_string()),
-        StartError::Sealed(c) => Refusal::internal(id, c.to_string()),
-    })?;
+    let sealed = matches!(target, Target::Sealed { .. });
+    // A tab that is not yet an encrypted room's copy (a local tab) meets the room's rules for pictures first. A tab
+    // that comes back to its room (restored from the workspace) is that room's copy already.
+    let joins_fresh = sealed && s.tab().doc.replicated().file_policy() != FilePolicy::External;
+    if joins_fresh && on_local != OnLocal::Discard {
+        check_local_pictures(s)?;
+    }
+    let Prepared { transport, blobs, client, room, binding } =
+        prepare(s, &server, token.clone(), target, on_local, user).map_err(|e| match e {
+            StartError::Port(p) => Refusal::io_failed(id, "open a connection", "the server", &p.to_string()),
+            StartError::Config(c) => Refusal::internal(id, c.to_string()),
+            StartError::Sealed(c) => Refusal::internal(id, c.to_string()),
+        })?;
     let tab = s.tab().id;
     if on_local == OnLocal::Discard {
         discard_local(s);
     }
+    if joins_fresh {
+        make_external(s, id)?;
+    }
     let now = s.ports.clock.mono_ms();
     let gate = Rc::new(Cell::new(Default::default()));
     let mut session = CollabSession::new(client, GatedTransport::new(transport, Rc::clone(&gate)));
+    match blobs {
+        Some(blobs) => session.set_blobs(blobs),
+        None if sealed => s.collab_notify(CollabNotice::Info(NO_PICTURES.to_owned())),
+        None => {}
+    }
     session.client_mut().start(now);
     let seen_writes = s.tab().doc.local_writes();
     let live = Live {
@@ -141,6 +160,7 @@ pub(super) fn start(
         synced_once: false,
         announced_hold: false,
         follow_view: None,
+        pictures: Pictures::new(sealed),
     };
     s.tab_mut().ext.set(RoomBinding(Some(room.to_string())));
     let sealed = binding.map(|(key, resume)| SealedRoom { key, server: server.to_string(), resume, joined_ms: s.now_ms() });
@@ -156,9 +176,29 @@ pub(super) fn start(
     Ok(())
 }
 
-/// The transport and the client, the room they are for, and for an encrypted room the key and resume point that the
-/// tab keeps.
-type Prepared = (Box<dyn drafftink_collab::Transport>, drafftink_collab::RoomClient, RoomRef, Option<(RoomKey, Resume)>);
+/// What a shell without HTTP means for an encrypted room: it works, its pictures do not.
+const NO_PICTURES: &str = "This app cannot load or send pictures here, so the pictures of this room will not show and yours will not be shared. Drawing and text work as usual.";
+
+/// What [`prepare`] builds: the transport and the client, the room they are for, and for an encrypted room the
+/// picture transport (when the shell has one) and the key and resume point that the tab keeps.
+struct Prepared {
+    transport: Box<dyn drafftink_collab::Transport>,
+    blobs: Option<Box<dyn BlobTransport>>,
+    client: drafftink_collab::RoomClient,
+    room: RoomRef,
+    binding: Option<(RoomKey, Resume)>,
+}
+
+/// Makes the replicated store of the active tab take pictures as files, as an encrypted room does. A tab that was
+/// local gets a new replicated store built from its content: the old Loro history holds the bytes of the pictures it
+/// embedded, and that history must not reach the room. The undo history is cleared by it.
+fn make_external(s: &mut Session, id: &str) -> Result<(), Refusal> {
+    let doc = &mut s.tab_mut().doc;
+    if doc.replicated().file_policy() == FilePolicy::External {
+        return Ok(());
+    }
+    doc.restart_replicated(FilePolicy::External).map_err(|e| Refusal::internal(id, e.to_string()))
+}
 
 fn prepare(
     s: &mut Session,
@@ -188,7 +228,7 @@ fn prepare(
                 jitter_seed,
                 replace_when_trimmed,
             };
-            (transport, CollabClient::new(cfg)?.into(), RoomRef::Plain(room.id().clone()), None)
+            Prepared { transport, blobs: None, client: CollabClient::new(cfg)?.into(), room: RoomRef::Plain(room.id().clone()), binding: None }
         }
         Target::Sealed { key, if_missing, resume } => {
             let kept = (RoomKey::from_bytes(*key.expose_bytes()), resume.clone());
@@ -203,7 +243,9 @@ fn prepare(
                 jitter_seed,
                 replace_when_trimmed,
             };
-            (transport, SealedClient::new(cfg)?.into(), RoomRef::Sealed(id), Some(kept))
+            // A shell without HTTP still runs the room; the pictures are then missing, and `start` says so once.
+            let blobs = net.open_blob_transport().ok();
+            Prepared { transport, blobs, client: SealedClient::new(cfg)?.into(), room: RoomRef::Sealed(id), binding: Some(kept) }
         }
     })
 }
@@ -231,14 +273,16 @@ pub(super) fn leave(s: &mut Session, forget_server: bool) -> Option<(String, Tab
     let room = live.room.to_string();
     let tab = live.tab;
     finish_import(s, tab);
+    keep_pictures(s, tab);
     if let Some(t) = s.tab_by_id_mut(tab) {
         t.doc.replicated_mut().set_stage_import_bytes(usize::MAX);
         live.session.client_mut().leave(now, t.doc.replicated_mut());
         // The goodbye and the close are outputs of the client; the pump hands them to the transport.
         live.session.pump(now, t.doc.replicated_mut());
         t.ext.set(RoomBinding(None));
-        // Leaving forgets the key of the tab. The document stays as a local copy.
+        // Leaving forgets the key of the tab. The document stays as a local copy, and its pictures are embedded again.
         t.ext.set(SealedBinding(None));
+        t.doc.replicated_mut().set_file_policy(FilePolicy::Embedded);
     }
     if !forget_server {
         // The server stays chosen, so the next `collab.join_room` needs no `collab.connect`.
@@ -250,6 +294,17 @@ pub(super) fn leave(s: &mut Session, forget_server: bool) -> Option<(String, Tab
         });
     }
     Some((room, tab))
+}
+
+/// Before a tab stops being a room's copy: takes every picture of the room that the blob cache has into the tab, so
+/// the local copy keeps all the pictures this device holds. The document names the rest, and they show as empty
+/// pictures.
+pub(super) fn keep_pictures(s: &mut Session, tab: TabId) {
+    let Some(t) = s.tab_by_id(tab) else { return };
+    let missing: Vec<_> = t.doc.replicated().manifests().map(|(id, _)| id.clone()).filter(|id| t.doc.store().file(id).is_none()).collect();
+    if !missing.is_empty() && s.load_cached_pictures(tab, &missing) > 0 {
+        s.mark_dirty(crate::spec::Redraw::Scene);
+    }
 }
 
 impl Session {

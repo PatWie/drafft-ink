@@ -358,6 +358,11 @@ impl SealedClient {
         self.expiring
     }
 
+    /// The limits the relay announced when this connection joined (the hard ceilings before that).
+    pub fn limits(&self) -> &RoomLimits {
+        &self.limits
+    }
+
     /// How many received changes could not be read and were skipped (a damaged record, or a malformed update).
     pub fn skipped(&self) -> u32 {
         self.skipped
