@@ -10,18 +10,31 @@ import type { SqlHost } from "./wasm";
  * - `room_snapshot`: one row, the sealed snapshot and the sequence number it covers.
  * - `room_segments`: one row per flush, keyed by its first sequence number.
  * - `room_images`: the manifest of the pictures. `data` holds the sealed bytes on the demo and stays `NULL` when
- *   the bytes are in R2 (`src/blobs.ts`).
+ *   the bytes are in R2 (`src/blobs.ts`): then a row is the name and the size, nothing else.
+ * - `room_tombstone`: written only when a deletion could not be finished (R2 did not answer). Its presence means
+ *   "this room is deleted, finish the cleaning before anything else". A finished deletion wipes the database.
  */
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS room_meta (id INTEGER PRIMARY KEY CHECK (id = 0), data BLOB NOT NULL);
 CREATE TABLE IF NOT EXISTS room_snapshot (id INTEGER PRIMARY KEY CHECK (id = 0), covers INTEGER NOT NULL, record BLOB NOT NULL);
 CREATE TABLE IF NOT EXISTS room_segments (first INTEGER PRIMARY KEY, last INTEGER NOT NULL, data BLOB NOT NULL);
 CREATE TABLE IF NOT EXISTS room_images (name BLOB PRIMARY KEY, size INTEGER NOT NULL, data BLOB) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS room_tombstone (id INTEGER PRIMARY KEY CHECK (id = 0));
 `;
 
 /** Creates the tables that are missing. */
 export function ensureSchema(sql: SqlStorage): void {
   guard(() => sql.exec(SCHEMA));
+}
+
+/** Notes that the room is deleted and its cleaning is not finished. */
+export function markDeleting(sql: SqlStorage): void {
+  guard(() => sql.exec("INSERT OR REPLACE INTO room_tombstone (id) VALUES (0)"));
+}
+
+/** Whether a deletion was started and not finished. */
+export function isDeleting(sql: SqlStorage): boolean {
+  return guard(() => sql.exec("SELECT id FROM room_tombstone").toArray().length > 0);
 }
 
 /** The bytes of a BLOB column. */

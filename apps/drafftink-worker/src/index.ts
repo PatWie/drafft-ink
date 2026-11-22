@@ -1,11 +1,14 @@
-import { checkAccess } from "./access-hook";
-import { deploymentProblem, relaySettings, type Env } from "./env";
+import { coreFromWasm, guard, type AccessEnv } from "./access";
+import { accessRequired, blobStore, deploymentProblem, relaySettings, text, type Env } from "./env";
 import { dailyLimit, DAILY_LIMIT_HEADER, failure, json } from "./http";
 import { isQuotaError } from "./host-error";
 import { originAllowed } from "./origin";
 import { QuotaGate } from "./quota";
 import { parseRoute, type Route } from "./routes";
 import {
+  access_check_claims,
+  access_parse,
+  access_refusal,
   checkMember,
   checkSettings,
   dailyLimitFrame,
@@ -13,6 +16,7 @@ import {
   isRoomId,
   MemberCheck,
   nextUtcMidnightMs,
+  r2Key,
   sealedImageLimit,
 } from "./wasm";
 
@@ -25,6 +29,20 @@ const quota = new QuotaGate();
 const checkedSettings = new Set<string>();
 
 const CLOSE_TRY_AGAIN_LATER = 1013;
+
+/** The Rust side of the Access check (claims and refusal texts); the signature is checked with Web Crypto. */
+const accessCore = coreFromWasm({ access_parse, access_check_claims, access_refusal });
+
+/** The settings the Access guard reads, with the fail-closed reading of `ACCESS_REQUIRED`. */
+function accessEnv(env: Env): AccessEnv {
+  return {
+    ACCESS_REQUIRED: accessRequired(env.ACCESS_REQUIRED),
+    ACCESS_TEAM_DOMAIN: text(env.ACCESS_TEAM_DOMAIN),
+    ACCESS_AUD: text(env.ACCESS_AUD),
+    ACCESS_CERTS_URL: text(env.ACCESS_CERTS_URL),
+    ...(text(env.ACCESS_APP_HOSTNAME) === "" ? {} : { ACCESS_APP_HOSTNAME: text(env.ACCESS_APP_HOSTNAME) }),
+  };
+}
 
 /**
  * The Worker in front of the rooms. It routes `/r/<id>/ws`, `/r/<id>/f` and `/r/<id>/f/<name>` to the Durable Object
@@ -49,7 +67,13 @@ export default {
   },
 } satisfies ExportedHandler<Env>;
 
-async function handle(request: Request, env: Env): Promise<Response> {
+async function handle(incoming: Request, env: Env): Promise<Response> {
+  // Cloudflare Access is the first lock and this is the second (design 19.5). It runs before anything else, so a
+  // request without a valid sign-in learns nothing, and neither a Durable Object nor R2 is ever called for it. What
+  // goes on is the same request without Access headers and cookies: the relay never learns who connected.
+  const checkedRequest = await guard(incoming, accessEnv(env), Date.now(), { core: accessCore });
+  if (checkedRequest instanceof Response) return checkedRequest;
+  const request = checkedRequest;
   const url = new URL(request.url);
   const route = parseRoute(url.pathname);
   const settings = relaySettings(env);
@@ -57,9 +81,6 @@ async function handle(request: Request, env: Env): Promise<Response> {
   if (configProblem !== null) return failure(500, "bad_config", configProblem);
   const deployProblem = deploymentProblem(env);
   if (deployProblem !== null) return failure(500, "bad_config", deployProblem);
-  // The Cloudflare Access check of the private environment runs before any route.
-  const refused = await checkAccess(request, env);
-  if (refused !== null) return refused;
   switch (route.kind) {
     case "status":
       return status(request, env);
@@ -147,9 +168,30 @@ async function pictures(request: Request, env: Env, route: Extract<Route, { kind
   if (request.method === "PUT" && Number(request.headers.get("content-length") ?? "0") > sealedImageLimit(settings)) {
     return failure(413, "image_too_large", "This picture is larger than a shared room accepts.");
   }
+  // In R2 mode a download is the Worker's own: it reads R2 after the membership check above and wakes no object.
+  if (route.kind === "image" && request.method === "GET" && blobStore(env) === "r2") {
+    return downloadFromR2(env, route.room, route.name);
+  }
   const wait = quota.retryAfterSeconds(Date.now());
   if (wait !== null) return dailyLimit(wait);
   return callRoom(env, route.room, request);
+}
+
+/** Streams a sealed picture out of R2. The membership token was checked by the caller. */
+async function downloadFromR2(env: Env, room: string, name: string): Promise<Response> {
+  const key = r2Key(room, name);
+  if (key === undefined || env.BLOBS === undefined) return failure(400, "bad_request", "The request is not a sealed picture with a valid name.");
+  try {
+    const object = await env.BLOBS.get(key);
+    if (object === null) return failure(404, "image_missing", "The room has no picture with this name.");
+    return new Response(object.body, {
+      status: 200,
+      headers: { "content-type": "application/octet-stream", "content-length": String(object.size), "cache-control": "no-store" },
+    });
+  } catch (error) {
+    console.error("r2 read failed", error);
+    return failure(503, "unavailable", "The server cannot read pictures right now. Trying again soon.", { "retry-after": "5" });
+  }
 }
 
 // ---- the room ------------------------------------------------------------------------------------------------

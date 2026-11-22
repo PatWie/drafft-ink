@@ -1,22 +1,25 @@
 import { DurableObject } from "cloudflare:workers";
 
-import { DatabaseBlobs, type BlobBackend } from "./blobs";
+import { DatabaseBlobs, R2Blobs, type BlobBackend } from "./blobs";
 import { applyEffects } from "./effects";
-import type { Env } from "./env";
-import { relaySettings } from "./env";
-import { DAILY_LIMIT_HEADER, dailyLimit, failure } from "./http";
-import { failureOf } from "./host-error";
+import { blobStore, relaySettings, type Env } from "./env";
+import { DAILY_LIMIT_HEADER, dailyLimit, failure, json } from "./http";
+import { failureOf, HostFailure } from "./host-error";
 import { imageResponse, readLimited } from "./image-http";
 import { parseRoute } from "./routes";
-import { ensureSchema, SqlRoomStore } from "./sql-store";
+import { ensureSchema, isDeleting, markDeleting, SqlRoomStore } from "./sql-store";
 import { legalCloseCode, parseAttachment, Sockets, type Attachment } from "./sockets";
-import { dailyLimitFrame, ImageCall, nextUtcMidnightMs, RoomCore, sealedImageLimit, type Effects, type SqlHost } from "./wasm";
+import { dailyLimitFrame, ImageCall, nextUtcMidnightMs, RoomCore, sealedImageLimit, type Effects, type ImageReply, type SqlHost } from "./wasm";
 import { WakeScheduler } from "./wake";
 
 /** A `webSocketMessage` rewrites the attachment at most this often, to keep `lastMessageAt` roughly current. */
 const ATTACHMENT_REFRESH_MS = 5_000;
 /** After a failed alarm, look again after this long. */
 const ALARM_RETRY_MS = 5 * 60_000;
+/** After a deletion that could not be finished (R2 did not answer), look again after this long. */
+const DELETE_RETRY_MS = 30_000;
+/** Pictures that one R2 listing returns while a room is purged. */
+const R2_PAGE_SIZE = 1000;
 /** Close code for a socket whose frame made the room fail. */
 const CLOSE_INTERNAL_ERROR = 1011;
 /** Close code for "try again later": the host's daily limit is used up. */
@@ -39,7 +42,7 @@ export class Room extends DurableObject<Env> {
     super(ctx, env);
     // The runtime answers the client's keepalive without waking the object (and without a request charge).
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"));
-    this.#blobs = new DatabaseBlobs(() => ctx.storage.sql);
+    this.#blobs = this.#makeBlobs();
     this.#scheduler = new WakeScheduler(
       ctx.storage,
       () => this.now(),
@@ -63,6 +66,25 @@ export class Room extends DurableObject<Env> {
   /** Creates the tables that are missing. A seam for tests, which make it fail. */
   protected prepareStorage(): void {
     ensureSchema(this.ctx.storage.sql);
+  }
+
+  /** The R2 bucket of the private environment. A seam for tests, which wrap it to make R2 fail. */
+  protected bucket(): R2Bucket {
+    const bucket = this.env.BLOBS;
+    if (bucket === undefined) throw new HostFailure("storage", "the R2 binding BLOBS is missing");
+    return bucket;
+  }
+
+  /** How many objects one R2 listing returns while a room is purged. Tests make it small to see the paging. */
+  protected r2PageSize(): number {
+    return R2_PAGE_SIZE;
+  }
+
+  #makeBlobs(): BlobBackend {
+    if (blobStore(this.env) !== "r2") return new DatabaseBlobs(() => this.ctx.storage.sql);
+    const room = this.ctx.id.name;
+    if (room === undefined) throw new Error("the room has no name: it must be reached with idFromName");
+    return new R2Blobs(() => this.ctx.storage.sql, () => this.bucket(), room, this.r2PageSize());
   }
 
   /** The rows of this room. A seam for tests, which wrap it to make the storage fail. */
@@ -137,14 +159,26 @@ export class Room extends DurableObject<Env> {
       }
       body = read;
     }
-    const reply = core.image(now, call, request.headers.get("authorization"), name ?? undefined, body);
+    // A HEAD is answered from the manifest in both modes (`List`): no bytes are read, and in R2 mode there are none here.
+    const asked = head ? ImageCall.List : call;
+    const reply = core.image(now, asked, request.headers.get("authorization"), head ? undefined : (name ?? undefined), body);
     try {
-      if (reply.status === 201) await this.#blobs.settle();
+      // No await between the core's answer and `settle`: the pending write is taken synchronously.
+      const settled = await this.#blobs.settle();
       await this.#scheduler.follow(reply.wakeAt);
-      return imageResponse(reply, head);
+      if (!settled.ok) return this.#writeFailed(settled.reason);
+      return head && name !== null ? headOf(reply, name) : imageResponse(reply, head);
     } finally {
       reply.free();
     }
+  }
+
+  /** A picture that the core accepted but R2 refused: the manifest is rolled back, and the client is told when to retry. */
+  #writeFailed(reason: "rate_limited" | "unavailable"): Response {
+    if (reason === "rate_limited") {
+      return json(429, { error: "rate_limited", message: "Too many pictures at once. Trying again in a moment." }, { "retry-after": "1" });
+    }
+    return failure(503, "unavailable", "The server cannot store pictures right now. Trying again soon.", { "retry-after": "5" });
   }
 
   // ---- sockets ----------------------------------------------------------------------------------------------
@@ -266,6 +300,11 @@ export class Room extends DurableObject<Env> {
     if (roomId === undefined) throw new Error("the room has no name: it must be reached with idFromName");
     // The tables are made on every wake: the database may have been wiped since the last one.
     this.prepareStorage();
+    if (isDeleting(this.ctx.storage.sql)) {
+      // A deletion was started and R2 did not finish it. Nothing else may happen to this room before it does.
+      if (!(await this.#finishDeletion())) throw new HostFailure("storage", "the room is being deleted");
+      this.prepareStorage();
+    }
     const core = new RoomCore(roomId, relaySettings(this.env), this.sqlHost(), this.#blobs);
     this.#core = core;
     this.#sockets.clear();
@@ -306,7 +345,7 @@ export class Room extends DurableObject<Env> {
     }
   }
 
-  /** The room is gone: no alarm, no rows, no sockets, and no memory of it. */
+  /** The room is gone: no sockets, no memory of it, then the R2 objects, the alarm and the rows. */
   async #destroy(): Promise<void> {
     this.#scheduler.reset();
     this.#core = null;
@@ -318,16 +357,41 @@ export class Room extends DurableObject<Env> {
       }
       this.#sockets.remove(conn);
     }
+    await this.#finishDeletion();
+  }
+
+  /**
+   * Cleans out what a deleted room left: first R2 (listing the prefix and deleting in pages), then the alarm, then every
+   * row. The order matters: when R2 fails the rows and the alarm stay, a tombstone says why, and an alarm shortly after
+   * tries again, so nothing in R2 is left without a room that remembers it. `deleteAlarm()` comes before
+   * `deleteAll()` although `deleteAll()` also clears the alarm from compatibility date 2026-02-24 on.
+   */
+  async #finishDeletion(): Promise<boolean> {
     try {
       await this.#blobs.purge();
-      // `deleteAll` also clears the alarm on a compatibility date of 2026-02-24 or later. The explicit call keeps this
-      // code independent of the date.
       await this.ctx.storage.deleteAlarm();
       await this.ctx.storage.deleteAll();
+      this.#scheduler.reset();
+      return true;
     } catch (error) {
-      console.error("room could not be deleted", error);
-      // A fresh core finds the room still past its deadline with nobody in it, and deletes it again.
-      await this.#scheduler.retryLater(ALARM_RETRY_MS);
+      console.error("room could not be deleted yet", error);
+      try {
+        ensureSchema(this.ctx.storage.sql);
+        markDeleting(this.ctx.storage.sql);
+        await this.#scheduler.retryLater(DELETE_RETRY_MS);
+      } catch (markError) {
+        console.error("the unfinished deletion could not be noted", markError);
+      }
+      return false;
     }
   }
+}
+
+/** The reply to a `HEAD`: the size from the manifest listing, without a body. */
+function headOf(reply: ImageReply, name: string): Response {
+  if (reply.status !== 200) return imageResponse(reply, true);
+  const listing = JSON.parse(new TextDecoder().decode(reply.body())) as { name: string; size: number }[];
+  const found = listing.find((entry) => entry.name === name);
+  if (found === undefined) return failure(404, "image_missing", "The room has no picture with this name.");
+  return new Response(null, { status: 200, headers: { "content-type": "application/octet-stream", "content-length": String(found.size), "cache-control": "no-store" } });
 }

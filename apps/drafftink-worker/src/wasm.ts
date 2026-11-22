@@ -6,6 +6,9 @@ import { initSync } from "../pkg/drafftink_worker.js";
 initSync({ module: wasmModule });
 
 export {
+  access_check_claims,
+  access_parse,
+  access_refusal,
   Effects,
   EffectKind,
   ImageCall,
@@ -18,6 +21,8 @@ export {
   isImageName,
   isRoomId,
   nextUtcMidnightMs,
+  r2Key,
+  r2Prefix,
   roomIdOfToken,
   sealedImageLimit,
 } from "../pkg/drafftink_worker.js";

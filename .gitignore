@@ -11,3 +11,4 @@ __pycache__/
 /.env
 .wrangler/
 /apps/drafftink-worker/pkg/
+/apps/drafftink-worker/pkg-node/

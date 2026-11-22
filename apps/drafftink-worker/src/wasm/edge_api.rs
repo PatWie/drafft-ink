@@ -80,3 +80,15 @@ pub fn daily_limit_frame(now_ms: f64) -> Result<Vec<u8>, JsError> {
     }
     message.encode().map_err(|e| js_error(&e))
 }
+
+/// The R2 key prefix of a room (`r/<room hex>/`), or `undefined` for a bad room id.
+#[wasm_bindgen(js_name = r2Prefix)]
+pub fn r2_prefix(room: &str) -> Option<String> {
+    edge::r2_prefix(room).ok()
+}
+
+/// The R2 key of a picture (`r/<room hex>/<name hex>`), or `undefined` for a bad room id or name.
+#[wasm_bindgen(js_name = r2Key)]
+pub fn r2_key(room: &str, name: &str) -> Option<String> {
+    edge::r2_key(room, name).ok()
+}

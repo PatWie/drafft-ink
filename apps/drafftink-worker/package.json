@@ -9,10 +9,12 @@
   },
   "scripts": {
     "build:wasm": "bash scripts/build-wasm.sh",
-    "pretest": "test -f pkg/drafftink_worker_bg.wasm || npm run build:wasm",
-    "typecheck": "tsc --noEmit",
+    "pretest": "test -f pkg/drafftink_worker_bg.wasm && test -f pkg-node/drafftink_worker.js || npm run build:wasm",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
     "test": "vitest run",
-    "dev": "bash scripts/dev.sh"
+    "test:access": "vitest run --project access",
+    "dev": "bash scripts/dev.sh",
+    "smoke:private": "node scripts/private-smoke.mjs"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "1.9.0",

@@ -17,15 +17,15 @@ export const EMAIL = "alice@example.com";
 export const CLIENT_ID = "0123456789abcdef.access";
 
 /**
- * The wasm module of `drafftink-worker`, built for Node by `wasm-bindgen --target nodejs` (see ACCESS.md). The
- * folder comes from `ACCESS_WASM_DIR`, else `<repo>/target/access-wasm`.
+ * The wasm module of `drafftink-worker`, built for Node by `wasm-bindgen --target nodejs` (`npm run build:wasm` writes
+ * it to `pkg-node/`). The folder comes from `ACCESS_WASM_DIR`, else `pkg-node` next to `package.json`.
  */
 export function loadCore(): AccessCore {
   const here = dirname(fileURLToPath(import.meta.url));
-  const dir = process.env.ACCESS_WASM_DIR ?? resolve(here, "../../../target/access-wasm");
+  const dir = process.env.ACCESS_WASM_DIR ?? resolve(here, "../pkg-node");
   const entry = resolve(dir, "drafftink_worker.js");
   if (!existsSync(entry)) {
-    throw new Error(`The wasm module is missing at ${entry}. Build it first: see apps/drafftink-worker/ACCESS.md.`);
+    throw new Error(`The wasm module is missing at ${entry}. Build it first: npm run build:wasm.`);
   }
   return coreFromWasm(createRequire(import.meta.url)(entry) as AccessWasmExports);
 }

@@ -64,6 +64,21 @@ pub fn room_id_of_token(token: &str) -> Option<String> {
         .then(|| RoomId::from_token(&MembershipToken::from_bytes(bytes)).to_string())
 }
 
+/// The R2 key prefix of a room: `r/<room id as hex>/`. Everything the room keeps in R2 lives under it, so a deletion
+/// lists this prefix and nothing else.
+pub fn r2_prefix(room: &str) -> Result<String, EdgeError> {
+    Ok(format!("r/{}/", hex(parse_room(room)?.as_bytes())))
+}
+
+/// The R2 key of one picture: `r/<room id hex>/<name hex>`.
+pub fn r2_key(room: &str, name: &str) -> Result<String, EdgeError> {
+    Ok(format!("{}{}", r2_prefix(room)?, hex(parse_name(name)?.as_bytes())))
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -107,6 +122,17 @@ mod tests {
         for room in ["", "abc", "zzzzzzzzzzzzzzzzzzzzzz==", "../../etc/passwd", &"a".repeat(23)] {
             assert_eq!(check_member(room, Some(&header)), Err(EdgeError::BadRoom), "{room}");
         }
+    }
+
+    #[test]
+    fn r2_keys_are_the_hex_of_the_room_and_the_name() {
+        let room = RoomId::from_bytes([0xAB; 16]).to_string();
+        let name = ImageName::from_bytes([0x01; 16]).to_string();
+        assert_eq!(r2_prefix(&room).unwrap(), format!("r/{}/", "ab".repeat(16)));
+        assert_eq!(r2_key(&room, &name).unwrap(), format!("r/{}/{}", "ab".repeat(16), "01".repeat(16)));
+        assert_eq!(r2_key("nope", &name), Err(EdgeError::BadRoom));
+        assert_eq!(r2_key(&room, "nope"), Err(EdgeError::BadName));
+        assert!(r2_key(&room, &name).unwrap().starts_with(&r2_prefix(&room).unwrap()));
     }
 
     #[test]

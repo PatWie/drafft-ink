@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds the Rust core of the Worker into pkg/ (git-ignored): cargo (release-wasm profile) -> wasm-bindgen -> wasm-opt
+# Builds the Rust core of the Worker into pkg/ (for the Worker) and pkg-node/ (for the Access tests in Node), both git-ignored: cargo (release-wasm profile) -> wasm-bindgen -> wasm-opt
 # when it is installed. wrangler bundles pkg/drafftink_worker_bg.wasm as a wasm module (src/wasm.ts imports it).
 #
 # usage: scripts/build-wasm.sh [--profile NAME]      (default release-wasm; "release" builds faster and bigger)
@@ -36,6 +36,12 @@ WASM="$TARGET_DIR/wasm32-unknown-unknown/$PROFILE/drafftink_worker.wasm"
 rm -rf "$OUT"
 # --target web gives `initSync({ module })`, which is how a Worker instantiates a bundled wasm module.
 wasm-bindgen "$WASM" --target web --out-dir "$OUT" --out-name drafftink_worker
+
+# The Access tests run in plain Node and need the same module built for it (`--target nodejs`).
+rm -rf apps/drafftink-worker/pkg-node
+wasm-bindgen "$WASM" --target nodejs --out-dir apps/drafftink-worker/pkg-node --out-name drafftink_worker
+# wasm-bindgen writes CommonJS; this package is ESM, so the folder says otherwise for itself.
+printf '{"type":"commonjs"}\n' > apps/drafftink-worker/pkg-node/package.json
 
 if command -v wasm-opt >/dev/null 2>&1; then
   wasm-opt -Oz --enable-bulk-memory --enable-nontrapping-float-to-int -o "$OUT/drafftink_worker_bg.wasm" "$OUT/drafftink_worker_bg.wasm"
