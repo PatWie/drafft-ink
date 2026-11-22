@@ -417,9 +417,9 @@ fn expired_room_is_restored_by_one_copy_only(rig: &mut dyn Rig) {
     let mut b = peer(rig, 4, JoinMode::Create, Some(copy(4)), resume.clone());
     let mut c = peer(rig, 5, JoinMode::Create, Some(copy(5)), resume);
     rig.drive(&mut [&mut b, &mut c], "both online and settled", &|p| p[0].settled() && p[1].settled());
-    let created =
-        [b.client().room_state(), c.client().room_state()].iter().filter(|s| **s == Some(RoomState::Created)).count();
-    assert!(created >= 1, "one of them made the room");
+    // At most one of them lost the race for the seed, and it joined the room as the winner made it.
+    let lost = b.client().stats().reconnects + c.client().stats().reconnects;
+    assert!(lost <= 1, "{:?} {:?}", b.client().stats(), c.client().stats());
     assert_eq!(
         (b.ids(), c.ids()),
         (vec!["a1".to_owned()], vec!["a1".to_owned()]),
