@@ -26,7 +26,7 @@ thiserror.workspace = true
 smallvec.workspace = true
 
 [dev-dependencies]
-drafftink-scene = { path = "../scene", features = ["conformance"] }
+drafftink-scene = { path = "../scene", features = ["conformance", "scenegen"] }
 kurbo.workspace = true
 proptest.workspace = true
 criterion.workspace = true

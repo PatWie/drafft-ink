@@ -9,7 +9,7 @@
 //! element names its blob by [`FileId`], and the blob stays in the document's `files`, once for all versions.
 //! [`NamedVersion::files`] lists the blobs a version needs, so nothing that cleans up unused blobs may drop them.
 
-use std::io::Read;
+use std::io::{Read, Write};
 use std::sync::Arc;
 
 use flate2::Compression;
@@ -159,8 +159,11 @@ impl NamedVersion {
         files.dedup();
         let live = elements.iter().filter(|e| !e.deleted).count();
         let wire = WireOut { background: scene.meta().background, elements };
+        // One pass of JSON, then one of deflate: writing the many small pieces of the serialiser straight into the
+        // encoder takes ten times as long.
+        let json = serde_json::to_vec(&wire).map_err(|e| VersionError::Encode(e.to_string()))?;
         let mut enc = ZlibEncoder::new(vec![CODEC_ZLIB_JSON], Compression::default());
-        serde_json::to_writer(&mut enc, &wire).map_err(|e| VersionError::Encode(e.to_string()))?;
+        enc.write_all(&json).map_err(|e| VersionError::Encode(e.to_string()))?;
         let state = enc.finish().map_err(|e| VersionError::Encode(e.to_string()))?;
         if state.len() > MAX_VERSION_STATE_BYTES {
             return Err(VersionError::StateTooLarge { len: state.len(), max: MAX_VERSION_STATE_BYTES });

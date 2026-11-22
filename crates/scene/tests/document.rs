@@ -423,10 +423,9 @@ fn a_document_without_versions_is_still_written_as_version_one() {
     assert!(text.contains(r#""version":1"#) && !text.contains("versions"), "{text}");
     let mut doc = with_a_version();
     doc.versions.clear();
-    assert_eq!(
+    assert!(
         doc.to_json().unwrap().contains(r#""version":2"#),
-        true,
-        "the stored version field alone is not trusted"
+        "a field set by hand is written as it is, and reading decides from the content"
     );
     let back = Document::from_json(&doc.to_json().unwrap()).unwrap();
     assert_eq!((back.schema_version, back.versions.len()), (BASE_SCHEMA_VERSION, 0), "the content decides");

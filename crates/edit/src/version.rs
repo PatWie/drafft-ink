@@ -104,7 +104,7 @@ pub fn restore<T: SceneTx>(tx: &mut T, version: &VersionScene) -> Result<Restore
 #[cfg(test)]
 mod tests {
     use drafftink_scene::{
-        Color, IdSource, MemoryStore, NamedVersion, SceneStore, SeqIds, Transform, ZIndex, snapshot,
+        Color, IdSource, MemoryStore, NamedVersion, SceneRead, SceneStore, SeqIds, Transform, ZIndex, snapshot,
     };
 
     use super::*;

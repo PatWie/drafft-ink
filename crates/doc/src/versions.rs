@@ -13,6 +13,7 @@
 //! | `elements` | integer | live elements in the scene |
 //! | `files` | string | the picture blobs it needs, ids joined by commas; absent when none |
 //! | `state` | binary | the compressed scene (`drafftink_scene::NamedVersion::state`) |
+//! | `kind` | string | **reserved**: absent means a version the user named. A later build may add entries of its own kind (a save made on a timer); this build hides every entry that has the key, so it never shows one as if a person had named it |
 
 use drafftink_scene::{FileId, NamedVersion, VersionId};
 use loro::{LoroMap, LoroValue, ValueOrContainer};
@@ -25,6 +26,7 @@ const KEY_AUTHOR: &str = "author";
 const KEY_ELEMENTS: &str = "elements";
 const KEY_FILES: &str = "files";
 const KEY_STATE: &str = "state";
+const KEY_KIND: &str = "kind";
 
 fn value(map: &LoroMap, key: &str) -> Option<LoroValue> {
     match map.get(key)? {
@@ -50,6 +52,9 @@ fn number(map: &LoroMap, key: &str) -> Option<u64> {
 /// Reads one version. `None` when the entry is not a valid version: a missing or mistyped key, a name or a size that
 /// breaks the rules. Such an entry stays in the CRDT and is hidden from the view, like an invalid element.
 pub(crate) fn read(id: &VersionId, map: &LoroMap) -> Option<NamedVersion> {
+    if map.get(KEY_KIND).is_some() {
+        return None;
+    }
     let files = match text(map, KEY_FILES) {
         Some(list) => list.split(',').map(FileId::new).collect::<Result<Vec<_>, _>>().ok()?,
         None => Vec::new(),

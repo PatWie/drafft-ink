@@ -448,6 +448,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         &Typed::new(save),
         METADATA,
     )
+    .host(crate::spec::Host::effect(crate::spec::HostEffect::CompletesRename))
     .available(available_loaded)
     .refusals(&["empty_name", "too_many_versions", "version_too_large", "versions_too_large", "room_loading"])
     .example(r#"{"name":"Before review"}"#),

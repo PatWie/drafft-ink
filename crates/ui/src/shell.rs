@@ -91,7 +91,7 @@ impl UiShell {
     pub fn frame(&mut self, ui: &mut egui::Ui, session: &mut Session, input: FrameInput) -> FrameResult {
         let ctx = ui.ctx().clone();
         self.model.mac = ctx.os().is_mac();
-        self.sync_library();
+        self.sync_panels();
         self.model.refresh(session);
         self.apply_theme(&ctx);
 
@@ -113,8 +113,8 @@ impl UiShell {
 
         let now = ctx.input(|i| i.time);
         let report = dispatch(session, &mut self.state, actions, now);
-        if self.sync_library() {
-            // The library panel was opened or closed by a verb: read (or stop reading) the library.
+        if self.sync_panels() {
+            // The library or versions panel was opened or closed by a verb: read (or stop reading) its list.
             self.model.refresh(session);
             ctx.request_repaint();
         }
@@ -149,11 +149,14 @@ impl UiShell {
         }
     }
 
-    /// The model reads `library.list` only while the panel is open. Returns true when that changed.
-    fn sync_library(&mut self) -> bool {
-        let changed = self.model.wants_library != self.state.library_open;
+    /// The model reads `library.list` and `version.list` only while their panels are open. Returns true when that
+    /// changed.
+    fn sync_panels(&mut self) -> bool {
+        let changed = self.model.wants_library != self.state.library_open
+            || self.model.wants_versions != self.state.versions_open;
         if changed {
             self.model.wants_library = self.state.library_open;
+            self.model.wants_versions = self.state.versions_open;
             self.model.invalidate();
         }
         changed

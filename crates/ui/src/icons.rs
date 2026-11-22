@@ -97,6 +97,7 @@ pub enum Icon {
     Check,
     ChevronRight,
     ChevronDown,
+    History,
 }
 
 struct Pen<'a> {
@@ -578,6 +579,10 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             pen.poly(&[(3.5, 18.5), (3.5, 6.0), (9.0, 6.0), (11.0, 8.5), (19.5, 8.5), (19.5, 18.5)], true);
             pen.line((3.5, 18.5), (6.0, 12.5));
             pen.line((6.0, 12.5), (21.0, 12.5));
+        }
+        Icon::History => {
+            pen.circle(12.0, 12.0, 8.5);
+            pen.poly(&[(12.0, 6.5), (12.0, 12.0), (15.5, 14.0)], false);
         }
         Icon::Info => {
             pen.circle(12.0, 12.0, 8.5);

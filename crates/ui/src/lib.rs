@@ -13,6 +13,7 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
 pub mod action;
+mod age;
 pub mod args_form;
 pub mod chrome;
 pub mod colors;

@@ -272,7 +272,7 @@ impl DocWrite {
 pub enum HostEffect {
     /// Nothing special.
     None,
-    /// Success closes the rename dialog that asked for it (`doc.rename`, `tab.rename`, `library.rename`, `frame.rename`).
+    /// Success closes the rename dialog that asked for it (`doc.rename`, `tab.rename`, `library.rename`, `frame.rename`, `version.rename`, `version.save`).
     CompletesRename,
     /// Like `CompletesRename`, and a pending Save As goes on to ask for the place (`doc.rename`).
     CompletesRenameThenSaveAs,

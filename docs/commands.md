@@ -1859,7 +1859,7 @@ Four more facts of a registration, kept apart from the table above because most 
 | `gesture.cancel` | managed | ends_gesture | silent | repeats | n | n |
 | `history.undo` | managed | - | show | repeats | n | n |
 | `history.redo` | managed | - | show | repeats | n | n |
-| `version.save` | metadata | - | show | repeats | n | n |
+| `version.save` | metadata | completes_rename | show | repeats | n | n |
 | `version.rename` | metadata | completes_rename | show | repeats | n | n |
 | `version.delete` | metadata | - | show | repeats | n | n |
 | `library.add` | not_document | completes_library_add | show | repeats | n | n |

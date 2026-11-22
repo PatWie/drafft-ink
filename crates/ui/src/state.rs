@@ -257,6 +257,10 @@ pub enum RenameTarget {
     LibraryItem(String),
     /// A section of the library, by its id: `library.rename_section`.
     LibrarySection(String),
+    /// A named version, by its id: `version.rename`.
+    Version(String),
+    /// The name of a version that is about to be saved: `version.save`. The field starts empty.
+    NewVersion,
     /// A frame element, by its id: `frame.rename`.
     Frame(String),
 }
@@ -436,6 +440,24 @@ pub struct LibraryMenu {
     pub screen: egui::Pos2,
 }
 
+/// The row menu of a version in the versions panel (opens at the click, like the library tile menu).
+#[derive(Debug, Clone, PartialEq)]
+pub struct VersionMenu {
+    /// The version id.
+    pub id: String,
+    /// Where the click was, in screen points.
+    pub screen: egui::Pos2,
+}
+
+/// What the versions panel asks the person to confirm before it runs a command that is hard to take back.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VersionAsk {
+    /// `version.restore` of this version.
+    Restore(String),
+    /// `version.delete` of this version, which nothing takes back.
+    Delete(String),
+}
+
 /// How much room the layout leaves for fingers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum LayoutPreference {
@@ -583,6 +605,12 @@ pub struct UiState {
     pub(crate) library_known: Option<HashSet<String>>,
     /// The section the person is asked to confirm the removal of (`library.remove_section`), by id.
     pub library_remove: Option<String>,
+    /// The versions panel is open.
+    pub versions_open: bool,
+    /// The row menu of a version, when open.
+    pub version_menu: Option<VersionMenu>,
+    /// The version command the person is asked to confirm, when one is.
+    pub version_ask: Option<VersionAsk>,
     /// The Tab convert popup, when open.
     pub convert_popup: Option<ConvertPopup>,
     /// The context menu of a tab, when open.
@@ -653,12 +681,18 @@ impl UiState {
             || self.convert_popup.is_some()
             || self.tab_menu.is_some()
             || self.library_menu.is_some()
+            || self.version_menu.is_some()
+            || self.version_ask.is_some()
     }
 
     /// True while a popup menu is open (the hamburger, the context menu, a tab menu, a library tile menu). The arrow keys and Enter
     /// belong to it, not to the canvas.
     pub fn popup_menu_open(&self) -> bool {
-        self.menu_open || self.context_menu.is_some() || self.tab_menu.is_some() || self.library_menu.is_some()
+        self.menu_open
+            || self.context_menu.is_some()
+            || self.tab_menu.is_some()
+            || self.library_menu.is_some()
+            || self.version_menu.is_some()
     }
 
     /// True when a modal dialog is open and keys must not reach the canvas.
@@ -673,6 +707,7 @@ impl UiState {
             || self.search_open
             || self.rename.is_some()
             || self.library_remove.is_some()
+            || self.version_ask.is_some()
             || self.save_as.is_some()
             || self.export.is_some()
             || self.preferences_open
@@ -707,6 +742,8 @@ impl UiState {
         self.convert_popup = None;
         self.tab_menu = None;
         self.library_menu = None;
+        self.version_menu = None;
+        self.version_ask = None;
         was
     }
 
@@ -739,6 +776,11 @@ impl UiState {
                 self.preferences_open = true;
             }
             Verb::ToggleLibrary => self.library_open = !self.library_open,
+            Verb::ToggleVersions => {
+                let open = !self.versions_open;
+                self.close_overlays();
+                self.versions_open = open;
+            }
             Verb::RenameDocument => {
                 self.close_overlays();
                 self.rename = Some(RenameState::new(RenameTarget::Document));

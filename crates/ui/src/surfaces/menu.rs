@@ -86,6 +86,7 @@ fn menu_rows(ui: &mut egui::Ui, cx: &mut Cx<'_>, debug_open: bool) -> bool {
         m.command(Ctl::new("doc.save"), Row::new().icon(Icon::Save));
         m.verb(Verb::SaveAs, "Save as", Row::new().dialog(), None);
         m.verb(Verb::RenameDocument, "Rename document", Row::new().dialog(), None);
+        m.verb(Verb::ToggleVersions, "Versions", Row::new().icon(Icon::History), None);
         m.command(Ctl::new("doc.clear"), Row::new().icon(Icon::Delete));
 
         m.heading("Export");

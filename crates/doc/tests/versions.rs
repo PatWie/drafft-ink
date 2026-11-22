@@ -160,6 +160,9 @@ fn the_limit_on_stored_versions_is_enforced_by_the_store() {
     assert!(matches!(tx.put_version(over), Err(StoreError::BadVersion(VersionRejection::TooMany { .. }))));
 }
 
+/// How a test spoils the entry of the hostile writer.
+type Spoil = Box<dyn FnOnce(&loro::LoroMap)>;
+
 /// A second writer that bypasses every rule of the model.
 fn hostile_entry(store: &LoroStore, write: impl FnOnce(&loro::LoroMap)) -> LoroStore {
     let doc = LoroDoc::new();
@@ -178,7 +181,7 @@ fn hostile_version_entries_are_hidden_and_the_others_stay() {
     let mut a = scene_with(1);
     let good = save(&mut a, "v1", "Good", 1);
     let state = LoroValue::from(good.state.to_vec());
-    let cases: [(&str, Box<dyn FnOnce(&loro::LoroMap)>); 5] = [
+    let cases: [(&str, Spoil); 5] = [
         ("empty", Box::new(|_| {})),
         (
             "bad name",
@@ -235,6 +238,27 @@ fn hostile_version_entries_are_hidden_and_the_others_stay() {
 }
 
 #[test]
+fn an_entry_of_a_kind_this_build_does_not_know_is_not_shown_as_a_named_version() {
+    let mut a = scene_with(1);
+    let good = save(&mut a, "v1", "Named", 1);
+    let state = LoroValue::from(good.state.to_vec());
+    let to = hostile_entry(&a, move |m| {
+        m.insert("name", "Saved by a timer").unwrap();
+        m.insert("at", 2i64).unwrap();
+        m.insert("elements", 1i64).unwrap();
+        m.insert("state", state).unwrap();
+        m.insert("kind", "auto").unwrap();
+    });
+    assert_eq!(names(&to), vec!["Named"], "the reserved key keeps a later kind of entry out of the list");
+    let again = LoroStore::from_snapshot(&to.export_snapshot().unwrap()).unwrap();
+    assert_eq!(names(&again), vec!["Named"]);
+    assert!(
+        again.export_snapshot().unwrap().len() >= to.export_snapshot().unwrap().len() - 64,
+        "and the entry is kept in the document, not dropped"
+    );
+}
+
+#[test]
 fn an_unreadable_scene_inside_a_valid_entry_fails_when_opened_and_not_before() {
     let mut a = scene_with(1);
     let good = save(&mut a, "v1", "Good", 1);
@@ -272,4 +296,40 @@ fn replacing_a_document_from_a_snapshot_replaces_its_versions() {
     let cs = b.replace_from_snapshot(&a.export_snapshot().unwrap()).unwrap();
     assert_eq!(names(&b), vec!["Ana's"]);
     assert_eq!(cs.versions.len(), 2, "one added and one removed");
+}
+
+#[test]
+fn a_version_costs_its_stored_size_in_a_state_and_twice_that_in_a_full_snapshot() {
+    let intro = Document::from_json(include_str!("../../engine/assets/intro/intro.json")).unwrap();
+    let thousand = scenegen::generate(1_000, 1).unwrap();
+    let mut report = String::new();
+    for (name, doc) in [("intro", intro), ("1k", thousand)] {
+        let mut s = LoroStore::from_document(&doc).unwrap();
+        let sizes = |s: &LoroStore| (s.export_snapshot().unwrap().len(), s.export_state_only().unwrap().len());
+        // The state-only form keeps the latest commit as history, so an edit comes after each thing measured.
+        let first = doc.elements[0].id.clone();
+        edit(&mut s, first.as_str(), |e| e.transform.x += 1.0);
+        let (full0, state0) = sizes(&s);
+        let v = save(&mut s, "v1", "One", 1);
+        edit(&mut s, first.as_str(), |e| e.transform.x += 1.0);
+        let (full1, state1) = sizes(&s);
+        let own = v.stored_bytes();
+        report.push_str(&format!(
+            "{name}: version {own} B; snapshot {full0} -> {full1} (+{}), state only {state0} -> {state1} (+{})\n",
+            full1 - full0,
+            state1 - state0
+        ));
+        // The state holds the scene once. A full snapshot also holds the operation that wrote it, so twice.
+        for (what, grew, times) in [("snapshot", full1 - full0, 2), ("state only", state1 - state0, 1)] {
+            assert!(grew >= own * 9 / 10, "{name} {what}: grew by {grew}, the version alone is {own}");
+            assert!(grew <= times * own + 2_000, "{name} {what}: grew by {grew}, the version alone is {own}");
+        }
+        // A rename is a few bytes of history, not a second copy of the scene.
+        let mut tx = s.begin();
+        tx.not_undoable();
+        tx.rename_version(&v.id, "Renamed").unwrap();
+        tx.commit().unwrap();
+        assert!(s.export_snapshot().unwrap().len() - full1 < 200, "{name}: a rename is small");
+    }
+    eprintln!("{report}");
 }

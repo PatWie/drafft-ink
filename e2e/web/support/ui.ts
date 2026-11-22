@@ -41,8 +41,8 @@ export function toolButton(tool: ColumnTool): Pt {
 /** The first row of the main menu, "New tab" (under the "File" heading): x 23..255, y 110..138. */
 export const MENU_NEW_TAB: Pt = { x: 50, y: 124 };
 
-/** "Export as PNG", the first row under the "Export" heading: 28 points high, centred at y 354, `top_strip.rs`. */
-export const MENU_EXPORT_AS_PNG: Pt = { x: 50, y: 354 };
+/** "Export as PNG", the first row under the "Export" heading: 28 points high, centred at y 383, `top_strip.rs`. */
+export const MENU_EXPORT_AS_PNG: Pt = { x: 50, y: 383 };
 
 /** The area the open main menu covers, under the menu button: its rows are at least this wide and 400 points tall. */
 const MENU_PANEL: Region = { x: 23, y: 110, w: 232, h: 400 };

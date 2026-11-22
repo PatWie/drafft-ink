@@ -123,6 +123,8 @@ pub enum Verb {
     OpenPreferences,
     /// `ui.toggle_library`: the library panel, ends with `library.*`.
     ToggleLibrary,
+    /// `ui.toggle_versions`: the versions panel, ends with `version.*`.
+    ToggleVersions,
     /// `ui.rename_document`: the rename field for the document, ends with `doc.rename`.
     RenameDocument,
     /// `ui.open_about`: the About dialog: version, licence, and the offer of the source code.
@@ -131,7 +133,7 @@ pub enum Verb {
 
 impl Verb {
     /// Every verb, in the order of docs/commands.md §6.3.
-    pub const ALL: [Verb; 28] = [
+    pub const ALL: [Verb; 29] = [
         Verb::CloseOverlays,
         Verb::ToggleMenu,
         Verb::OpenFile,
@@ -158,6 +160,7 @@ impl Verb {
         Verb::OpenExport,
         Verb::OpenPreferences,
         Verb::ToggleLibrary,
+        Verb::ToggleVersions,
         Verb::RenameDocument,
         Verb::OpenAbout,
     ];
@@ -188,6 +191,7 @@ impl Verb {
             Verb::OpenExport => "ui.open_export",
             Verb::OpenPreferences => "ui.open_preferences",
             Verb::ToggleLibrary => "ui.toggle_library",
+            Verb::ToggleVersions => "ui.toggle_versions",
             Verb::RenameDocument => "ui.rename_document",
             Verb::OpenAbout => "ui.open_about",
         }
@@ -222,6 +226,7 @@ impl Verb {
             Verb::OpenExport => "Export…",
             Verb::OpenPreferences => "Preferences",
             Verb::ToggleLibrary => "Show or hide the library",
+            Verb::ToggleVersions => "Show or hide the versions",
             Verb::RenameDocument => "Rename the document",
             Verb::OpenAbout => "About Drafft.ink",
         }

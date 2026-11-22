@@ -56,6 +56,8 @@ leave:       client_mut().leave(now, &mut store); pump
 
 Remote operations are never sent back. This needed a fix in `drafftink-doc`: `take_unsent_update` used to return operations that arrived by `apply_remote` (regression test `remote_operations_are_not_handed_back_as_unsent`).
 
+Named versions (`docs/design/versions.md`) need no step of their own: a save is one commit with the origin `sys:local`, so it leaves as one ordinary update (at most 2 MiB of state, under the 4 MiB update limit), and a rename or a delete is a few bytes. The test `versions_named_at_once_by_two_clients_reach_everyone_and_a_late_joiner_through_the_server` runs two clients, a late joiner and a server restart against the real server.
+
 ## The access token
 
 A server started with `auth_tokens` (`docs/server.md`) accepts a join only when the first frame carries one of them. The engine passes the token to `CollabConfig::auth_token`; the client holds it as `AuthToken` and sends it in the `Join` frame. A missing or wrong token ends the client with `Unauthorized`, whose text asks for a new token.

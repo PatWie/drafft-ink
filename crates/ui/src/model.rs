@@ -282,6 +282,21 @@ pub struct LibrarySection {
     pub items: usize,
 }
 
+/// One named version, from `version.list`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VersionRow {
+    /// The id, which the `version` commands take.
+    pub id: String,
+    /// The name.
+    pub name: String,
+    /// When it was saved, in milliseconds since the Unix epoch.
+    pub created_ms: u64,
+    /// Who saved it, when they had set a name.
+    pub author: Option<String>,
+    /// Live elements in the scene it holds.
+    pub elements: u64,
+}
+
 /// A tab as the tab bar shows it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TabView {
@@ -556,6 +571,13 @@ pub struct Model {
     pub library_error: Option<String>,
     /// The library panel is open, so [`Model::refresh`] reads `library.list`. Set by the shell.
     pub wants_library: bool,
+    /// The named versions of the active document, newest first, read while [`Model::wants_versions`] is set.
+    pub versions: Vec<VersionRow>,
+    /// The versions panel is open, so [`Model::refresh`] reads `version.list`. Set by the shell.
+    pub wants_versions: bool,
+    /// The time of the session's clock at the last refresh, in milliseconds since the Unix epoch: what a version's
+    /// age is counted from.
+    pub now_ms: u64,
     /// The pictures of the library items, asked for with `library.thumbnail` by [`Model::read_thumbnails`].
     pub thumbnails: Thumbnails,
     /// The style of the selection or the defaults.
@@ -614,6 +636,9 @@ impl Default for Model {
             library_sections: Vec::new(),
             library_error: None,
             wants_library: false,
+            versions: Vec::new(),
+            wants_versions: false,
+            now_ms: 0,
             thumbnails: Thumbnails::default(),
             style: StyleView::default(),
             settings: BTreeMap::new(),
@@ -719,6 +744,7 @@ impl Model {
         // After the capture, which reads the settings. The camera moves without changing the stamp, so this runs
         // every time; it costs nothing while the minimap is off.
         self.sync_minimap(s);
+        self.now_ms = s.now_ms();
         !unchanged
     }
 
@@ -810,6 +836,7 @@ impl Model {
         self.style = read_style(s);
         self.view = read_view(s);
         let read = if self.wants_library { read_library(s) } else { Ok(LibraryRead::default()) };
+        self.versions = if self.wants_versions { read_versions(s) } else { Vec::new() };
         (self.library, self.library_sections, self.library_error) = match read {
             Ok(LibraryRead { items, sections }) => (items, sections, None),
             Err(why) => (Vec::new(), Vec::new(), Some(why)),
@@ -1109,6 +1136,23 @@ fn read_library(s: &mut Session) -> Result<LibraryRead, String> {
         })
         .collect();
     Ok(LibraryRead { items, sections })
+}
+
+/// Reads the versions with `version.list`. A refusal leaves the list empty.
+fn read_versions(s: &mut Session) -> Vec<VersionRow> {
+    let Ok(out) = s.query("version.list", json!({})) else { return Vec::new() };
+    let list = out.get("versions").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
+    list.iter()
+        .filter_map(|v| {
+            Some(VersionRow {
+                id: text_of(v, "id")?.to_owned(),
+                name: text_of(v, "name").unwrap_or_default().to_owned(),
+                created_ms: v.get("created_ms").and_then(Value::as_u64).unwrap_or(0),
+                author: text_of(v, "author").map(str::to_owned),
+                elements: v.get("elements").and_then(Value::as_u64).unwrap_or(0),
+            })
+        })
+        .collect()
 }
 
 /// Reads the style panel's data with `style.get`: the style of the selection, or the defaults for new
