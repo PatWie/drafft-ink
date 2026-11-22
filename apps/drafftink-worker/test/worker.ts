@@ -19,6 +19,8 @@ export interface Probe {
   failFetchWith: Error | null;
   /** When set, every storage call of a room throws this (a quota error inside the object). */
   failStorageWith: Error | null;
+  /** When set, creating the tables throws this (a quota error while a room wakes). */
+  failSchemaWith: Error | null;
   /** Room instances built so far: a hibernation shows as a new one. */
   constructed: number;
 }
@@ -29,7 +31,7 @@ export function probe(): Probe {
   const holder = globalThis as unknown as Record<symbol, Probe | undefined>;
   const existing = holder[KEY];
   if (existing !== undefined) return existing;
-  const fresh: Probe = { clockOffsetMs: 0, objectCalls: 0, socketMessages: 0, alarms: 0, failFetchWith: null, failStorageWith: null, constructed: 0 };
+  const fresh: Probe = { clockOffsetMs: 0, objectCalls: 0, socketMessages: 0, alarms: 0, failFetchWith: null, failStorageWith: null, failSchemaWith: null, constructed: 0 };
   holder[KEY] = fresh;
   return fresh;
 }
@@ -64,6 +66,12 @@ export class Room extends ProductionRoom {
   protected override heardAt(ws: WebSocket): number | null {
     const real = super.heardAt(ws);
     return real === null ? null : real + probe().clockOffsetMs;
+  }
+
+  protected override prepareStorage(): void {
+    const failure = probe().failSchemaWith;
+    if (failure !== null) throw failureOf(failure);
+    super.prepareStorage();
   }
 
   protected override sqlHost(): SqlHost {

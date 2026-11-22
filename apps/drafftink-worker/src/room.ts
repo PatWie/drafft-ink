@@ -10,7 +10,7 @@ import { imageResponse, readLimited } from "./image-http";
 import { parseRoute } from "./routes";
 import { ensureSchema, SqlRoomStore } from "./sql-store";
 import { legalCloseCode, parseAttachment, Sockets, type Attachment } from "./sockets";
-import { ImageCall, RoomCore, sealedImageLimit, nextUtcMidnightMs, type Effects, type SqlHost } from "./wasm";
+import { dailyLimitFrame, ImageCall, nextUtcMidnightMs, RoomCore, sealedImageLimit, type Effects, type SqlHost } from "./wasm";
 import { WakeScheduler } from "./wake";
 
 /** A `webSocketMessage` rewrites the attachment at most this often, to keep `lastMessageAt` roughly current. */
@@ -19,6 +19,8 @@ const ATTACHMENT_REFRESH_MS = 5_000;
 const ALARM_RETRY_MS = 5 * 60_000;
 /** Close code for a socket whose frame made the room fail. */
 const CLOSE_INTERNAL_ERROR = 1011;
+/** Close code for "try again later": the host's daily limit is used up. */
+const CLOSE_TRY_AGAIN_LATER = 1013;
 
 /**
  * One room: a SQLite-backed Durable Object that owns the sockets, the clock and the storage calls, and hands every
@@ -56,6 +58,11 @@ export class Room extends DurableObject<Env> {
    */
   protected heardAt(ws: WebSocket): number | null {
     return this.ctx.getWebSocketAutoResponseTimestamp(ws)?.getTime() ?? null;
+  }
+
+  /** Creates the tables that are missing. A seam for tests, which make it fail. */
+  protected prepareStorage(): void {
+    ensureSchema(this.ctx.storage.sql);
   }
 
   /** The rows of this room. A seam for tests, which wrap it to make the storage fail. */
@@ -181,11 +188,18 @@ export class Room extends DurableObject<Env> {
       console.error("room handler failed", error);
       // The core may be in an unknown state: rebuild it from storage and the sockets on the next call.
       this.#core = null;
-      try {
-        ws.close(CLOSE_INTERNAL_ERROR, "");
-      } catch {
-        // Already closed.
-      }
+      this.#refuse(ws, error);
+    }
+  }
+
+  /** Ends a socket whose handler failed: a used-up daily limit is said with a frame and 1013, anything else is 1011. */
+  #refuse(ws: WebSocket, error: unknown): void {
+    const quota = failureOf(error).kind === "daily_limit";
+    try {
+      if (quota) ws.send(dailyLimitFrame(this.now()));
+      ws.close(quota ? CLOSE_TRY_AGAIN_LATER : CLOSE_INTERNAL_ERROR, "");
+    } catch {
+      // Already closed.
     }
   }
 
@@ -251,7 +265,7 @@ export class Room extends DurableObject<Env> {
     const roomId = this.ctx.id.name;
     if (roomId === undefined) throw new Error("the room has no name: it must be reached with idFromName");
     // The tables are made on every wake: the database may have been wiped since the last one.
-    ensureSchema(this.ctx.storage.sql);
+    this.prepareStorage();
     const core = new RoomCore(roomId, relaySettings(this.env), this.sqlHost(), this.#blobs);
     this.#core = core;
     this.#sockets.clear();

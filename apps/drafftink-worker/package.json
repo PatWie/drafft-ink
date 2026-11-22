@@ -9,6 +9,7 @@
   },
   "scripts": {
     "build:wasm": "bash scripts/build-wasm.sh",
+    "pretest": "test -f pkg/drafftink_worker_bg.wasm || npm run build:wasm",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "dev": "bash scripts/dev.sh"
