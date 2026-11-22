@@ -1,7 +1,7 @@
 //! The controls of each ribbon group. Every one is a command (`style.set` and the others of the catalog) or a
 //! UI verb; the choices that only the UI knows (which menu is open) live in `UiState`.
 
-use drafftink_engine::state::Tool;
+use drafftink_engine::state::{MarkerColor, Tool};
 use drafftink_scene::Head;
 use egui::{Color32, FontId, Painter, Rect, Response, Role, Sense, Stroke, Ui, WidgetInfo, pos2, vec2};
 use serde_json::{Value, json};
@@ -57,6 +57,7 @@ pub(super) const TEXT_ALIGNS: [(&str, &str, Align); 3] =
 pub(super) const ARROW_TYPES: [(&str, &str); 4] =
     [("Sharp", "sharp"), ("Round", "round"), ("Elbow", "elbow"), ("Auto route", "auto_route")];
 const BRUSHES: [(&str, &str); 2] = [("Normal", "normal"), ("Calligraphy", "calligraphy")];
+const TIPS: [(&str, &str); 2] = [("Round", "round"), ("Chisel", "chisel")];
 const STROKE_STYLES: [(LineStyle, &str, &str); 3] = [
     (LineStyle::Solid, "solid", "Solid"),
     (LineStyle::Dashed, "dashed", "Dashed"),
@@ -90,6 +91,8 @@ impl Row {
             Row::ArrowPath => arrow_path(ui, cx),
             Row::ArrowHeads => arrow_heads(ui, cx, st),
             Row::Brush => brush(ui, cx),
+            Row::Tip => tip(ui, cx),
+            Row::Marker => marker(ui, cx),
             Row::FontFamily => font_family(ui, cx, st),
             Row::FontWeight => font_weight(ui, cx),
             Row::TextSize => text_size(ui, cx),
@@ -447,6 +450,34 @@ fn brush(ui: &mut Ui, cx: &mut Cx<'_>) {
             .selected(current.as_deref() == Some(value));
         chip(cx, ui, &ctl, name);
     }
+}
+
+fn tip(ui: &mut Ui, cx: &mut Cx<'_>) {
+    let current = cx.model.style.str_value("tip").map(str::to_owned);
+    for (name, value) in TIPS {
+        let ctl = style_ctl("tip", value).label(format!("Tip: {name}")).selected(current.as_deref() == Some(value));
+        chip(cx, ui, &ctl, name);
+    }
+}
+
+/// The colours of the highlighter, and "None" (a drag then takes the highlight off).
+fn marker(ui: &mut Ui, cx: &mut Cx<'_>) {
+    let current = cx.model.marker;
+    for color in MarkerColor::ALL {
+        let name = format!("{color:?}");
+        let ctl = Ctl::new("tool.set_marker")
+            .args(json!({ "color": color }))
+            .label(format!("Marker: {name}"))
+            .selected(current == Some(color));
+        let (r, g, b, _) = color.rgba();
+        let swatch = Color32::from_rgb(r, g, b);
+        picture(cx, ui, &ctl, move |p, rect, _| {
+            p.rect_filled(rect, rect.width() * 0.2, swatch);
+        });
+    }
+    let none =
+        Ctl::new("tool.set_marker").args(json!({ "color": null })).label("Marker: none").selected(current.is_none());
+    chip(cx, ui, &none, "None");
 }
 
 // ---- text ----

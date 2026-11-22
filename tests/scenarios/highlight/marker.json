@@ -1,0 +1,18 @@
+{
+  "about": "The highlighter tool's colour is tool state (tool.set_marker, null is none) and makes no history. highlight.apply refuses an empty call, and in a build without the highlight style property it refuses to write and changes nothing; once that property is wired, this scenario gets its ok path and its undo step.",
+  "steps": [
+    { "assert": "engine.state", "expect": [ { "path": "$.tool", "eq": "select" } ] },
+    { "execute": "tool.set_marker", "args": { "color": "pink" }, "expect": [ { "path": "$.changed", "eq": true }, { "path": "$.color", "eq": "pink" } ] },
+    { "execute": "tool.set_marker", "args": { "color": "pink" }, "expect": [ { "path": "$.changed", "eq": false } ] },
+    { "execute": "tool.set_marker", "args": { "color": null }, "expect": [ { "path": "$.changed", "eq": true }, { "path": "$.color", "eq": null } ], "note": "None: a drag of the highlighter then removes the highlight." },
+    { "execute": "tool.set_marker", "args": { "color": "purple" }, "refused": "bad_args", "text": ["purple", "yellow"] },
+
+    { "execute": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 0, "y": 0, "w": 100, "h": 60 } }, "save": { "box": "$.id" } },
+    { "execute": "highlight.apply", "args": { "targets": [] }, "refused": "bad_args", "text": ["targets"] },
+    { "execute": "highlight.apply", "args": { "targets": [ { "id": "{{box}}" } ], "color": "yellow" }, "refused": "highlight_unavailable", "text": ["not available"] },
+    { "execute": "highlight.apply", "args": { "targets": [ { "id": "nope" } ], "color": "yellow" }, "refused": "not_found" },
+
+    { "undo": 1, "expect": [ { "path": "$.changed", "eq": true, "note": "Only the rectangle is history." } ] },
+    { "undo": 1, "refused": "nothing_to_undo", "note": "Neither the colour nor the refused highlights made history." }
+  ]
+}

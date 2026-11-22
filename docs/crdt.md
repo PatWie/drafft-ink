@@ -54,7 +54,7 @@ Kind data keys (`kind.` plus the field name of `docs/model.md` section 4):
 | Kind | Keys |
 |---|---|
 | `line`, `arrow` | `kind.points` (binary), `kind.path`, `kind.start_binding`, `kind.end_binding` (maps, whole), `kind.start_head`, `kind.end_head`, `kind.head_size`, `kind.fixed_segments` (list of maps, whole), `kind.start_is_special`, `kind.end_is_special`, `kind.closed` |
-| `freehand` | `kind.points` (binary), `kind.pressures` (binary), `kind.pressure_mode`, `kind.brush`, `kind.highlighter`, `kind.closed` |
+| `freehand` | `kind.points` (binary), `kind.pressures` (binary), `kind.pressure_mode`, `kind.brush`, `kind.tip` (only when chisel; an old `kind.highlighter` true reads as chisel), `kind.closed` |
 | `text` | `kind.content` (**LoroText** with `color` marks), `kind.font.family`, `kind.font.size`, `kind.font.weight`, `kind.font.align`, `kind.font.vertical_align`, `kind.font.line_height`, `kind.font.inline_math` (only when `off`), `kind.auto_resize`, `kind.container_id`, `kind.label_position` |
 | `math` | `kind.latex`, `kind.font_size` |
 | `image` | `kind.file_id`, `kind.natural_width`, `kind.natural_height`, `kind.crop` (map, whole), and for each stroke of the paint `kind.paint.<stroke id>.<field>`: `size`, `hardness`, `opacity`, `color`, `mode` (only when `erase`), `points` and `pressures` (binary, packed as `kind.points`; `pressures` only when the stroke has them) |

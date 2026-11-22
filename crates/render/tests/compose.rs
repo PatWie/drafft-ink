@@ -616,7 +616,7 @@ fn fully_set_elements() -> Vec<Element> {
     freehand.pressures = vec![0.2, 0.5, 0.9];
     freehand.pressure_mode = PressureMode::Device;
     freehand.brush = Brush::Calligraphy;
-    freehand.highlighter = true;
+    freehand.tip = drafftink_scene::Tip::Chisel;
     freehand.closed = true;
     let mut text = TextData::new("hello");
     text.runs = vec![TextRun { start: 1, end: 3, color: Some(Color::rgb(7, 8, 9)), bold: true, italic: true }];

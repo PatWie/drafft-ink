@@ -43,7 +43,7 @@ pub use document::{DocMeta, Document, DocumentError, FORMAT_NAME, FileEntry, SCH
 pub use element::{
     BindMode, Binding, Brush, CharStyle, Crop, DEFAULT_HEAD_SIZE, Element, ElementKind, FixedSegment, FrameData,
     FreehandData, Head, ImageData, Kind, LinearData, LinearKind, MathData, ParseKindError, PathType, PressureMode,
-    RefitError, TextData, TextRun, Transform, default_head_size,
+    RefitError, TextData, TextRun, Tip, Transform, default_head_size,
 };
 pub use id::{
     ElementId, FileId, GroupId, IdError, IdSource, MAX_ID_LEN, RandomIds, Rng64, SeqIds, SplitMix64, StrokeId,

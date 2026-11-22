@@ -36,7 +36,7 @@ impl Element {
     pub fn is_closed_outline(&self) -> bool {
         match &self.kind {
             ElementKind::Line(d) | ElementKind::Arrow(d) => d.closed,
-            ElementKind::Freehand(f) => f.closed && !f.highlighter,
+            ElementKind::Freehand(f) => f.closed && f.tip == crate::element::Tip::Round,
             _ => false,
         }
     }

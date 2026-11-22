@@ -29,6 +29,11 @@ impl Snaps {
         Self { grid: cx.setting("snap.grid", false), smart: cx.setting("snap.smart_guides", false), angle: false }
     }
 
+    /// Only the angle lock: a straightened freehand stroke turns about its anchor and snaps to nothing else.
+    pub(super) fn angle_only() -> Self {
+        Self { grid: false, smart: false, angle: true }
+    }
+
     /// The snapping for a line or arrow point: grid, guides and the angle lock.
     pub(super) fn line(cx: &Ctx<'_>) -> Self {
         Self { angle: cx.mods.shift || cx.setting("snap.angle", false), ..Self::corner(cx) }

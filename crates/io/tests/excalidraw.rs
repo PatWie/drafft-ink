@@ -935,7 +935,7 @@ fn native_documents_survive_a_trip_through_excalidraw() {
     fh.pressures = vec![0.1, 0.5, 0.9];
     fh.pressure_mode = PressureMode::Device;
     fh.brush = Brush::Calligraphy;
-    fh.highlighter = true;
+    fh.tip = drafftink_scene::Tip::Chisel;
     fh.closed = true;
     base_element(&mut doc, ElementKind::Freehand(fh), 500.0, 200.0, 20.0, 5.0);
     // Text: serif light, per-character runs, a label for the rectangle; another for the arrow.

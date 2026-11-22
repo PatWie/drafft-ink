@@ -237,7 +237,16 @@ fn the_tool_and_settings_of_a_session_are_only_read() {
                     let end = tail.find(|c: char| !c.is_alphanumeric() && c != '_').unwrap_or(tail.len());
                     let word = &tail[..end];
                     let ok: &[&str] = if field == "tool" {
-                        &["active", "lock", "temporary", "effective", "defaults", "style_defaults", "paint_brush"]
+                        &[
+                            "active",
+                            "lock",
+                            "temporary",
+                            "effective",
+                            "defaults",
+                            "style_defaults",
+                            "paint_brush",
+                            "marker",
+                        ]
                     } else {
                         &["iter", "get", "revision", "bool_or", "f64_or", "u64_or"]
                     };

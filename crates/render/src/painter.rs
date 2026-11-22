@@ -8,14 +8,15 @@
 
 use std::sync::Arc;
 
+use drafftink_geom::chisel::Nib;
 use drafftink_profile::{Counter, count};
 use drafftink_scene::{
     Color, Element, ElementKind, FileId, FillPattern, FreehandData, Head, ImageData as ImageElem, LabelCut, MathData,
-    TextData,
+    TextData, Tip,
 };
 use drafftink_sketch::{FillKind, SketchCache, SketchGeometry, fit_head_size};
 use drafftink_typeset::{MathFontSlot, Typesetter};
-use kurbo::{Affine, BezPath, Cap, Circle, Join, Point, Rect, RoundedRect, Shape, Stroke, Vec2};
+use kurbo::{Affine, BezPath, Circle, Point, Rect, RoundedRect, Shape, Stroke, Vec2};
 use peniko::{Fill, ImageBrush, Mix};
 use vello::{Glyph, Scene};
 
@@ -102,7 +103,7 @@ impl ElementPainter {
                     ink.scene.pop_layer();
                 }
             }
-            ElementKind::Freehand(f) if f.highlighter => paint_highlighter(&mut ink, e, f),
+            ElementKind::Freehand(f) if f.tip == Tip::Chisel => paint_chisel(&mut ink, e, f),
             ElementKind::Freehand(_) => self.paint_sketch(&mut ink, e),
             ElementKind::Text(t) => paint_text(&mut ink, e, t, typesetter, None),
             ElementKind::Math(m) => paint_math(&mut ink, e, m, typesetter),
@@ -352,30 +353,22 @@ pub(crate) fn cardinality_path(head: Head, tip: Point, dir: Vec2, size: f64) -> 
     p
 }
 
-/// A highlighter: one wide round-capped stroke whose alpha applies to the stroke as a whole, so a self-crossing
-/// stroke does not get darker where it overlaps.
-fn paint_highlighter(ink: &mut Ink, e: &Element, f: &FreehandData) {
-    let width = e.style.stroke_width.max(0.0);
-    let pts: Vec<Point> = f.points.iter().copied().filter(|p| p.x.is_finite() && p.y.is_finite()).collect();
-    let Some((&first, rest)) = pts.split_first() else { return };
+/// A pencil stroke with a chisel tip: the flat nib of a marker swept along the stroke (`drafftink_geom::chisel`). The sweep is
+/// filled opaque inside one layer whose alpha is the colour's alpha, so a stroke that crosses itself does not
+/// get darker where it overlaps.
+fn paint_chisel(ink: &mut Ink, e: &Element, f: &FreehandData) {
+    let Some(nib) = Nib::new(e.style.stroke_width) else { return };
+    let outline = nib.outline(&f.points);
+    if outline.elements().is_empty() {
+        return;
+    }
     let paint = ink.color(e.style.stroke_color);
     let rgba = paint.to_rgba8();
     let opaque = peniko::Color::from_rgba8(rgba.r, rgba.g, rgba.b, 255);
     let alpha = f32::from(rgba.a) / 255.0;
-    let mut path = BezPath::new();
-    path.move_to(first);
-    for p in rest {
-        path.line_to(*p);
-    }
-    let area = path.control_box().inflate(width / 2.0 + 1.0, width / 2.0 + 1.0);
+    let area = outline.control_box().inflate(1.0, 1.0);
     ink.scene.push_layer(Fill::NonZero, Mix::Normal, alpha, Affine::IDENTITY, &area);
-    if pts.len() == 1 {
-        let dot = Circle::new(first, width / 2.0).to_path(0.05);
-        ink.scene.fill(Fill::NonZero, Affine::IDENTITY, opaque, None, &dot);
-    } else {
-        let s = Stroke::new(width.max(0.0)).with_caps(Cap::Round).with_join(Join::Round);
-        ink.scene.stroke(&s, Affine::IDENTITY, opaque, None, &path);
-    }
+    ink.scene.fill(Fill::NonZero, Affine::IDENTITY, opaque, None, &outline);
     ink.scene.pop_layer();
     ink.grow(area);
 }

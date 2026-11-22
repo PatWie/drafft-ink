@@ -8,7 +8,7 @@
 //! trip loses nothing even when Excalidraw edits the file in between. The one exception is paint on a picture,
 //! which is baked into the exported PNG and recorded only as `paint_baked`.
 
-use drafftink_scene::{Brush, FillPattern, FontFamily, FontWeight, InlineMath, Sloppiness, TextRun};
+use drafftink_scene::{Brush, FillPattern, FontFamily, FontWeight, InlineMath, Sloppiness, TextRun, Tip};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -39,7 +39,11 @@ pub(super) struct Note {
     pub math: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub brush: Option<Brush>,
+    /// The tip of a freehand pen, written when it is not round.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tip: Option<Tip>,
+    /// The marker flag of files from before the tip existed: read as a chisel tip, never written.
+    #[serde(default, skip_serializing)]
     pub highlighter: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub closed: Option<bool>,
@@ -94,7 +98,8 @@ mod tests {
             auto_route: true,
             math: true,
             brush: Some(Brush::Calligraphy),
-            highlighter: Some(true),
+            tip: Some(Tip::Chisel),
+            highlighter: None,
             closed: Some(true),
             frame_clip: Some(false),
             name: Some("n".into()),
@@ -104,6 +109,13 @@ mod tests {
         };
         let v = n.to_value().unwrap();
         assert_eq!(Note::from_value(&v).unwrap(), n);
+    }
+
+    #[test]
+    fn the_old_marker_flag_still_reads_and_is_never_written() {
+        let old = Note::from_value(&serde_json::json!({ "highlighter": true })).unwrap();
+        assert_eq!((old.highlighter, old.tip), (Some(true), None));
+        assert_eq!(old.to_value(), None, "the flag is not written back");
     }
 
     #[test]

@@ -151,8 +151,15 @@ fn each_drawing_tool_shows_the_groups_of_its_new_elements() {
     let h = desk(with_tool("freehand"));
     assert!(has(&h, "Brush: Calligraphy") && has(&h, "More options") && !has(&h, "Dashed"));
     assert!(has(&h, "Thin"), "a freehand stroke has a width");
+    assert!(has(&h, "Tip: Round") && has(&h, "Tip: Chisel"), "the pencil has a tip, and width and opacity beside it");
+    assert!(has(&h, "Opacity"));
+    assert!(!has(&h, "Marker: Yellow"), "the colours are the highlighter's");
+    // The highlighter applies a colour: the five marker colours and none, and no stroke settings.
     let h = desk(with_tool("highlighter"));
-    assert!(has(&h, "Brush: Normal"));
+    for label in ["Yellow", "Green", "Pink", "Blue", "Orange", "none"] {
+        assert!(has(&h, &format!("Marker: {label}")), "{label}");
+    }
+    assert!(!has(&h, "Thin") && !has(&h, "Tip: Chisel") && !has(&h, "Brush: Normal") && !has(&h, "Opacity"));
     for tool in ["text", "math"] {
         let h = desk(with_tool(tool));
         assert!(has(&h, FONT) && has(&h, TEXT_SIZE) && has(&h, "Text align: Left"), "{tool}");
