@@ -59,13 +59,13 @@ fn linear(h: &mut Hash128, d: &LinearData) {
 }
 
 fn freehand(h: &mut Hash128, f: &FreehandData) {
-    let FreehandData { points: pts, pressures, pressure_mode, brush, highlighter, closed } = f;
+    let FreehandData { points: pts, pressures, pressure_mode, brush, tip, closed } = f;
     points(h, pts);
     pressures.len().hash(h);
     for v in pressures {
         Bits(*v).hash(h);
     }
-    (pressure_mode, brush, highlighter, closed).hash(h);
+    (pressure_mode, brush, tip, closed).hash(h);
 }
 
 fn text(h: &mut Hash128, d: &TextData) {

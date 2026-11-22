@@ -10,6 +10,8 @@
 //! - `arrow`: operations of the `arrow` commands that combine them (bind an end to a named target, reroute,
 //!   snapping of a dragged point).
 //! - `brush`: how the samples of a freehand stroke are captured (calligraphy brush, simulated pressure).
+//! - `highlight`: what a drag of the highlighter tool turns the highlight on for (elements, crossed characters of a
+//!   text), and the seam that writes it.
 //! - `create`: the rules of `element.create`, `element.connect` and `element.set_name` (sizes, names, new
 //!   elements of every kind, binding of new arrow ends, placement).
 //! - `group`, `frame`, `zorder`, `arrange`, `transform`, `lifecycle`: groups, frames, z-order,

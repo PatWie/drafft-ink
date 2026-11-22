@@ -120,7 +120,7 @@ proptest! {
         let mut rng = Rng(u64::from(seed));
         let mut e = freehand_el("f", &ZIndex::first(), 3.0, 3.0, n, &mut rng, pressure);
         if let ElementKind::Freehand(d) = &mut e.kind {
-            d.highlighter = highlighter;
+            d.tip = if highlighter { drafftink_scene::Tip::Chisel } else { drafftink_scene::Tip::Round };
             d.closed = closed && n >= 3;
         }
         e.style.stroke_width = sw;

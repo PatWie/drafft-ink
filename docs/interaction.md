@@ -124,7 +124,8 @@ The overlay (`InteractionOverlay::paint`, a `PaintView`) carries the image as it
 | Line, arrow | drag | `element.create {points: 2}` | E6 |
 | Line, arrow | clicks | a draft with a rubber band; double-click, Enter or Esc ends it with one `element.create`. A click within 6 px of the last point is ignored | E6 |
 | Line, arrow | any | `bind` `on` or `off` from the setting `arrow.binding` turned around by Ctrl/Cmd, Alt inside (only while binding is in effect, so Alt alone does nothing with the setting off and Ctrl+Alt binds inside); the highlighted shape is the one that gets bound; Shift locks the angle; elbow arrows send their two ends | E5, E6 |
-| Freehand, highlighter | drag | samples (pressure from a pen only) in a buffer; one `element.create {kind: freehand, points, pressures?, highlighter, simplify: 2}` | E7 |
+| Pencil | drag (Shift: straight, snapped to 15 degrees) | samples (pressure from a pen only) in a buffer; one `element.create {kind: freehand, points, pressures?, simplify: 2}` with the tip, width and opacity of the defaults | E7 |
+| Highlighter | drag (Alt: remove) | path, touched elements and crossed characters of texts; one `highlight.apply {targets, color}` | E19 |
 | Eraser | drag | swept path; touched elements drawn faded; one `element.erase {path, radius: 10, units: screen}` | E8 |
 | Laser | drag | local trail of up to 50 points, faded by the clock; `collab.laser` at most every 33 ms; nothing is stored | E12 |
 | Text | click | `text.edit_begin {at | id}` and `OpenTextEditor` | |

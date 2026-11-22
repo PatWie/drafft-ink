@@ -27,7 +27,7 @@ use drafftink_scene::words::Article;
 use drafftink_scene::{
     Brush, Color, Element, ElementId, ElementKind, FillPattern, FontFamily, FontWeight, Kind, MarkerColor,
     PressureMode, SceneRead, SceneTx, Sloppiness, SpanHighlight, StoreError, StrokeStyle, Style, TextAlign, TextRun,
-    TextStyle, VerticalAlign,
+    TextStyle, Tip, VerticalAlign,
 };
 use drafftink_scene::{fill_paints, style_shows};
 
@@ -58,6 +58,7 @@ pub enum Prop {
     CornerRadius,
     Opacity,
     FreehandStyle,
+    Tip,
     PressureMode,
     FontFamily,
     FontWeight,
@@ -69,7 +70,7 @@ pub enum Prop {
 
 impl Prop {
     /// Every property, in canonical order.
-    pub const ALL: [Prop; 17] = [
+    pub const ALL: [Prop; 18] = [
         Prop::StrokeColor,
         Prop::FillColor,
         Prop::FillPattern,
@@ -80,6 +81,7 @@ impl Prop {
         Prop::CornerRadius,
         Prop::Opacity,
         Prop::FreehandStyle,
+        Prop::Tip,
         Prop::PressureMode,
         Prop::FontFamily,
         Prop::FontWeight,
@@ -102,6 +104,7 @@ impl Prop {
             Prop::CornerRadius => "corner_radius",
             Prop::Opacity => "opacity",
             Prop::FreehandStyle => "freehand_style",
+            Prop::Tip => "tip",
             Prop::PressureMode => "pressure_mode",
             Prop::FontFamily => "font_family",
             Prop::FontWeight => "font_weight",
@@ -143,7 +146,7 @@ impl Prop {
             Prop::Sloppiness => "rectangles, diamonds, ellipses, frames, lines and arrows",
             Prop::CornerRadius => "rectangles, diamonds, frames, images, lines and arrows",
             Prop::Opacity => "every element",
-            Prop::FreehandStyle | Prop::PressureMode => "freehand strokes",
+            Prop::FreehandStyle | Prop::Tip | Prop::PressureMode => "freehand strokes",
             Prop::FontFamily | Prop::FontWeight | Prop::TextAlign | Prop::LineHeight => {
                 "text, and shapes and arrows that have a label"
             }
@@ -169,7 +172,7 @@ pub fn applies(e: &Element, prop: Prop) -> bool {
             matches!(k, Kind::Rectangle | Kind::Diamond | Kind::Line | Kind::Arrow | Kind::Frame | Kind::Image)
         }
         Prop::Opacity => true,
-        Prop::FreehandStyle | Prop::PressureMode => k == Kind::Freehand,
+        Prop::FreehandStyle | Prop::Tip | Prop::PressureMode => k == Kind::Freehand,
         Prop::FontFamily | Prop::FontWeight | Prop::TextAlign | Prop::LineHeight => k == Kind::Text,
         Prop::FontSize => matches!(k, Kind::Text | Kind::Math),
         Prop::VerticalAlign => e.container_id().is_some(),
@@ -317,6 +320,9 @@ pub struct StyleProps {
     /// Freehand brush: normal or calligraphy.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub freehand_style: Option<Brush>,
+    /// Freehand tip: round or chisel.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tip: Option<Tip>,
     /// Freehand pressure: uniform, simulated or device.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pressure_mode: Option<PressureMode>,
@@ -434,6 +440,7 @@ impl StyleProps {
             Prop::CornerRadius => self.corner_radius.map(|v| json!(v)),
             Prop::Opacity => self.opacity.map(|v| json!(v)),
             Prop::FreehandStyle => self.freehand_style.and_then(|v| serde_json::to_value(v).ok()),
+            Prop::Tip => self.tip.and_then(|v| serde_json::to_value(v).ok()),
             Prop::PressureMode => self.pressure_mode.and_then(|v| serde_json::to_value(v).ok()),
             Prop::FontFamily => self.font_family.and_then(|v| serde_json::to_value(v).ok()),
             Prop::FontWeight => self.font_weight.and_then(|v| serde_json::to_value(v).ok()),
@@ -486,6 +493,7 @@ impl StyleProps {
             corner_radius: self.corner_radius.filter(|_| keep(Prop::CornerRadius)),
             opacity: self.opacity.filter(|_| keep(Prop::Opacity)),
             freehand_style: self.freehand_style.filter(|_| keep(Prop::FreehandStyle)),
+            tip: self.tip.filter(|_| keep(Prop::Tip)),
             pressure_mode: self.pressure_mode.filter(|_| keep(Prop::PressureMode)),
             font_family: self.font_family.filter(|_| keep(Prop::FontFamily)),
             font_weight: self.font_weight.filter(|_| keep(Prop::FontWeight)),
@@ -542,6 +550,9 @@ impl StyleProps {
             ElementKind::Freehand(d) => {
                 if let Some(v) = self.freehand_style {
                     d.brush = v;
+                }
+                if let Some(v) = self.tip {
+                    d.tip = v;
                 }
                 if let Some(v) = self.pressure_mode {
                     d.pressure_mode = v;
@@ -617,6 +628,7 @@ pub fn props_of(e: &Element) -> StyleProps {
     match &e.kind {
         ElementKind::Freehand(d) => {
             p.freehand_style = Some(d.brush);
+            p.tip = Some(d.tip);
             p.pressure_mode = Some(d.pressure_mode);
         }
         ElementKind::Text(t) => {
@@ -763,6 +775,8 @@ pub struct StyleDefaults {
     pub text: TextStyle,
     /// Brush of new freehand strokes.
     pub brush: Brush,
+    /// Tip of new freehand strokes.
+    pub tip: Tip,
     /// Pressure mode of new freehand strokes.
     pub pressure_mode: PressureMode,
 }
@@ -797,6 +811,9 @@ impl StyleDefaults {
         }
         if let Some(v) = props.freehand_style {
             self.brush = v;
+        }
+        if let Some(v) = props.tip {
+            self.tip = v;
         }
         if let Some(v) = props.pressure_mode {
             self.pressure_mode = v;
@@ -836,6 +853,7 @@ impl StyleDefaults {
             corner_radius: Some(self.style.corner_radius),
             opacity: Some(self.style.opacity),
             freehand_style: Some(self.brush),
+            tip: Some(self.tip),
             pressure_mode: Some(self.pressure_mode),
             font_family: Some(self.text.family),
             font_weight: Some(self.text.weight),

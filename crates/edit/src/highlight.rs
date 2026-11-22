@@ -10,11 +10,15 @@
 //!
 //! Everything is checked before anything is written, so a failed call changes nothing.
 
+mod sweep;
+
 use drafftink_scene::{Element, ElementId, ElementKind, Kind, MarkerColor, SceneRead, SceneTx, StoreError};
 
 use crate::style::{self, Prop, StyleError, StyleProps};
 use crate::target::TargetError;
 use crate::text_bind::{self, TextBindError};
+
+pub use sweep::{CharSweep, byte_range_to_chars};
 
 /// A range of characters of one text element.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -1,0 +1,27 @@
+{
+  "about": "The highlighter tool's colour is tool state (tool.set_marker, null is none) and makes no history. What a drag of the tool ends with is one highlight.apply: here the same call by hand, for two elements and for the characters of a text, with the colour, with none, and as one undo step each.",
+  "steps": [
+    { "execute": "tool.set_marker", "args": { "color": "pink" }, "expect": [ { "path": "$.changed", "eq": true }, { "path": "$.color", "eq": "pink" } ] },
+    { "execute": "tool.set_marker", "args": { "color": "pink" }, "expect": [ { "path": "$.changed", "eq": false } ] },
+    { "execute": "tool.set_marker", "args": { "color": null }, "expect": [ { "path": "$.changed", "eq": true }, { "path": "$.color", "eq": null } ], "note": "None: a drag of the highlighter then removes the highlight." },
+    { "execute": "tool.set_marker", "args": { "color": "purple" }, "refused": "bad_args", "text": ["purple", "yellow"] },
+    { "undo": 1, "refused": "nothing_to_undo", "note": "The colour of the tool is not history." },
+
+    { "execute": "element.create", "args": { "kind": "rectangle", "bounds": { "x": 0, "y": 0, "w": 100, "h": 60 } }, "save": { "box": "$.id" } },
+    { "execute": "element.create", "args": { "kind": "ellipse", "bounds": { "x": 200, "y": 0, "w": 100, "h": 60 } }, "save": { "oval": "$.id" } },
+    { "execute": "element.create", "args": { "kind": "text", "text": "hello big world", "at": [0, 200] }, "save": { "words": "$.id" } },
+
+    { "execute": "highlight.apply", "args": { "color": "yellow", "ids": ["{{box}}", "{{oval}}"], "ranges": [ { "id": "{{words}}", "start": 6, "end": 9 } ] },
+      "expect": [ { "path": "$.changed", "eq": true }, { "path": "$.highlighted", "eq": ["{{box}}", "{{oval}}", "{{words}}"], "note": "What a drag across both shapes and over `big` sends." } ] },
+    { "assert": "style.get", "args": { "ids": ["{{box}}"], "props": ["highlight"] }, "expect": [ { "path": "$.props.highlight.value", "eq": "yellow" } ] },
+    { "execute": "highlight.apply", "args": { "color": null, "ids": ["{{oval}}"] }, "expect": [ { "path": "$.changed", "eq": true } ], "note": "None, or Alt, removes." },
+    { "assert": "style.get", "args": { "ids": ["{{oval}}"], "props": ["highlight"] }, "expect": [ { "path": "$.props.highlight.value", "eq": null } ] },
+    { "execute": "highlight.apply", "args": { "color": "green", "ranges": [ { "id": "{{words}}", "start": 99, "end": 120 } ] }, "refused": "bad_range" },
+    { "execute": "highlight.apply", "args": { "color": "green", "ids": ["nope"] }, "refused": "not_found" },
+
+    { "undo": 1, "expect": [ { "path": "$.changed", "eq": true } ], "note": "Removing from the ellipse is one step." },
+    { "assert": "style.get", "args": { "ids": ["{{oval}}"], "props": ["highlight"] }, "expect": [ { "path": "$.props.highlight.value", "eq": "yellow" } ] },
+    { "undo": 1, "expect": [ { "path": "$.changed", "eq": true } ], "note": "And the drag is one step: both shapes and the characters go back together." },
+    { "assert": "style.get", "args": { "ids": ["{{box}}", "{{oval}}"], "props": ["highlight"] }, "expect": [ { "path": "$.props.highlight.value", "eq": null } ] }
+  ]
+}

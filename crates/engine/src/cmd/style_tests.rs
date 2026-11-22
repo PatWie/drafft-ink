@@ -300,19 +300,19 @@ fn applicability_of_fill_pattern_stroke_style_and_freehand_props() {
     let out = run(
         &mut f.s,
         "style.set",
-        json!({"scope": "selection", "props": {"fill_color": "red-100", "stroke_style": "dotted", "freehand_style": "calligraphy", "pressure_mode": "device"}}),
+        json!({"scope": "selection", "props": {"fill_color": "red-100", "stroke_style": "dotted", "freehand_style": "calligraphy", "tip": "chisel", "pressure_mode": "device"}}),
     );
     let applied = |id: &ElementId| out["applied"][id.as_str()].clone();
     assert_eq!(applied(&f.rect), json!(["fill_color", "stroke_style"]));
     assert_eq!(applied(&f.closed), json!(["fill_color", "stroke_style"]));
     assert_eq!(applied(&f.line), json!(["stroke_style"]), "an open line has no fill");
-    assert_eq!(applied(&f.freehand), json!(["fill_color", "stroke_style", "freehand_style", "pressure_mode"]));
+    assert_eq!(applied(&f.freehand), json!(["fill_color", "stroke_style", "freehand_style", "tip", "pressure_mode"]));
     assert_eq!(applied(&f.math), Value::Null, "math supports none of them");
     match el(&f.s, &f.freehand).kind {
         ElementKind::Freehand(d) => {
             assert_eq!(
-                (d.brush, d.pressure_mode),
-                (drafftink_scene::Brush::Calligraphy, drafftink_scene::PressureMode::Device)
+                (d.brush, d.tip, d.pressure_mode),
+                (drafftink_scene::Brush::Calligraphy, drafftink_scene::Tip::Chisel, drafftink_scene::PressureMode::Device)
             );
         }
         other => panic!("{other:?}"),
@@ -652,7 +652,7 @@ fn get_reports_values_applicability_and_kinds_for_one_element() {
     let said = refuse(&mut f.s, "style.set", json!({"props": {"font_size": 20}, "scope": "selection"}));
     assert_eq!(out["props"]["font_size"], json!({"applicable": false, "reason": said.message}));
     assert_eq!(out["props"]["sloppiness"]["value"], "artist");
-    assert_eq!(out["props"].as_object().unwrap().len(), 17);
+    assert_eq!(out["props"].as_object().unwrap().len(), 18);
 }
 
 #[test]

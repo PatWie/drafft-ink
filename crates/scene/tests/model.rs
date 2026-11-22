@@ -44,7 +44,7 @@ fn every_kind(z: &[ZIndex]) -> Vec<Element> {
         d.pressures = vec![0.2, 0.9];
         d.pressure_mode = PressureMode::Device;
         d.brush = Brush::Calligraphy;
-        d.highlighter = true;
+        d.tip = drafftink_scene::Tip::Chisel;
     }
     fh.refit_points().unwrap();
     v.push(fh);
@@ -379,4 +379,40 @@ fn an_image_written_before_crops_existed_has_none_and_an_uncropped_one_writes_no
     let c = cropped.crop.unwrap();
     assert_eq!(c.rect(), kurbo::Rect::new(1.0, 2.0, 4.0, 6.0));
     assert_eq!(Crop::from_rect(c.rect()), c);
+}
+
+// ---- the tip of a freehand pen -------------------------------------------------------------------------------
+
+fn freehand_kind(extra: &str) -> Result<ElementKind, serde_json::Error> {
+    serde_json::from_str(&format!(r#"{{"type":"freehand","points":[[0,0],[5,5]]{extra}}}"#))
+}
+
+fn tip_of(kind: ElementKind) -> Tip {
+    match kind {
+        ElementKind::Freehand(d) => d.tip,
+        other => panic!("not a freehand: {other:?}"),
+    }
+}
+
+#[test]
+fn a_file_with_the_old_marker_flag_reads_as_a_pencil_with_a_chisel_tip() {
+    assert_eq!(tip_of(freehand_kind("").unwrap()), Tip::Round);
+    assert_eq!(tip_of(freehand_kind(r#","highlighter":true"#).unwrap()), Tip::Chisel);
+    assert_eq!(tip_of(freehand_kind(r#","highlighter":false"#).unwrap()), Tip::Round);
+    assert_eq!(tip_of(freehand_kind(r#","tip":"chisel""#).unwrap()), Tip::Chisel);
+    assert_eq!(tip_of(freehand_kind(r#","tip":"round","highlighter":true"#).unwrap()), Tip::Round, "the tip wins");
+    assert!(freehand_kind(r#","tip":"square""#).is_err());
+    assert!(freehand_kind(r#","nib":1"#).is_err(), "unknown keys are still refused");
+}
+
+#[test]
+fn a_chisel_tip_is_written_as_the_tip_and_never_as_the_old_flag() {
+    let ElementKind::Freehand(mut d) = freehand_kind("").unwrap() else { panic!("freehand") };
+    let round = serde_json::to_value(ElementKind::Freehand(d.clone())).unwrap();
+    assert!(round.get("tip").is_none() && round.get("highlighter").is_none(), "{round}");
+    d.tip = Tip::Chisel;
+    let chisel = serde_json::to_value(ElementKind::Freehand(d)).unwrap();
+    assert_eq!(chisel["tip"], "chisel");
+    assert!(chisel.get("highlighter").is_none(), "{chisel}");
+    assert_eq!(tip_of(serde_json::from_value(chisel).unwrap()), Tip::Chisel);
 }

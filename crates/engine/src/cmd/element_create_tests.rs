@@ -638,7 +638,7 @@ fn a_freehand_stroke_is_simplified_with_the_old_tolerance_and_keeps_its_pressure
     assert_eq!(d.points, vec![Point::new(0.0, 0.0), Point::new(40.0, 0.0)]);
     assert_eq!(d.pressures, vec![0.1, 0.5]);
     assert_eq!(d.pressure_mode, PressureMode::Device, "pen data is used");
-    assert_eq!((d.brush, d.highlighter, d.closed), (Brush::Normal, false, false));
+    assert_eq!((d.brush, d.tip, d.closed), (Brush::Normal, drafftink_scene::Tip::Round, false));
     assert_eq!((e.transform.x, e.transform.y, e.transform.w, e.transform.h), (0.0, 0.0, 40.0, 0.0));
     assert_eq!(e.style.stroke_width, 2.0);
 }
@@ -683,11 +683,11 @@ fn pressures_must_match_the_points_and_lie_between_zero_and_one() {
 }
 
 #[test]
-fn a_highlighter_is_wide_and_half_transparent_unless_the_style_says_otherwise() {
+fn the_old_highlighter_argument_is_a_chisel_pencil_wide_and_half_transparent_unless_the_style_says_otherwise() {
     let mut s = testing::headless_session();
     let e = made(&mut s, json!({"kind": "freehand", "points": stroke(), "highlighter": true}));
     let ElementKind::Freehand(d) = &e.kind else { panic!("freehand") };
-    assert!(d.highlighter);
+    assert_eq!(d.tip, drafftink_scene::Tip::Chisel);
     assert_eq!(e.style.stroke_width, 12.0);
     assert_eq!(e.style.stroke_color, drafftink_scene::Color::rgba(0x63, 0x66, 0xf1, 128));
     // A wider default stays; a thin one is raised.
@@ -698,6 +698,22 @@ fn a_highlighter_is_wide_and_half_transparent_unless_the_style_says_otherwise() 
     let e = made(&mut s, json!({"kind": "freehand", "points": stroke(), "highlighter": true, "style": {"stroke_width": 3, "stroke_color": "#ffff00"}}));
     assert_eq!(e.style.stroke_width, 3.0);
     assert_eq!(e.style.stroke_color, drafftink_scene::Color::rgb(255, 255, 0));
+}
+
+#[test]
+fn the_tip_is_a_style_property_of_the_pencil_and_the_session_default_gives_it() {
+    let mut s = testing::headless_session();
+    let tip = |e: &drafftink_scene::Element| match &e.kind {
+        ElementKind::Freehand(d) => d.tip,
+        other => panic!("not a freehand: {other:?}"),
+    };
+    assert_eq!(tip(&made(&mut s, json!({"kind": "freehand", "points": stroke()}))), drafftink_scene::Tip::Round);
+    let e = made(&mut s, json!({"kind": "freehand", "points": stroke(), "style": {"tip": "chisel", "stroke_width": 20}}));
+    assert_eq!((tip(&e), e.style.stroke_width), (drafftink_scene::Tip::Chisel, 20.0), "no marker preset without the old argument");
+    assert_eq!(e.style.stroke_color.a, 255);
+    // The default the toolbar sets reaches the next stroke.
+    s.execute_from(crate::ring::Origin::Test, "style.set", json!({"scope": "defaults", "props": {"tip": "chisel"}})).unwrap();
+    assert_eq!(tip(&made(&mut s, json!({"kind": "freehand", "points": stroke()}))), drafftink_scene::Tip::Chisel);
 }
 
 // ---------------------------------------------------------------------------------------------

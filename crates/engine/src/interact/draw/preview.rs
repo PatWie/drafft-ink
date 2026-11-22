@@ -58,11 +58,11 @@ fn arrow_spec(cx: &Ctx<'_>, kind: Kind) -> LinearSpec {
     if kind == Kind::Arrow { cx.s.tool.arrow_default.spec() } else { LinearSpec::defaults(kind) }
 }
 
-/// A freehand or highlighter stroke through `points`, with `pressures` empty or one per point.
-pub(super) fn stroke(cx: &Ctx<'_>, points: &[Point], pressures: &[f64], highlighter: bool) -> Option<Element> {
+/// A pencil stroke through `points`, with `pressures` empty or one per point. It has the tip of the tool's
+/// defaults, so a chisel stroke is previewed with the same nib it will be stored with.
+pub(super) fn stroke(cx: &Ctx<'_>, points: &[Point], pressures: &[f64]) -> Option<Element> {
     let defaults = cx.s.tool.defaults();
-    let style =
-        if highlighter { create::highlighter_style(defaults.style, create::Given::default()) } else { defaults.style };
+    let style = defaults.style;
     // The same choice `element.create` makes, so the preview and the result use the same width model.
     let pressure_mode = if defaults.pressure_mode != PressureMode::Uniform {
         defaults.pressure_mode
@@ -71,7 +71,7 @@ pub(super) fn stroke(cx: &Ctx<'_>, points: &[Point], pressures: &[f64], highligh
     } else {
         PressureMode::Device
     };
-    let spec = StrokeSpec { pressures: pressures.to_vec(), pressure_mode, brush: defaults.brush, highlighter };
+    let spec = StrokeSpec { pressures: pressures.to_vec(), pressure_mode, brush: defaults.brush, tip: defaults.tip };
     create::freehand_element(preview_id()?, ZIndex::first(), points, spec, style).ok()
 }
 
@@ -116,7 +116,8 @@ pub(super) fn clear(cx: &mut Ctx<'_>) {
         || !parts.highlight.is_empty()
         || parts.angle_rays.is_some()
         || parts.snap_point.is_some()
-        || parts.eraser.is_some();
+        || parts.eraser.is_some()
+        || parts.marker.is_some();
     parts.preview = None;
     parts.faded.clear();
     parts.guides.clear();
@@ -124,6 +125,7 @@ pub(super) fn clear(cx: &mut Ctx<'_>) {
     parts.angle_rays = None;
     parts.snap_point = None;
     parts.eraser = None;
+    parts.marker = None;
     if shown {
         cx.overlay_changed();
     }

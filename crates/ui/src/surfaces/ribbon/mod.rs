@@ -41,18 +41,18 @@ fn tool_shows(tool: Tool, prop: &str) -> bool {
         return false;
     }
     const TEXT: [&str; 4] = ["font_family", "font_weight", "font_size", "text_align"];
-    const FREEHAND: [&str; 2] = ["freehand_style", "pressure_mode"];
+    const FREEHAND: [&str; 3] = ["freehand_style", "tip", "pressure_mode"];
     match tool {
         Tool::Rectangle | Tool::Diamond | Tool::Frame => !TEXT.contains(&prop) && !FREEHAND.contains(&prop),
         Tool::Ellipse => !TEXT.contains(&prop) && !FREEHAND.contains(&prop) && prop != "corner_radius",
         Tool::Line | Tool::Arrow => {
             matches!(prop, "stroke_width" | "stroke_style" | "sloppiness" | "corner_radius" | "opacity")
         }
-        Tool::Freehand | Tool::Highlighter => {
-            matches!(prop, "stroke_width" | "freehand_style" | "pressure_mode" | "opacity" | "fill_pattern")
+        Tool::Freehand => {
+            matches!(prop, "stroke_width" | "freehand_style" | "tip" | "pressure_mode" | "opacity" | "fill_pattern")
         }
         Tool::Text | Tool::Math => TEXT.contains(&prop) || matches!(prop, "line_height" | "opacity"),
-        Tool::Select | Tool::Lasso | Tool::Hand | Tool::Eraser | Tool::Laser => false,
+        Tool::Select | Tool::Lasso | Tool::Hand | Tool::Highlighter | Tool::Eraser | Tool::Laser => false,
     }
 }
 
@@ -83,6 +83,10 @@ enum Row {
     ArrowHeads,
     /// Normal or calligraphy.
     Brush,
+    /// Round or chisel tip.
+    Tip,
+    /// The colour of the highlighter, and none.
+    Marker,
     /// The font dropdown.
     FontFamily,
     /// Light, regular, heavy.
@@ -126,8 +130,10 @@ pub(crate) enum Group {
     Shape,
     /// Path over heads.
     Arrow,
-    /// Normal or calligraphy.
+    /// Normal or calligraphy over round or chisel.
     Brush,
+    /// The colours of the highlighter tool.
+    Marker,
     /// Family over weight.
     Font,
     /// Size over bold and italic.
@@ -148,11 +154,12 @@ pub(crate) enum Group {
 
 impl Group {
     /// Every group, in order.
-    pub(crate) const ALL: [Group; 12] = [
+    pub(crate) const ALL: [Group; 13] = [
         Group::Stroke,
         Group::Shape,
         Group::Arrow,
         Group::Brush,
+        Group::Marker,
         Group::Font,
         Group::TextSize,
         Group::TextAlign,
@@ -185,7 +192,8 @@ impl Group {
                 (Row::ArrowPath, controls::has_path(cx)),
                 (Row::ArrowHeads, controls::new_arrows(cx) || (selected && model.style.has_kind("arrow"))),
             ],
-            Group::Brush => vec![(Row::Brush, shows(cx, "freehand_style"))],
+            Group::Brush => vec![(Row::Brush, shows(cx, "freehand_style")), (Row::Tip, shows(cx, "tip"))],
+            Group::Marker => vec![(Row::Marker, model.tool == Tool::Highlighter)],
             Group::Font => {
                 vec![(Row::FontFamily, shows(cx, "font_family")), (Row::FontWeight, shows(cx, "font_weight"))]
             }
@@ -249,11 +257,31 @@ mod tests {
     }
 
     #[test]
+    fn the_pencil_has_its_tip_and_the_highlighter_applies_a_colour_and_has_no_stroke_style() {
+        assert!(tool_shows(Tool::Freehand, "tip") && tool_shows(Tool::Freehand, "opacity"));
+        assert!(
+            !tool_shows(Tool::Rectangle, "tip") && !tool_shows(Tool::Arrow, "tip") && !tool_shows(Tool::Text, "tip")
+        );
+        for prop in ["stroke_width", "opacity", "tip", "freehand_style", "fill_pattern"] {
+            assert!(!tool_shows(Tool::Highlighter, prop), "{prop}");
+        }
+    }
+
+    #[test]
     fn the_width_follows_the_tools_that_draw_a_stroke() {
-        for tool in [Tool::Rectangle, Tool::Ellipse, Tool::Line, Tool::Arrow, Tool::Freehand, Tool::Highlighter] {
+        for tool in [Tool::Rectangle, Tool::Ellipse, Tool::Line, Tool::Arrow, Tool::Freehand] {
             assert!(tool_shows(tool, "stroke_width"), "{tool:?}");
         }
-        for tool in [Tool::Text, Tool::Math, Tool::Select, Tool::Lasso, Tool::Hand, Tool::Eraser, Tool::Laser] {
+        for tool in [
+            Tool::Text,
+            Tool::Math,
+            Tool::Select,
+            Tool::Lasso,
+            Tool::Hand,
+            Tool::Eraser,
+            Tool::Laser,
+            Tool::Highlighter,
+        ] {
             assert!(!tool_shows(tool, "stroke_width"), "{tool:?}");
         }
     }

@@ -11,7 +11,8 @@ use drafftink_scene::limits::{
 use drafftink_scene::{
     BindMode, Binding, Brush, Color, Crop, Element, ElementId, ElementKind, FileEntry, FileId, FillPattern,
     FixedSegment, FrameData, FreehandData, GroupId, Head, IdSource, ImageData, Kind, LinearData, MathData, PathType,
-    PressureMode, Sloppiness, StrokeStyle, Style, TextAlign, TextData, TextStyle, Transform, VerticalAlign, ZIndex,
+    PressureMode, Sloppiness, StrokeStyle, Style, TextAlign, TextData, TextStyle, Tip, Transform, VerticalAlign,
+    ZIndex,
 };
 use kurbo::Point;
 use serde_json::{Map, Value};
@@ -676,7 +677,7 @@ fn parse_freedraw(rd: &Rd, ctx: &mut Ctx, note: &Note, angle: f64) -> Option<(El
         pressures,
         pressure_mode,
         brush: note.brush.unwrap_or(Brush::Normal),
-        highlighter: note.highlighter.unwrap_or(false),
+        tip: note.tip.unwrap_or(if note.highlighter == Some(true) { Tip::Chisel } else { Tip::Round }),
         closed: note.closed.unwrap_or(false),
     };
     Some((ElementKind::Freehand(data), f.transform))

@@ -9,7 +9,8 @@
 //! |---|---|---|
 //! | rectangle, diamond, ellipse, frame | drag | `element.create` with `bounds` |
 //! | line, arrow | drag, or clicks ended by double-click, Enter or Esc | `element.create` with `points` |
-//! | freehand, highlighter | drag, or a click (a dot) | `element.create` kind freehand |
+//! | pencil | drag (Shift: straight), or a click (a dot) | `element.create` kind freehand |
+//! | highlighter | drag across elements and text | `highlight.apply` (no element is created) |
 //! | eraser | drag, or a click | `element.erase` with the swept `path` |
 //! | laser | drag | `collab.laser` (throttled, never stored) |
 //! | text | click, or drag for a fixed-width box | `text.edit_begin` (with `width` for a drag), then the shell opens the editor |
@@ -21,6 +22,7 @@
 mod eraser;
 mod laser;
 mod linear;
+mod marker;
 mod preview;
 mod shape;
 mod snap;
@@ -30,6 +32,9 @@ mod text;
 #[cfg(test)]
 #[path = "../draw_line_tests.rs"]
 mod line_tests;
+#[cfg(test)]
+#[path = "../draw_marker_tests.rs"]
+mod marker_tests;
 #[cfg(test)]
 #[path = "../draw_stroke_tests.rs"]
 mod stroke_tests;
@@ -48,6 +53,7 @@ use crate::state::Tool;
 enum Gesture {
     Box(shape::BoxDrag),
     Stroke(stroke::Stroke),
+    Marker(marker::Marker),
     Sweep(eraser::Sweep),
     Laser,
     /// A drag of the text or math tool on empty canvas: when it ends the text tool opens a box as wide as the drag, the math tool places at the origin.
@@ -70,7 +76,7 @@ impl DrawTools {
     pub(crate) fn click(&mut self, cx: &mut Ctx<'_>, ev: &Ev<'_>) {
         match cx.tool() {
             Tool::Line | Tool::Arrow => self.linear.click(cx, ev, &mut self.shown),
-            Tool::Freehand | Tool::Highlighter => stroke::dot(cx, ev),
+            Tool::Freehand => stroke::dot(cx, ev),
             Tool::Eraser => eraser::tap(cx, ev),
             Tool::Text | Tool::Math => text::click(cx, ev),
             Tool::Select
@@ -80,6 +86,7 @@ impl DrawTools {
             | Tool::Diamond
             | Tool::Ellipse
             | Tool::Frame
+            | Tool::Highlighter
             | Tool::Laser => {}
         }
     }
@@ -99,14 +106,15 @@ impl DrawTools {
                 }
             }
             Tool::Line | Tool::Arrow => self.linear.drag_start(cx, ev),
-            Tool::Freehand | Tool::Highlighter => {
+            Tool::Freehand => {
                 // The press is the first point. The drag update that follows adds the first move, with its own
                 // pressure (`Stroke::begin`), so this start does not update.
-                let mut stroke = stroke::Stroke::start(tool);
+                let mut stroke = stroke::Stroke::default();
                 stroke.begin(cx, ev);
                 self.gesture = Some(Gesture::Stroke(stroke));
                 return;
             }
+            Tool::Highlighter => self.gesture = Some(Gesture::Marker(marker::Marker::default())),
             Tool::Eraser => self.gesture = Some(Gesture::Sweep(eraser::Sweep::start())),
             Tool::Laser => {
                 self.laser.begin(cx, ev);
@@ -126,6 +134,10 @@ impl DrawTools {
             }
             Some(Gesture::Stroke(stroke)) => {
                 stroke.update(cx, ev);
+                self.shown = true;
+            }
+            Some(Gesture::Marker(marker)) => {
+                marker.update(cx, ev);
                 self.shown = true;
             }
             Some(Gesture::Sweep(sweep)) => {
@@ -154,6 +166,12 @@ impl DrawTools {
                 self.take_back(cx);
                 if !cancelled {
                     stroke.finish(cx, ev);
+                }
+            }
+            Some(Gesture::Marker(marker)) => {
+                self.take_back(cx);
+                if !cancelled {
+                    marker.finish(cx, ev);
                 }
             }
             Some(Gesture::Sweep(sweep)) => {

@@ -14,7 +14,7 @@ use drafftink_canvas::{
 use drafftink_geom::OrientedBox;
 use drafftink_geom::guides::SmartGuide;
 use drafftink_geom::kurbo::{Point, Rect};
-use drafftink_scene::{Element, ElementId, SceneRead};
+use drafftink_scene::{Element, ElementId, MarkerColor, SceneRead};
 
 pub use drafftink_canvas::LinkIcon;
 
@@ -72,6 +72,18 @@ pub struct LaserPoint {
     pub t_ms: f64,
 }
 
+/// What the highlighter shows while it is dragged: the path it has made, and the characters it would highlight (the
+/// elements it would highlight are in [`OverlayParts::highlight`]).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct MarkerPreview {
+    /// The path of the pointer, in world space.
+    pub trail: Vec<Point>,
+    /// The crossed characters of the texts, as quadrilaterals in world space (a rotated text gives rotated ones).
+    pub bands: Vec<[Point; 4]>,
+    /// The colour the drag applies, `None` when it removes the highlight.
+    pub color: Option<MarkerColor>,
+}
+
 /// Overlay state owned by the tool machines. Everything is in world space.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct OverlayParts {
@@ -99,6 +111,8 @@ pub struct OverlayParts {
     pub snap_point: Option<Point>,
     /// The eraser's radius ring, at the pointer.
     pub eraser: Option<EraserRing>,
+    /// The trail and the crossed characters of the highlighter.
+    pub marker: Option<MarkerPreview>,
 }
 
 impl OverlayParts {
@@ -121,6 +135,7 @@ impl OverlayParts {
             || self.angle_rays.is_some()
             || self.snap_point.is_some()
             || self.eraser.is_some()
+            || self.marker.is_some()
     }
 }
 
@@ -177,6 +192,8 @@ pub struct InteractionOverlay {
     pub snap_point: Option<Point>,
     /// The eraser's radius ring.
     pub eraser: Option<EraserRing>,
+    /// The highlighter's trail and the characters it would highlight.
+    pub marker: Option<MarkerPreview>,
     /// The crop editor, while it is open. The overlay then has no selection box, handles or hover outline of its
     /// own: the window carries the handles.
     pub crop: Option<CropView>,
@@ -263,6 +280,7 @@ pub(super) fn build(
         angle_rays: parts.angle_rays,
         snap_point: parts.snap_point,
         eraser: parts.eraser,
+        marker: parts.marker.clone(),
         crop: None,
         paint: None,
     }

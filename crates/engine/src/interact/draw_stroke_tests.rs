@@ -1,7 +1,7 @@
 //! Tests of freehand, highlighter, eraser, laser, text and math.
 
 use drafftink_canvas::PointerPhase;
-use drafftink_scene::{Element, ElementId, ElementKind, Kind, SceneStore};
+use drafftink_scene::{Element, ElementId, ElementKind, Kind, SceneStore, Tip};
 use serde_json::json;
 
 use crate::interact::testutil::Rig;
@@ -46,7 +46,7 @@ fn a_mouse_stroke_is_one_create_with_no_pressures() {
     assert_eq!(e.tag(), Kind::Freehand);
     let d = stroke_of(&e);
     assert!(d.pressures.is_empty(), "a mouse has no pressure");
-    assert!(!d.highlighter);
+    assert_eq!(d.tip, Tip::Round);
     assert!(d.points.len() >= 2);
     assert_eq!(rig.s.tool.active, Tool::Select);
     assert!(rig.preview().is_none());
@@ -311,7 +311,7 @@ fn exception_E7_a_brush_stroke_equals_the_plain_command_given_its_points() {
     let pts: Vec<[f64; 2]> = world(&e).iter().map(|p| [p.0, p.1]).collect();
     plain.run(
         "element.create",
-        json!({ "kind": "freehand", "points": pts, "pressures": d.pressures, "highlighter": false, "simplify": 0, "from_tool": true }),
+        json!({ "kind": "freehand", "points": pts, "pressures": d.pressures, "simplify": 0, "from_tool": true }),
     );
     assert_eq!(gesture.normalized_doc(), plain.normalized_doc());
 }
@@ -427,10 +427,7 @@ fn exception_E7_stroke_equals_plain_command() {
     gesture.trace(&samples);
     let mut plain = Rig::new();
     let pts: Vec<[f64; 2]> = samples.iter().map(|p| [p.0, p.1]).collect();
-    plain.run(
-        "element.create",
-        json!({ "kind": "freehand", "points": pts, "highlighter": false, "simplify": 2.0, "from_tool": true }),
-    );
+    plain.run("element.create", json!({ "kind": "freehand", "points": pts, "simplify": 2.0, "from_tool": true }));
     assert_eq!(gesture.normalized_doc(), plain.normalized_doc());
     assert_eq!(gesture.s.tool.active, plain.s.tool.active);
 
@@ -447,40 +444,143 @@ fn exception_E7_stroke_equals_plain_command() {
     let pressures: Vec<f64> = (0..samples.len()).map(|i| f64::from(pressure(i))).collect();
     plain.run(
         "element.create",
-        json!({ "kind": "freehand", "points": pts, "pressures": pressures, "highlighter": false, "simplify": 2.0, "from_tool": true }),
+        json!({ "kind": "freehand", "points": pts, "pressures": pressures, "simplify": 2.0, "from_tool": true }),
     );
     assert_eq!(gesture.normalized_doc(), plain.normalized_doc());
 }
 
 #[test]
 #[allow(non_snake_case)]
-fn exception_E7_a_highlighter_stroke_equals_the_plain_command() {
+fn exception_E7_a_chisel_stroke_equals_the_plain_command() {
     let samples = wave(60);
-    let (mut gesture, ring, _) = rig_with(Tool::Highlighter);
+    let (mut gesture, _, _) = rig_with(Tool::Freehand);
+    gesture.run(
+        "style.set",
+        json!({ "scope": "defaults", "props": { "tip": "chisel", "stroke_width": 14, "opacity": 0.5 } }),
+    );
+    let ring = gesture.ring_ids().len();
     gesture.trace(&samples);
     assert_eq!(gesture.commands_since(ring), ["element.create"]);
     let e = gesture.only();
-    assert!(stroke_of(&e).highlighter);
-    assert!(e.style.stroke_width >= 12.0);
-    assert_eq!(e.style.stroke_color.a, 128);
+    assert_eq!(stroke_of(&e).tip, Tip::Chisel);
+    assert_eq!((e.style.stroke_width, e.style.opacity), (14.0, 0.5));
 
     let mut plain = Rig::new();
-    let pts: Vec<[f64; 2]> = samples.iter().map(|p| [p.0, p.1]).collect();
     plain.run(
-        "element.create",
-        json!({ "kind": "freehand", "points": pts, "highlighter": true, "simplify": 2.0, "from_tool": true }),
+        "style.set",
+        json!({ "scope": "defaults", "props": { "tip": "chisel", "stroke_width": 14, "opacity": 0.5 } }),
     );
+    let pts: Vec<[f64; 2]> = samples.iter().map(|p| [p.0, p.1]).collect();
+    plain.run("element.create", json!({ "kind": "freehand", "points": pts, "simplify": 2.0, "from_tool": true }));
     assert_eq!(gesture.normalized_doc(), plain.normalized_doc());
 }
 
 #[test]
-fn the_highlighter_preview_is_already_wide_and_translucent() {
-    let (mut rig, _, _) = rig_with(Tool::Highlighter);
+fn the_chisel_preview_has_the_tip_the_stroke_will_have() {
+    let (mut rig, _, _) = rig_with(Tool::Freehand);
+    rig.run("style.set", json!({ "scope": "defaults", "props": { "tip": "chisel" } }));
     rig.down(100.0, 100.0);
     rig.drag_to(160.0, 120.0);
-    let p = rig.preview().expect("a preview");
-    assert!(p.style.stroke_width >= 12.0);
-    assert_eq!(p.style.stroke_color.a, 128);
+    assert_eq!(stroke_of(&rig.preview().expect("a preview")).tip, Tip::Chisel);
+}
+
+// ---- shift straightens ------------------------------------------------------------------------------------------
+
+fn shifted(rig: &mut Rig, on: bool) {
+    rig.mods.shift = on;
+}
+
+#[test]
+fn shift_draws_a_straight_stroke_from_the_start_to_the_pointer_at_the_angle_step() {
+    let (mut rig, ring, _) = rig_with(Tool::Freehand);
+    rig.down(100.0, 100.0);
+    rig.drag_to(150.0, 130.0);
+    shifted(&mut rig, true);
+    // 200 right and 70 down is 19.3 degrees: the lock takes it to 15 (a step of 15 degrees), keeping the length.
+    rig.drag_to(300.0, 170.0);
+    let preview = world(&rig.preview().expect("a preview"));
+    assert_eq!(preview.len(), 3, "the freehand part, then one straight segment");
+    let (anchor, end) = (preview[1], preview[2]);
+    let (dx, dy) = (end.0 - anchor.0, end.1 - anchor.1);
+    assert!((dy.atan2(dx).to_degrees() - 15.0).abs() < 1e-6, "{}", dy.atan2(dx).to_degrees());
+    let want = ((300.0f64 - anchor.0).powi(2) + (170.0f64 - anchor.1).powi(2)).sqrt();
+    assert!((dx.hypot(dy) - want).abs() < 1e-6, "the length of the drag is kept");
+    assert!(rig.parts().angle_rays.is_some(), "the rays of the lock are shown, as for a line");
+    rig.up(300.0, 170.0);
+    assert_eq!(rig.commands_since(ring), ["element.create"], "one command");
+    assert!(rig.parts().angle_rays.is_none());
+    let made = world(&rig.only());
+    assert!(made.len() >= 2);
+    let (a, b) = (made[made.len() - 2], made[made.len() - 1]);
+    assert!(((b.1 - a.1).atan2(b.0 - a.0).to_degrees() - 15.0).abs() < 1e-6, "the stored stroke ends straight too");
+}
+
+#[test]
+fn shift_from_the_press_makes_a_line_and_follows_the_pointer_as_it_turns() {
+    let (mut rig, _, _) = rig_with(Tool::Freehand);
+    shifted(&mut rig, true);
+    rig.down(100.0, 100.0);
+    for (x, y, degrees) in [(200.0, 100.0, 0.0), (200.0, 205.0, 45.0 + 0.0), (100.0, 300.0, 90.0)] {
+        rig.drag_to(x, y);
+        let pts = world(&rig.preview().expect("a preview"));
+        assert_eq!(pts.len(), 2);
+        let angle = (pts[1].1 - pts[0].1).atan2(pts[1].0 - pts[0].0).to_degrees();
+        // 0, 45 and 90 degrees are on the lock; the pointer is within the step of them.
+        assert!(
+            (angle - degrees).abs() < 1e-6
+                || degrees == 45.0 && (angle - 45.0).abs() < 1e-6
+                || (angle - 90.0).abs() < 1e-6,
+            "{angle}"
+        );
+    }
+}
+
+#[test]
+fn releasing_shift_keeps_the_straight_segment_and_carries_on_freehand_from_its_end() {
+    let (mut rig, ring, _) = rig_with(Tool::Freehand);
+    shifted(&mut rig, true);
+    rig.down(100.0, 100.0);
+    rig.drag_to(200.0, 103.0);
+    let straight_end = world(&rig.preview().expect("a preview"))[1];
+    assert!((straight_end.1 - 100.0).abs() < 1e-6, "snapped to 0 degrees: {straight_end:?}");
+    shifted(&mut rig, false);
+    rig.drag_to(230.0, 160.0);
+    rig.drag_to(260.0, 140.0);
+    let pts = world(&rig.preview().expect("a preview"));
+    assert_eq!(pts[..2], [(100.0, 100.0), straight_end], "the segment stays as it was drawn");
+    assert_eq!(pts[pts.len() - 2..], [(230.0, 160.0), (260.0, 140.0)], "and the pencil follows the pointer again");
+    assert!(rig.parts().angle_rays.is_none(), "the rays go with Shift");
+    rig.up(260.0, 140.0);
+    assert_eq!(rig.commands_since(ring), ["element.create"]);
+}
+
+#[test]
+fn shift_pressed_again_starts_a_new_straight_segment_where_the_last_point_is() {
+    let (mut rig, _, _) = rig_with(Tool::Freehand);
+    rig.down(100.0, 100.0);
+    rig.drag_to(140.0, 100.0);
+    shifted(&mut rig, true);
+    rig.drag_to(140.0, 200.0);
+    shifted(&mut rig, false);
+    rig.drag_to(150.0, 210.0);
+    shifted(&mut rig, true);
+    rig.drag_to(250.0, 215.0);
+    let pts = world(&rig.preview().expect("a preview"));
+    let (anchor, end) = (pts[pts.len() - 2], pts[pts.len() - 1]);
+    assert_eq!(anchor, (150.0, 210.0), "the second segment starts at the last freehand point");
+    assert!(
+        (end.1 - anchor.1).abs() < 1e-6
+            || ((end.1 - anchor.1).atan2(end.0 - anchor.0).to_degrees() % 15.0).abs() < 1e-6
+    );
+}
+
+#[test]
+fn without_shift_the_pencil_stays_freehand() {
+    let (mut rig, _, _) = rig_with(Tool::Freehand);
+    rig.down(100.0, 100.0);
+    rig.drag_to(150.0, 113.0);
+    assert_eq!(world(&rig.preview().expect("a preview")), [(100.0, 100.0), (150.0, 113.0)]);
+    assert!(rig.parts().angle_rays.is_none());
 }
 
 // ---- eraser -----------------------------------------------------------------------------------------------------

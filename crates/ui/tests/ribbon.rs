@@ -151,8 +151,13 @@ fn each_drawing_tool_shows_the_groups_of_its_new_elements() {
     let h = desk(with_tool("freehand"));
     assert!(has(&h, "Brush: Calligraphy") && has(&h, "More options") && !has(&h, "Dashed"));
     assert!(has(&h, "Thin"), "a freehand stroke has a width");
+    assert!(has(&h, "Tip: Round") && has(&h, "Tip: Chisel"), "the pencil has a tip, and width and opacity beside it");
+    assert!(has(&h, "Opacity"));
+    assert!(!has(&h, "Highlighter: none"), "the colours are the highlighter's");
+    // The highlighter applies a colour: the split button of the highlight control, and no stroke settings.
     let h = desk(with_tool("highlighter"));
-    assert!(has(&h, "Brush: Normal"));
+    assert!(has(&h, "Highlighter: none") && has(&h, "Highlight colours"));
+    assert!(!has(&h, "Thin") && !has(&h, "Tip: Chisel") && !has(&h, "Brush: Normal") && !has(&h, "Opacity"));
     for tool in ["text", "math"] {
         let h = desk(with_tool(tool));
         assert!(has(&h, FONT) && has(&h, TEXT_SIZE) && has(&h, "Text align: Left"), "{tool}");
@@ -1311,4 +1316,32 @@ fn the_editor_selection_decides_what_the_button_shows_while_a_text_is_edited() {
     f.model.text_editing = true;
     f.model.editor_highlight = Some(MarkerState::Mixed);
     assert!(has(&desk(f), "Highlight (yellow)"), "a mixed selection puts the marker on");
+}
+
+#[test]
+fn the_highlighter_tool_has_the_same_colours_as_the_highlight_control_and_none_removes() {
+    let mut h = desk(with_tool("highlighter"));
+    // The tool starts yellow; the button turns the colour off (none) and back on with the last colour.
+    let calls = click_and_apply(&mut h, "Highlighter: none");
+    assert_eq!(
+        calls.last().map(|c| (c.id.as_str(), c.args.clone())),
+        Some(("tool.set_marker", json!({ "color": null })))
+    );
+    open(&mut h, "Highlight colours");
+    for name in ["yellow", "green", "pink", "blue", "orange", "none"] {
+        assert!(has(&h, &format!("Highlight: {name}")), "{name}");
+    }
+    let calls = click_and_apply(&mut h, "Highlight: pink");
+    assert_eq!(
+        calls.last().map(|c| (c.id.as_str(), c.args.clone())),
+        Some(("tool.set_marker", json!({ "color": "pink" })))
+    );
+    let calls = click_and_apply(&mut h, "Highlighter: none");
+    assert_eq!(calls.last().map(|c| c.args.clone()), Some(json!({ "color": null })));
+    open(&mut h, "Highlight colours");
+    let calls = click_and_apply(&mut h, "Highlight: none");
+    assert_eq!(
+        calls.last().map(|c| (c.id.as_str(), c.args.clone())),
+        Some(("tool.set_marker", json!({ "color": null })))
+    );
 }

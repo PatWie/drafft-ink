@@ -24,7 +24,8 @@ use std::sync::Arc;
 use drafftink_edit::text_bind::TextMeasure as EditMeasure;
 use drafftink_io::TextMeasure as IoMeasure;
 use drafftink_io::svg::MathSvg;
-use drafftink_typeset::{MathError, MathLayout, TypesetStats};
+use drafftink_scene::TextData;
+use drafftink_typeset::{MathError, MathLayout, TextLayout, TypesetStats};
 
 pub use fake::FakeMeasure;
 pub use typeset::{LazyTypesetter, SharedTypesetter, TypesetMeasure};
@@ -37,6 +38,12 @@ pub trait Measure: EditMeasure + IoMeasure + MathSvg + Send {
 
     /// Cache counters, for engines that have caches.
     fn stats(&self) -> Option<TypesetStats> {
+        None
+    }
+
+    /// The layout the renderer draws for `text` in a box `box_width` wide, to find the characters under a point.
+    /// `None` for an engine without text layout (the fake measure).
+    fn text_layout(&self, _text: &TextData, _box_width: f64) -> Option<Arc<TextLayout>> {
         None
     }
 }
@@ -92,6 +99,11 @@ impl Services {
     /// are served from the cache.
     pub fn math_layout(&self, latex: &str, size: f64) -> Result<Arc<MathLayout>, MathError> {
         self.measure.math_layout(latex, size)
+    }
+
+    /// The layout of a text as it is drawn, in a box `box_width` wide. `None` without a text engine.
+    pub fn text_layout(&self, text: &TextData, box_width: f64) -> Option<Arc<TextLayout>> {
+        self.measure.text_layout(text, box_width)
     }
 
     /// Cache counters, when the engine has caches.

@@ -57,6 +57,7 @@ pub(super) const TEXT_ALIGNS: [(&str, &str, Align); 3] =
 pub(super) const ARROW_TYPES: [(&str, &str); 4] =
     [("Sharp", "sharp"), ("Round", "round"), ("Elbow", "elbow"), ("Auto route", "auto_route")];
 const BRUSHES: [(&str, &str); 2] = [("Normal", "normal"), ("Calligraphy", "calligraphy")];
+const TIPS: [(&str, &str); 2] = [("Round", "round"), ("Chisel", "chisel")];
 const STROKE_STYLES: [(LineStyle, &str, &str); 3] = [
     (LineStyle::Solid, "solid", "Solid"),
     (LineStyle::Dashed, "dashed", "Dashed"),
@@ -93,6 +94,8 @@ impl Row {
             Row::ArrowPath => arrow_path(ui, cx),
             Row::ArrowHeads => arrow_heads(ui, cx, st),
             Row::Brush => brush(ui, cx),
+            Row::Tip => tip(ui, cx),
+            Row::Marker => marker(ui, cx, st),
             Row::FontFamily => font_family(ui, cx, st),
             Row::FontWeight => font_weight(ui, cx),
             Row::TextSize => text_size(ui, cx),
@@ -458,6 +461,21 @@ fn brush(ui: &mut Ui, cx: &mut Cx<'_>) {
     }
 }
 
+fn tip(ui: &mut Ui, cx: &mut Cx<'_>) {
+    let current = cx.model.style.str_value("tip").map(str::to_owned);
+    for (name, value) in TIPS {
+        let ctl = style_ctl("tip", value).label(format!("Tip: {name}")).selected(current.as_deref() == Some(value));
+        chip(cx, ui, &ctl, name);
+    }
+}
+
+/// The colour of the highlighter tool: the split button of the highlight control, with the same colours and "none"
+/// in its popover. A pick is `tool.set_marker`; "none" makes a drag take the highlight off.
+fn marker(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState) {
+    let state = cx.model.tool_marker.map_or(MarkerState::Off, MarkerState::On);
+    highlight_split(ui, cx, st, state, Pick::Tool);
+}
+
 // ---- text ----
 
 fn font_family(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState) {
@@ -623,18 +641,42 @@ fn highlight_in(row: Row, ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState) {
 /// has one. It is `style.set` with `highlight`, so it works for the characters selected in a text edit too.
 fn highlight(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState) {
     let Some(state) = cx.model.marker().filter(|_| has_highlight(cx)) else { return };
+    highlight_split(ui, cx, st, state, Pick::Style);
+}
+
+/// What a pick of the highlight button or of its colours runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Pick {
+    /// `style.set` with `highlight`: the selection.
+    Style,
+    /// `tool.set_marker`: the colour of the highlighter tool.
+    Tool,
+}
+
+impl Pick {
+    /// The command that puts `colour` (`null` is none) where this pick goes.
+    pub(super) fn ctl(self, colour: Value) -> Ctl<'static> {
+        match self {
+            Pick::Style => Ctl::new("style.set").args(json!({ "props": { "highlight": colour } })),
+            Pick::Tool => Ctl::new("tool.set_marker").args(json!({ "color": colour })),
+        }
+    }
+}
+
+fn highlight_split(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState, state: MarkerState, pick: Pick) {
     if let MarkerState::On(shown) = state {
         st.last_marker = Some(shown);
     }
     let colour = st.last_marker.unwrap_or(MarkerColor::Yellow);
     let (value, tip) = match state {
+        MarkerState::On(_) if pick == Pick::Tool => (Value::Null, "Highlighter: none".to_owned()),
         MarkerState::On(_) => (Value::Null, "Take the highlight off".to_owned()),
+        MarkerState::Off | MarkerState::Mixed if pick == Pick::Tool => {
+            (json!(colour.name()), format!("Highlighter: {}", colour.name()))
+        }
         MarkerState::Off | MarkerState::Mixed => (json!(colour.name()), format!("Highlight ({})", colour.name())),
     };
-    let ctl = Ctl::new("style.set")
-        .args(json!({ "props": { "highlight": value } }))
-        .label(tip)
-        .selected(matches!(state, MarkerState::On(_)));
+    let ctl = pick.ctl(value).label(tip).selected(matches!(state, MarkerState::On(_)));
     let (pal, side) = (cx.pal, cx.layout.small_side());
     cx.command_widget(ui, &ctl, vec2(side, side), move |p, rect, look| {
         paint_button_bg(p, rect, look, &pal, true);

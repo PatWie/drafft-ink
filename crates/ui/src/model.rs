@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::hash::{DefaultHasher, Hash, Hasher};
 
 use drafftink_engine::spec::{CommandSpec, Host, Scope, TextGate};
-use drafftink_engine::state::Tool;
+use drafftink_engine::state::{MarkerColor, Tool};
 use drafftink_engine::{Refusal, Session};
 use drafftink_scene::paint::PaintMode;
 use drafftink_scene::{Color, SceneRead};
@@ -562,6 +562,8 @@ pub struct Model {
     pub paint_editing: bool,
     /// The brush of the paint editor.
     pub brush: BrushView,
+    /// The colour of the highlighter tool; `None` is "none" (the tool removes highlights).
+    pub tool_marker: Option<MarkerColor>,
     /// Bold and italic of the selected texts and labels, from the document; `None` when none is selected.
     pub text_faces: Option<TextFaces>,
     /// Bold and italic at the selection of the text editor while one runs. The editor owns the text then, so these
@@ -641,6 +643,7 @@ impl Default for Model {
             crop_editing: false,
             paint_editing: false,
             brush: BrushView::default(),
+            tool_marker: None,
             text_faces: None,
             editor_faces: None,
             editor_highlight: None,
@@ -705,6 +708,7 @@ impl Model {
         t.observed.crop_editor.as_ref().map(|id| id.as_str().to_owned()).hash(&mut h);
         t.observed.paint_editor.as_ref().map(|id| id.as_str().to_owned()).hash(&mut h);
         format!("{:?}", s.tool.paint_brush).hash(&mut h);
+        s.tool.marker.hash(&mut h);
         (s.tool.active.name(), s.tool.lock, s.tool.temporary.map(Tool::name)).hash(&mut h);
         format!("{:?}", s.tool.style_defaults).hash(&mut h);
         s.view_only.hash(&mut h);
@@ -821,6 +825,7 @@ impl Model {
             opacity: brush.opacity,
             mode: brush.mode,
         };
+        self.tool_marker = s.tool.marker;
         self.zoom_percent = t.view.percent();
         self.background = t.doc.store().meta().background.to_hex();
         self.history = HistoryView { undo_label: t.doc.undo_label(), redo_label: t.doc.redo_label() };

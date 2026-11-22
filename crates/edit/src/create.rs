@@ -3,9 +3,9 @@
 //! * **Sizes.** A rectangle, diamond, ellipse or frame must be at least [`MIN_SIZE`] wide and high; a line or
 //!   arrow must reach [`MIN_SIZE`] in one direction. (The old app added a shape when width or height was above 1;
 //!   the catalog turned that into a refusal.)
-//! * **Defaults of the old tools.** An arrow has no start head and an `arrow` end head. A highlighter stroke is at
-//!   least [`MIN_HIGHLIGHTER_WIDTH`] wide with alpha [`HIGHLIGHTER_ALPHA`], unless the caller's style says
-//!   otherwise. A stroke is simplified with Ramer-Douglas-Peucker at [`DEFAULT_SIMPLIFY`] (`Freehand::simplify(2.0)`).
+//! * **Defaults of the old tools.** An arrow has no start head and an `arrow` end head. A marker stroke (the pencil
+//!   with a chisel tip, or the old `highlighter` argument) is at least [`MIN_MARKER_WIDTH`] wide with alpha
+//!   [`MARKER_ALPHA`] when it comes from the old argument, unless the caller's style says otherwise. A stroke is simplified with Ramer-Douglas-Peucker at [`DEFAULT_SIMPLIFY`] (`Freehand::simplify(2.0)`).
 //!   The math placeholder is [`DEFAULT_MATH`].
 //! * **Names** ([`validate_name`], [`ensure_name_free`]): 1 to [`MAX_NAME_CHARS`] characters, no leading `@` or `$`,
 //!   no control characters, unique among live elements.
@@ -27,7 +27,7 @@ use drafftink_geom::kurbo::{Point, Size};
 use drafftink_scene::{
     BindMode, Brush, Element, ElementError, ElementId, ElementKind, FrameData, FreehandData, Head, IdSource,
     IndexError, Kind, LinearData, LinearKind, MathData, PathType, PressureMode, SceneRead, SceneTx, StoreError, Style,
-    TextData, TextStyle, Transform, ZIndex, limits, validate_element,
+    TextData, TextStyle, Tip, Transform, ZIndex, limits, validate_element,
 };
 
 use crate::arrow::{ArrowError, BindRequest, bind_end};
@@ -42,10 +42,10 @@ use crate::zorder::{self, Place, ZOrderError};
 
 /// Smallest width or height of a new shape.
 pub const MIN_SIZE: f64 = 1.0;
-/// Narrowest highlighter stroke when the style does not give a width.
-pub const MIN_HIGHLIGHTER_WIDTH: f64 = 12.0;
-/// Alpha of a highlighter stroke when the style does not give a colour (50%).
-pub const HIGHLIGHTER_ALPHA: u8 = 128;
+/// Narrowest marker stroke made through the old `highlighter` argument when the style does not give a width.
+pub const MIN_MARKER_WIDTH: f64 = 12.0;
+/// Alpha of a marker stroke made through the old `highlighter` argument when the style does not give a colour (50%).
+pub const MARKER_ALPHA: u8 = 128;
 /// Default Ramer-Douglas-Peucker tolerance of a stroke, in world units.
 pub const DEFAULT_SIMPLIFY: f64 = 2.0;
 /// The formula a new math element gets when none is given.
@@ -321,7 +321,7 @@ pub fn set_name<T: SceneTx>(tx: &mut T, id: &ElementId, name: Option<&str>) -> R
 // Styles and strokes
 // ---------------------------------------------------------------------------------------------
 
-/// Which style properties the caller chose, so the highlighter keeps them.
+/// Which style properties the caller chose, so the marker preset keeps them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Given {
     /// The caller gave a stroke width.
@@ -330,14 +330,14 @@ pub struct Given {
     pub color: bool,
 }
 
-/// The style of a highlighter stroke: `base` with the width raised to [`MIN_HIGHLIGHTER_WIDTH`] unless the caller
-/// gave a width, and the alpha of the colour set to [`HIGHLIGHTER_ALPHA`] unless the caller gave a colour.
-pub fn highlighter_style(mut base: Style, given: Given) -> Style {
+/// The style of a marker stroke: `base` with the width raised to [`MIN_MARKER_WIDTH`] unless the caller
+/// gave a width, and the alpha of the colour set to [`MARKER_ALPHA`] unless the caller gave a colour.
+pub fn marker_style(mut base: Style, given: Given) -> Style {
     if !given.width {
-        base.stroke_width = base.stroke_width.max(MIN_HIGHLIGHTER_WIDTH);
+        base.stroke_width = base.stroke_width.max(MIN_MARKER_WIDTH);
     }
     if !given.color {
-        base.stroke_color.a = HIGHLIGHTER_ALPHA;
+        base.stroke_color.a = MARKER_ALPHA;
     }
     base
 }
@@ -490,8 +490,8 @@ pub struct StrokeSpec {
     pub pressure_mode: PressureMode,
     /// Brush shape.
     pub brush: Brush,
-    /// A marker stroke drawn under the other elements' ink.
-    pub highlighter: bool,
+    /// The tip of the pen.
+    pub tip: Tip,
 }
 
 /// A freehand stroke through `world` (at least one point; one point is a dot).
@@ -509,7 +509,7 @@ pub fn freehand_element(
     d.pressures = spec.pressures;
     d.pressure_mode = spec.pressure_mode;
     d.brush = spec.brush;
-    d.highlighter = spec.highlighter;
+    d.tip = spec.tip;
     let mut e = Element::new(id, ElementKind::Freehand(d), index);
     e.style = style;
     e.refit_points().map_err(|e| CreateError::Internal(e.to_string()))?;
@@ -994,11 +994,11 @@ mod tests {
     }
 
     #[test]
-    fn highlighter_raises_width_and_sets_alpha_unless_told() {
+    fn marker_raises_width_and_sets_alpha_unless_told() {
         let base = Style::default();
-        let h = highlighter_style(base.clone(), Given::default());
+        let h = marker_style(base.clone(), Given::default());
         assert_eq!((h.stroke_width, h.stroke_color.a), (12.0, 128));
-        let kept = highlighter_style(base, Given { width: true, color: true });
+        let kept = marker_style(base, Given { width: true, color: true });
         assert_eq!((kept.stroke_width, kept.stroke_color.a), (2.0, 255));
     }
 

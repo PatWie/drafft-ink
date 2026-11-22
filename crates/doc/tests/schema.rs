@@ -76,7 +76,7 @@ fn every_kind() -> Document {
         d.pressures = vec![0.1, 0.5, 0.9];
         d.pressure_mode = PressureMode::Device;
         d.brush = Brush::Calligraphy;
-        d.highlighter = true;
+        d.tip = drafftink_scene::Tip::Chisel;
     }
     els.push(free);
 

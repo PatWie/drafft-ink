@@ -2,11 +2,12 @@
 //! that have no control of their own) and the heads of an arrow. They are menu-kit popups, so they look and
 //! behave like every other menu: rows with check marks, a click outside closes them, a greyed row says why.
 
+use drafftink_engine::state::Tool;
 use drafftink_scene::MarkerColor;
 use egui::{Align2, Context, Id, Sense, pos2, vec2};
 use serde_json::{Value, json};
 
-use super::controls::{CORNERS, LINE_HEIGHTS, corner_ctl, corner_slider, has_path, new_arrows};
+use super::controls::{CORNERS, LINE_HEIGHTS, Pick, corner_ctl, corner_slider, has_path, new_arrows};
 use super::heads::{COLUMNS, End, HEADS, head_sample};
 use super::pictograms::marker_swatch;
 use super::{Group, shows};
@@ -187,7 +188,7 @@ const MARKER_COLUMNS: usize = 6;
 
 /// The marker colours as swatches in one row, then "None". A pick is `style.set` with `highlight`, so while a text is
 /// edited it reaches the selected characters (`text_editor_takes_style`).
-fn highlight_rows(menu: &mut Menu<'_, '_, '_>, current: Option<MarkerState>) {
+fn highlight_rows(menu: &mut Menu<'_, '_, '_>, current: Option<MarkerState>, pick: Pick) {
     menu.heading("Highlight");
     let pal = menu.palette();
     let choices: Vec<Option<MarkerColor>> = MarkerColor::ALL.into_iter().map(Some).chain([None]).collect();
@@ -202,10 +203,7 @@ fn highlight_rows(menu: &mut Menu<'_, '_, '_>, current: Option<MarkerState>) {
             (None, Some(MarkerState::Off)) => true,
             _ => false,
         };
-        let ctl = Ctl::new("style.set")
-            .args(json!({ "props": { "highlight": value } }))
-            .label(format!("Highlight: {name}"))
-            .selected(selected);
+        let ctl = pick.ctl(value).label(format!("Highlight: {name}")).selected(selected);
         cx.command_widget(ui, &ctl, size, move |p, rect, look| {
             paint_button_bg(p, rect, look, &pal, true);
             marker_swatch(p, rect.shrink2(vec2(space::SM, space::SM)), choice, pal.dark, icon_color(look, &pal));
@@ -268,8 +266,13 @@ pub(crate) fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState, overflow: &
                 pivot: Align2::LEFT_TOP,
                 at: anchor.left_bottom() + vec2(0.0, GAP),
             };
-            let current = cx.model.marker();
-            popup_sized(ctx, cx, &spec, MENU_WIDTH, |menu| highlight_rows(menu, current))
+            // The highlighter tool has its own colour; with any other tool the colours go to the selection.
+            let (current, pick) = if cx.model.tool == Tool::Highlighter {
+                (Some(cx.model.tool_marker.map_or(MarkerState::Off, MarkerState::On)), Pick::Tool)
+            } else {
+                (cx.model.marker(), Pick::Style)
+            };
+            popup_sized(ctx, cx, &spec, MENU_WIDTH, |menu| highlight_rows(menu, current, pick))
         }
         RibbonMenu::StartHead | RibbonMenu::EndHead => {
             let spec = Popup {
