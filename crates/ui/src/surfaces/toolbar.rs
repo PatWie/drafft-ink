@@ -3,7 +3,8 @@
 //! panel. The Lasso button is a toggle: clicking it while it is the tool goes back to Select. In the touch
 //! layout the column has larger buttons, scrolls, and collapses to one button.
 
-use egui::{Align2, Area, Context, Id, Order, vec2};
+use drafftink_scene::MarkerColor;
+use egui::{Align2, Area, Color32, Context, Id, Order, vec2};
 use serde_json::json;
 
 use crate::action::Verb;
@@ -44,11 +45,23 @@ fn tool_ctl(tool: Tool, active: Tool) -> Ctl<'static> {
         return Ctl::new("tool.set").args(json!({ "tool": Tool::Select.name() })).label("Lasso tool").selected(true);
     }
     let ctl = Ctl::new("tool.set").args(json!({ "tool": tool.name() })).selected(selected);
+    // Not a key binding of `tool.set` (the lasso, the highlighter), so the command has no title for them.
     if tool == Tool::Lasso {
-        // Not a key binding of `tool.set`, so the command has no title for it.
         return ctl.label("Lasso tool");
     }
+    if tool == Tool::Highlighter {
+        return ctl.label("Highlighter tool");
+    }
     ctl
+}
+
+/// The setting that makes the bar under the highlighter show its colour.
+pub(crate) const COLOURFUL: &str = "ui.colourful_toolbar";
+
+/// The colour of the bar under the highlighter icon: the ink of the marker on this theme when the toolbar is
+/// colourful and a marker is chosen; `None` (the neutral grey of the icon) when it is not, and for "none".
+pub(crate) fn highlighter_bar(colourful: bool, marker: Option<MarkerColor>, dark: bool) -> Option<Color32> {
+    marker.filter(|_| colourful).map(|m| crate::colors::marker_offer(m, dark).shown)
 }
 
 /// The least height the tool column scrolls in, on a window too short for it.
@@ -88,7 +101,14 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
                 scroll_when_taller(ui, "tools_scroll", max_height, |ui| {
                     ui.spacing_mut().item_spacing = vec2(0.0, space::XS);
                     for &(tool, icon) in TOOLS {
-                        cx.tool_button(ui, &tool_ctl(tool, cx.model.tool), icon);
+                        let ctl = tool_ctl(tool, cx.model.tool);
+                        if tool == Tool::Highlighter {
+                            let bar =
+                                highlighter_bar(cx.model.setting_bool(COLOURFUL), cx.model.tool_marker, cx.pal.dark);
+                            cx.highlighter_button(ui, &ctl, bar);
+                        } else {
+                            cx.tool_button(ui, &ctl, icon);
+                        }
                     }
                     ui.add_space(space::SM);
                     let sticky = Ctl::new("element.create_sticky").args(sticky_args()).label("Sticky note");

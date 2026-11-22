@@ -133,6 +133,7 @@ fn body(ui: &mut Ui, cx: &mut Cx<'_>, layout: &mut LayoutPreference, draft: &mut
     let pal = cx.pal;
     row_of_values(ui, cx, "Theme", "theme", &strings(&THEMES));
     font_row(ui, cx);
+    switches(ui, cx, &[("Colourful toolbar", "ui.colourful_toolbar", false)]);
     section_label(ui, &pal, "Layout");
     ui.horizontal(|ui| {
         for choice in LayoutPreference::ALL {
