@@ -763,6 +763,73 @@ Pictures of an encrypted room are files now. Differences and gaps, with the reas
 - **Commands.** One gate (`cmd/image_room.rs`) covers `image.insert`, `clipboard.paste`, `library.insert` and `doc.open` with merge: `image_too_large` (with the real size, and an offer to run again with the new argument `shrink: true`, which uses `fit_into`) and `room_images_full`, before the first change. `doc.export` has `missing_images: refuse | placeholder`, reads the cache first, and refuses `images_pending` (online; the shells re-run it through `Refusal::is_pending`, and after 30 s it becomes `images_unavailable`) or `images_unavailable`. `doc.save` embeds what the tab holds and reports `images_missing`. Join with embedded pictures refuses `local_too_large_for_room` before anything is sent. Leaving a room puts the policy back to `Embedded` and pulls the cached pictures into the tab. Named versions keep the file ids; `version.open` takes bytes from the tab or the cache and warns about the rest.
 - `clipboard.copy_as` is not gated. A batch step refused with `images_pending` fails the batch; only `render_pending` is waited for.
 
+### 14.5 What phase 3 built (demo), and where it differs from the text above (2026-11-22)
+
+`apps/drafftink-worker` (`drafftink-worker`, L7) exists: a TypeScript Worker and Durable Object (`Room`) around the Rust core,
+which is `drafftink-relay` compiled to wasm with a thin layer of adapters. `apps/drafftink-worker/README.md` has the commands,
+the variables and the test list. What was built:
+
+- **Relay core additions** (`crates/relay`): `Relay::restore_member`, `restore_waiting`, `heard`, `member_of` for a core that is
+  rebuilt after a hibernation (a restored member's first frame loads the room lazily), `StoreError::DailyLimit` with
+  `Output::quota_hit`, `ImageStatus::DailyLimit` and `ms_until_utc_midnight` (a failed flush on the daily limit sheds every
+  connection with `Error{DailyLimit}` instead of retrying every second), and the store codec as the public module
+  `drafftink_relay::codec`, which the server and the Worker share.
+- **The Worker** (`src/index.ts`): `/r/<id>/ws`, `/r/<id>/f`, `/r/<id>/f/<name>`, `/api/status`; the room id and the picture
+  name are checked, picture requests are membership-checked from the `Authorization` header and size-checked
+  (`Content-Length`) before any object is called, a WebSocket upgrade passes the `Origin` check against `ALLOWED_ORIGINS`,
+  and a used-up daily limit that an object reported is remembered per isolate until 00:00 UTC.
+- **The room** (`src/room.ts`): SQLite-backed, hibernation API, `ping`/`pong` as a runtime auto-response, one attachment
+  per socket, the core rebuilt on every wake, timers (`setTimeout` within a minute) and alarms (farther wakes, only when
+  they change), deletion by `deleteAlarm()` then `deleteAll()`, every storage exception mapped, a `BlobBackend` seam for R2.
+- **Configuration**: one template, `deploy/cloudflare/wrangler.toml.in`, rendered by
+  `apps/drafftink-worker/scripts/render-config.sh <demo|private>`; the Worker reads only the variables of 19.8.
+- **Tests**: Rust tests of the adapters and of the core over an in-memory host; 62 vitest tests on miniflare (routing,
+  hibernation, retention with `runDurableObjectAlarm`, quota, the canary); fixtures made by a native Rust test with a known
+  nonce source; an ignored smoke test against `wrangler dev`, which also showed a real alarm deleting a room with
+  `--var ROOM_TTL_SECS:3`.
+
+Differences and gaps, with the reason:
+
+- **The Worker cannot check membership before a WebSocket upgrade.** The proof is in the first frame, and a socket cannot be
+  handed to an object after the Worker has accepted it. A stranger's upgrade therefore costs one object request, and the
+  core refuses him at `Join` (`Unauthorized`). Section 15's "the Worker rejects a non-member without calling the object"
+  holds for the picture routes, which carry the proof in a header. The `Origin` check and the room id check do run before
+  the object.
+- **A hibernated object does not run its timers.** The core's `wake_at` is mapped to `setTimeout` within 60 seconds (this keeps
+  a room with people awake, as designed) and to an alarm beyond that. A socket that connected and never sent `Join` keeps the
+  room awake for its 10 second join timeout; `evictDurableObject` in the tests waits for it.
+- **`Joined.limits` and the picture limits come from the variables only**, validated by the core against the protocol
+  ceilings. The private table in 19.8 asks for 500 MiB and 2,000 pictures per room, which the protocol ceilings (50 MiB, 200)
+  refuse. The ceilings must be raised in `drafftink-protocol` before the private environment can announce more.
+- **The daily-limit error texts are a guess.** Cloudflare does not document them (collab-spike section 7), so `src/host-error.ts`
+  treats an exception as a used-up limit when its message contains words like "daily", "quota", "free tier" or "spending
+  cap". Anything else is `Unavailable`. The first real-account run must replace the guess with the exact text.
+- **Not built (other phases):** the Access JWT check (a hook in `src/access-hook.ts` refuses every request while
+  `ACCESS_REQUIRED` is true, so an environment cannot go live unprotected by mistake), R2 (`BLOB_STORE=r2` answers a
+  `500 bad_config`; the seam and the steps are in `src/blobs.ts`), `DeleteRoom` beyond what the core does (an R2 purge),
+  the `Registry` object, Turnstile, and the Makefile (`make cf-config` fills placeholders that the new template no longer
+  has; the exact change is in the README of the Worker).
+- **No `wasm-opt`.** The module is 360 KiB unoptimised (`release-wasm`); the spike's 47 KiB core had no relay in it. Far under
+  the 64 MiB limit, but the startup time of the module under the real 1 second limit is part of the open checks.
+
+Real-account checks still open (the list of `collab-spike.md`, with what phase 3 adds):
+
+1. Free-plan CPU of a 4 MiB picture `PUT` through the Worker and the object, and of a 15 MiB frame (10 ms against 30 s; error 1102).
+2. The exact exception text, HTTP status and WebSocket close code at each Free daily limit (requests, rows written, duration),
+   as seen from `stub.fetch`, `webSocketMessage` and `sql.exec`: replaces the word match of `host-error.ts`.
+3. Spending caps on Free; on Paid the text `Exceeded the account's spending cap for Durable Objects.` (the match covers it).
+4. A 48 hour alarm on the real service (`getAlarm()` after a day), and `deleteAll()` without `deleteAlarm()` with the final compatibility date.
+5. Whether `ping` auto-responses count as requests, and whether an idle object that only gets pings has zero duration.
+6. The real SQLite row ceiling (8 MB against 8 MiB): a 4 MiB picture is far below, but the 413 limit assumes it.
+7. `CF-Connecting-IP` inside the object (not used yet).
+8. The Access checks of 19.12 (cookie on an upgrade, service token on an upgrade, session expiry with an open socket).
+9. `workers_dev` and preview URLs actually off after the first deploy of each environment.
+10. Static assets: the Worker request counter does not move for static hits.
+11. The bundle upload on Free with the real core, and its startup time.
+12. New in phase 3: that the runtime's `getWebSocketAutoResponseTimestamp` is current for a socket that only pings across a
+    hibernation on the real service (the spike saw it locally; the tests here cover a restored member only through `restore_member`, not through a real wake that follows a ping),
+    and that `ctx.getWebSockets()` after a wake lists exactly the sockets with their attachments.
+
 ---
 
 ## 15. Testing plan
