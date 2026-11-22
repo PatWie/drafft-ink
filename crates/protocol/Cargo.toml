@@ -6,12 +6,19 @@ license.workspace = true
 rust-version.workspace = true
 repository.workspace = true
 homepage.workspace = true
-description = "Versioned collaboration wire protocol (L0) shared by the Drafft.ink client and server."
+description = "Versioned collaboration wire protocol (L0) shared by the Drafft.ink client and server: plaintext rooms (v1) and sealed, end-to-end encrypted rooms (v2)."
 readme = "README.md"
 keywords = ["collaboration", "websocket", "protocol", "crdt", "whiteboard"]
 categories = ["network-programming", "web-programming::websocket", "encoding"]
 
 [dependencies]
+# Protocol v2 (sealed rooms) names rooms by a hash of the membership token, so the relay can check a join without the
+# key: that needs SHA-256, a constant-time compare and wiping of the token, and nothing else of the crypto stack.
+base64ct = { version = "1.8", features = ["alloc"] }
+# sha2 0.11 matches the hkdf, hmac and chacha20poly1305 releases of `drafftink-seal`; the workspace `sha2` is 0.10.
+sha2 = "0.11"
+subtle = { workspace = true }
+zeroize = "1.9"
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

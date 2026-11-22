@@ -12,7 +12,7 @@ Version 0.2.0 for every crate of ours, except the two vendored ones.
 | Crate | What |
 |---|---|
 | `drafftink-geom`, `-profile`, `-protocol` | L0 |
-| `drafftink-scene`, `-typeset`, `-sketch` | L1 |
+| `drafftink-scene`, `-typeset`, `-sketch`, `-seal` | L1 |
 | `drafftink-rex` 0.1.2, `drafftink-unicode-math` 0.1.0 | copies of ReX and its symbol tables, used by `typeset` (below) |
 | `drafftink-render` | L2 |
 | `drafftink-canvas`, `-doc` | L3 |

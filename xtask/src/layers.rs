@@ -53,6 +53,8 @@ pub const TABLE: &[(&str, Class)] = &[
     ("drafftink-scene", Class::Layer(1)),
     ("drafftink-typeset", Class::Layer(1)),
     ("drafftink-sketch", Class::Layer(1)),
+    // End-to-end encryption of collaboration rooms (docs/design/collab-e2e.md): keys, sealed records, the room link.
+    ("drafftink-seal", Class::Layer(1)),
     // L2
     ("drafftink-render", Class::Layer(2)),
     // L3
@@ -160,7 +162,8 @@ pub const ALLOWED_EXTERNAL: &[(&str, &[&str])] = &[
     // L0
     ("drafftink-geom", &["kurbo", "rstar"]),
     ("drafftink-profile", &["web-time"]),
-    ("drafftink-protocol", &[]),
+    // The room id of a sealed room is a hash of its membership token, so a relay checks a join without the key.
+    ("drafftink-protocol", &["base64ct", "sha2", "subtle", "zeroize"]),
     // L1
     (
         "drafftink-scene",
@@ -168,6 +171,20 @@ pub const ALLOWED_EXTERNAL: &[(&str, &[&str])] = &[
     ),
     ("drafftink-typeset", &["kurbo", "parley", "peniko", "png", "ttf-parser"]),
     ("drafftink-sketch", &["getrandom", "kurbo", "roughr"]),
+    (
+        "drafftink-seal",
+        &[
+            "base64ct",
+            "chacha20poly1305",
+            "getrandom",
+            "hkdf",
+            "hmac",
+            "sha2",
+            "subtle",
+            "wasm-bindgen-test",
+            "zeroize",
+        ],
+    ),
     // L2
     ("drafftink-render", &["base64", "image", "kurbo", "peniko", "png", "pollster", "schemars", "vello"]),
     // L3
@@ -567,7 +584,7 @@ mod tests {
         for n in ["geom", "profile", "protocol"] {
             assert_eq!(layer(&format!("drafftink-{n}")), Some(0));
         }
-        for n in ["scene", "typeset", "sketch"] {
+        for n in ["scene", "typeset", "sketch", "seal"] {
             assert_eq!(layer(&format!("drafftink-{n}")), Some(1));
         }
         assert_eq!(layer("drafftink-render"), Some(2));

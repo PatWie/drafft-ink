@@ -1,6 +1,6 @@
 # Collaboration: plan and to-do (later)
 
-Status: **planned, not started.** Named versions come first. The full design is [docs/design/collab-e2e.md](../design/collab-e2e.md); this page is the short plan and checklist.
+Status: **phase 1a is built** (the `seal` crate and protocol v2: `docs/protocol.md` section 11, `docs/design/collab-e2e.md` section 14.1); the rest is planned. Named versions come first. The full design is [docs/design/collab-e2e.md](../design/collab-e2e.md); this page is the short plan and checklist.
 
 ## What we build
 

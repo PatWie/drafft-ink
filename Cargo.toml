@@ -290,6 +290,20 @@ opt-level = 3
 [profile.dev.package.miniz_oxide]
 opt-level = 3
 
+# Sealing a record is a few microseconds optimised and about 100 times slower without: the tamper tests of
+# `drafftink-seal` open thousands of records, and the nonce test seals a million.
+[profile.dev.package.chacha20]
+opt-level = 3
+
+[profile.dev.package.poly1305]
+opt-level = 3
+
+[profile.dev.package.chacha20poly1305]
+opt-level = 3
+
+[profile.dev.package.sha2]
+opt-level = 3
+
 # Loading 100,000 elements into a tab document is 770,000 field inserts into Loro: 29 s with Loro unoptimised in a
 # test run, a tenth of that with it optimised (`docs/performance.md`, section 7.9).
 [profile.dev.package.loro]

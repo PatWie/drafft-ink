@@ -707,6 +707,21 @@ L7  apps/drafftink-worker   host: Worker + Durable Object around `relay`; DO SQL
 - **Two deployments, one Worker codebase.** `[env.demo]` and `[env.private]` in `apps/drafftink-worker/wrangler.toml` differ only in configuration: TTL, blob store, Access check, limits, allowed origins (19.8).
 - The v1 plaintext server stays for self-hosters who want server-side validation, MCP agents without keys, and persistence they trust.
 
+### 14.1 What phase 1a built, and where it differs from the text above (2026-11-22)
+
+`crates/seal` (`drafftink-seal`, L1) and protocol v2 in `crates/protocol` (`docs/protocol.md` section 11) exist. Differences from this design, with the reason:
+
+- **The record header, the room id and the membership check are in `drafftink-protocol`, not in `seal`.** `relay` and `seal` are both L1 and `cargo xtask layers` allows no same-layer edge, so the relay could not use a type of `seal`. The relay reads `RecordHeader` and checks `RoomId::accepts(&Proof)`; both need only SHA-256 and a constant-time compare. `seal` derives the token from the key and seals.
+- **`SEAL_OVERHEAD` is 78, not 74.** The plaintext starts with a 4-byte length prefix (section 6.3), which the 74 left out. A sealed image of `MAX_IMAGE_BYTES` is `MAX_SEALED_IMAGE_BYTES` = 4 MiB + 78.
+- **The room id is `SHA-256("drafft v1 room-id" || token)[..16]`** as in section 5.2 (the build brief wrote it without the label).
+- **`file_id` for `HMAC(K_name, file_id)` is the 32 raw bytes of the SHA-256**, not its hex text.
+- **`v2::ErrorCode` is a separate enum** from the v1 `ErrorCode`, because a v1 test fixes the v1 numbers at 1 to 14. The shared meanings keep their numbers; 15 to 18 are new; `ResyncRequired` and `InvalidUpdate` do not exist in v2.
+- **`PeerJoined` carries `max_presence_per_sec`** (section 11.3 says so; the table in 7.2 left it out).
+- **A `Join` is sent with `min_version == max_version`** because the layout of the rest depends on the version. A decoder given the other version's `Join` answers `DecodeError::WrongLayout`.
+- **A record's `from`, `ctr` and `covers_seq` fields must agree with its header** (checked by the decoder).
+- **No JSON debug form for v2.**
+- **The nonce source is a trait** (`NonceSource`, `OsNonces` in production) so that tests can seal with a known nonce and compare with vectors from another implementation.
+
 ---
 
 ## 15. Testing plan
