@@ -21,6 +21,7 @@ log.workspace = true
 loro.workspace = true
 thiserror.workspace = true
 serde_json.workspace = true
+base64.workspace = true
 
 # Native WebSocket: a background thread runs a small tokio runtime; rustls for wss.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -30,12 +31,19 @@ futures-util.workspace = true
 rustls = { workspace = true, features = ["ring", "std", "tls12", "logging"] }
 rustls-native-certs.workspace = true
 webpki-roots.workspace = true
+# Pictures as files: plain HTTP(S) on a few worker threads, the same rustls and ring as the WebSocket.
+ureq = { workspace = true, features = ["rustls"] }
 
 # Browser WebSocket.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen.workspace = true
 js-sys.workspace = true
-web-sys = { workspace = true, features = ["WebSocket", "BinaryType", "MessageEvent", "CloseEvent", "Event", "ErrorEvent"] }
+wasm-bindgen-futures.workspace = true
+web-sys = { workspace = true, features = [
+    "WebSocket", "BinaryType", "MessageEvent", "CloseEvent", "Event", "ErrorEvent",
+    # Pictures: `fetch`.
+    "Request", "RequestInit", "RequestCache", "RequestRedirect", "Response", "Headers", "AbortSignal",
+] }
 
 [dev-dependencies]
 drafftink-relay = { path = "../relay", version = "0.2.0" }

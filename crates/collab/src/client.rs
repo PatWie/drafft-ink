@@ -33,6 +33,7 @@ mod parts;
 
 use self::parts::{Health, Reconcile, Uploads};
 use crate::awareness::{LocalPresence, Peer, PeerTable};
+use crate::sealed::ImageEvent;
 use crate::status::{ConnState, Problem, ProblemAction, Status, StopReason, explain, stop_reason};
 use crate::transport::TransportEvent;
 use crate::url::ServerUrl;
@@ -222,6 +223,8 @@ pub enum CollabEvent {
         /// The server's snapshot is waiting; replacing loses edits that were never sent.
         message: String,
     },
+    /// A picture of a sealed room arrived, was damaged or was refused (`docs/design/collab-e2e.md` section 9).
+    Image(ImageEvent),
     /// The room's deadline moved, or the room is past it (a sealed room on a relay that deletes rooms).
     Retention {
         /// When the room is deleted if nobody visits, in milliseconds since the epoch. 0: never.
