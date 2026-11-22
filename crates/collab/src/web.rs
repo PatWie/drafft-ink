@@ -77,9 +77,11 @@ impl Transport for WebTransport {
         let message = {
             let push = push.clone();
             Closure::<dyn FnMut(MessageEvent)>::new(move |e: MessageEvent| {
-                // The server sends binary frames only; text is ignored.
-                if let Ok(buffer) = e.data().dyn_into::<ArrayBuffer>() {
+                let data = e.data();
+                if let Ok(buffer) = data.clone().dyn_into::<ArrayBuffer>() {
                     push(TransportEvent::Message(Uint8Array::new(&buffer).to_vec()));
+                } else if let Some(text) = data.as_string() {
+                    push(TransportEvent::Text(text));
                 }
             })
         };
@@ -106,6 +108,14 @@ impl Transport for WebTransport {
             return Err(TransportError::NotOpen);
         }
         h.socket.send_with_u8_array(&frame).map_err(|_| TransportError::Failed("the browser could not send".to_owned()))
+    }
+
+    fn send_text(&mut self, text: &str) -> Result<(), TransportError> {
+        let Some(h) = &self.current else { return Err(TransportError::NotOpen) };
+        if h.socket.ready_state() != WebSocket::OPEN {
+            return Err(TransportError::NotOpen);
+        }
+        h.socket.send_with_str(text).map_err(|_| TransportError::Failed("the browser could not send".to_owned()))
     }
 
     fn close(&mut self) {

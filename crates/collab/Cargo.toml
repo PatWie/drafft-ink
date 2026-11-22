@@ -14,11 +14,13 @@ categories = ["network-programming", "web-programming::websocket"]
 [dependencies]
 drafftink-protocol = { path = "../protocol", version = "0.2.0" }
 drafftink-doc = { path = "../doc", version = "0.2.0" }
+drafftink-seal = { path = "../seal", version = "0.2.0" }
 drafftink-scene = { path = "../scene", version = "0.2.0" }
 drafftink-profile = { path = "../profile", version = "0.2.0", default-features = false }
 log.workspace = true
 loro.workspace = true
 thiserror.workspace = true
+serde_json.workspace = true
 
 # Native WebSocket: a background thread runs a small tokio runtime; rustls for wss.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -36,6 +38,7 @@ js-sys.workspace = true
 web-sys = { workspace = true, features = ["WebSocket", "BinaryType", "MessageEvent", "CloseEvent", "Event", "ErrorEvent"] }
 
 [dev-dependencies]
+drafftink-relay = { path = "../relay", version = "0.2.0" }
 tempfile.workspace = true
 proptest.workspace = true
 tokio = { workspace = true, features = ["io-util"] }

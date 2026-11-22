@@ -92,6 +92,12 @@ impl ServerUrl {
         Ok(ServerUrl { secure, host, port, path, loopback })
     }
 
+    /// The same server with another path. A sealed room lives at `/r/<id>/ws`, so the path comes from the room and
+    /// not from the address the person gave.
+    pub fn with_path(&self, path: impl Into<String>) -> ServerUrl {
+        ServerUrl { path: path.into(), ..self.clone() }
+    }
+
     /// True for `wss://`.
     pub fn is_secure(&self) -> bool {
         self.secure

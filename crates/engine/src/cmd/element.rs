@@ -54,6 +54,7 @@ const DOC: Facts = Facts {
     palette: false,
     agent: true,
     doc_write: crate::spec::DocWrite::Edit,
+    secret_output: false,
 };
 const PALETTE: Facts = Facts { palette: true, ..DOC };
 const GESTURE: Facts = Facts { undo: Undo::Gesture, ..DOC };

@@ -117,6 +117,8 @@ pub enum Output {
     Connect(ServerUrl),
     /// Send this frame.
     Send(Vec<u8>),
+    /// Send this text frame (the keepalive `ping` of a sealed room).
+    SendText(&'static str),
     /// Close the connection after the frames queued before this.
     Close,
 }
@@ -219,6 +221,13 @@ pub enum CollabEvent {
     NeedsDecision {
         /// The server's snapshot is waiting; replacing loses edits that were never sent.
         message: String,
+    },
+    /// The room's deadline moved, or the room is past it (a sealed room on a relay that deletes rooms).
+    Retention {
+        /// When the room is deleted if nobody visits, in milliseconds since the epoch. 0: never.
+        expires_at_ms: u64,
+        /// The room is past its deadline and is deleted when the last person leaves.
+        expiring: bool,
     },
 }
 
@@ -604,6 +613,8 @@ impl CollabClient {
         match event {
             TransportEvent::Opened => self.on_opened(now_ms, store),
             TransportEvent::Message(bytes) => self.on_frame(now_ms, &bytes, store),
+            // The plaintext protocol has no text frames.
+            TransportEvent::Text(_) => {}
             TransportEvent::Closed { error } => self.on_closed(now_ms, error),
         }
         self.flush_events();

@@ -54,6 +54,7 @@ const FACTS: Facts = Facts {
     palette: true,
     agent: true,
     doc_write: DocWrite::NotDocument,
+    secret_output: false,
 };
 
 /// The tool command that sets the colour of the highlighter.

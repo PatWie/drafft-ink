@@ -12,10 +12,6 @@ use crate::ports::Net;
 
 /// Longest room name the catalog allows.
 const MAX_ROOM_CHARS: usize = 64;
-/// Length of a generated room name.
-const GENERATED_ROOM_CHARS: usize = 10;
-/// The characters of a generated room name.
-const ROOM_ALPHABET: &[u8; 62] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
 /// Why a server address could not be used.
 #[derive(Debug, thiserror::Error)]
@@ -61,19 +57,6 @@ impl RoomName {
         RoomId::new(text).map(Self).map_err(|_| RoomNameError)
     }
 
-    /// A 10-character name made of `bits`.
-    pub(super) fn generate(mut bits: u128) -> Result<Self, RoomNameError> {
-        let base = ROOM_ALPHABET.len() as u128;
-        let text: String = (0..GENERATED_ROOM_CHARS)
-            .map(|_| {
-                let digit = usize::try_from(bits % base).unwrap_or(0);
-                bits /= base;
-                char::from(ROOM_ALPHABET.get(digit).copied().unwrap_or(b'a'))
-            })
-            .collect();
-        Self::parse(&text)
-    }
-
     /// The protocol id.
     pub(super) fn id(&self) -> &RoomId {
         &self.0
@@ -86,9 +69,46 @@ impl fmt::Display for RoomName {
     }
 }
 
+/// The room argument of a command: the name of a plaintext room, or an encrypted room's link.
+pub(super) enum RoomSpec {
+    /// A plaintext room, by name.
+    Plain(RoomName),
+    /// An encrypted room: the key opens it, and its id is a hash of the key.
+    Sealed(drafftink_seal::RoomLink),
+}
+
+/// Why a room argument is not a room.
+#[derive(Debug, thiserror::Error)]
+pub(super) enum RoomSpecError {
+    /// A plain name that breaks the catalog's rule.
+    #[error("{0}")]
+    Name(#[from] RoomNameError),
+    /// A link that is damaged or has no key. The text says how to proceed and repeats nothing of the input.
+    #[error("{0}")]
+    Link(#[from] drafftink_seal::LinkError),
+}
+
+impl RoomSpec {
+    /// Reads `text`: a link (`https://host/#room=<id>,<key>`, `#room=<id>,<key>`) or `<id>,<key>` is an encrypted
+    /// room, anything else must be a plain room name.
+    pub(super) fn parse(text: &str) -> Result<Self, RoomSpecError> {
+        let text = text.trim();
+        if !(text.contains(',') || text.contains("room=") || text.contains('#')) {
+            return Ok(RoomSpec::Plain(RoomName::parse(text)?));
+        }
+        let link = if text.contains("room=") { drafftink_seal::RoomLink::parse(text) } else { drafftink_seal::RoomLink::parse(&format!("room={text}")) };
+        Ok(RoomSpec::Sealed(link?))
+    }
+}
+
 /// `#room=<id>&server=<url>`: what a person sends to invite another.
 pub(super) fn room_link(room: &RoomName, server: &ServerUrl) -> String {
-    let mut out = format!("#room={room}&server=");
+    format!("#room={room}&server={}", encode_server(server))
+}
+
+/// The server address as it goes into a link: percent-encoded except for the characters a link keeps.
+pub(super) fn encode_server(server: &ServerUrl) -> String {
+    let mut out = String::new();
     for b in server.to_string().bytes() {
         if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'~' | b':' | b'/') {
             out.push(char::from(b));

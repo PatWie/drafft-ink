@@ -261,6 +261,7 @@ fn a_server_that_speaks_no_common_version_gets_a_clear_error() {
                 break;
             }
             Some(TransportEvent::Closed { .. }) => break,
+            Some(TransportEvent::Text(_)) => {}
             None => waker.wait(Duration::from_millis(50)),
         }
     }

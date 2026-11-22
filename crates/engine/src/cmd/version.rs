@@ -48,6 +48,7 @@ const METADATA: Facts = Facts {
     palette: true,
     agent: true,
     doc_write: DocWrite::Metadata,
+    secret_output: false,
 };
 
 /// A restore is an ordinary edit of the scene.

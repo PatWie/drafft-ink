@@ -43,6 +43,9 @@ pub enum StopReason {
     TooLarge,
     /// The user chose to keep their copy instead of replacing it with the server's.
     Declined,
+    /// An end-to-end encrypted room that the server does not have: it was deleted after a period without visitors,
+    /// or the link is incomplete.
+    RoomMissing,
 }
 
 /// What the UI can offer next to a [`Problem`].
@@ -64,6 +67,10 @@ pub enum ProblemAction {
     AskAdmin,
     /// The user must choose (see `CollabEvent::NeedsDecision`).
     Decide,
+    /// Ask whoever shared the room for the whole link again (it is damaged or belongs to another room).
+    NewLink,
+    /// Start an empty room under the same link (the room was deleted).
+    StartNewRoom,
 }
 
 /// A failure in plain words.

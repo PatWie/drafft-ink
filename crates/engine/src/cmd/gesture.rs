@@ -87,6 +87,7 @@ const GESTURE: Facts = Facts {
     palette: false,
     agent: false,
     doc_write: crate::spec::DocWrite::Managed,
+    secret_output: false,
 };
 
 /// The gesture family.

@@ -791,6 +791,7 @@ const STAND_IN: &[CommandSpec] = &[CommandSpec::new(
         palette: false,
         agent: false,
     doc_write: crate::spec::DocWrite::Edit,
+    secret_output: false,
     },
 )];
 

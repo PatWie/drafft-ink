@@ -233,7 +233,7 @@ impl Peer {
     }
 
     pub fn client(&self) -> &CollabClient {
-        self.session.client()
+        self.session.client().plain().expect("a plaintext client")
     }
 
     pub fn state(&self) -> ConnState {

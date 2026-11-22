@@ -187,6 +187,14 @@ pub struct CollabView {
     pub peers: Vec<PeerView>,
     /// This user's laser trail.
     pub laser: Vec<LaserDot>,
+    /// True for an end-to-end encrypted room: the server cannot read it. `room` is its id, never its key.
+    pub e2e: bool,
+    /// When the server deletes the room if nobody visits, in milliseconds since the epoch. Absent: never, or not
+    /// known.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_at_ms: Option<u64>,
+    /// The room is past its time limit and is deleted when the last person leaves.
+    pub expiring: bool,
 }
 
 impl CollabView {
@@ -203,6 +211,9 @@ impl CollabView {
             loading: None,
             peers: Vec::new(),
             laser: Vec::new(),
+            e2e: false,
+            expires_at_ms: None,
+            expiring: false,
         }
     }
 }

@@ -297,6 +297,7 @@ const DOC: Facts = Facts {
     palette: true,
     agent: true,
     doc_write: crate::spec::DocWrite::Edit,
+    secret_output: false,
 };
 
 /// Changes the editing group and the selection only.

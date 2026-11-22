@@ -538,6 +538,9 @@ pub struct Facts {
     pub agent: bool,
     /// How the command relates to the document, undo and view-only mode.
     pub doc_write: DocWrite,
+    /// The output may hold a secret (a room link with its key). A transport that logs outputs leaves it out, and
+    /// the command is quiet in the ring.
+    pub secret_output: bool,
 }
 
 impl Facts {
@@ -557,6 +560,7 @@ impl Facts {
         palette: false,
         agent: true,
         doc_write: DocWrite::NotDocument,
+        secret_output: false,
     };
 
     /// A camera command: changes the view only, allowed in every state.
@@ -623,6 +627,8 @@ pub struct CommandSpec {
     pub agent: bool,
     /// How it relates to the document, undo and view-only mode.
     pub doc_write: DocWrite,
+    /// The output may hold a secret (a room link with its key).
+    pub secret_output: bool,
     /// What a host does around it. [`Host::NONE`] for most commands.
     pub host: Host,
     /// The agent bridge gives the command a tool of its own (`engine.commands`, `engine.describe`,
@@ -749,6 +755,7 @@ impl CommandSpec {
             palette: facts.palette,
             agent: facts.agent,
             doc_write: facts.doc_write,
+            secret_output: facts.secret_output,
             host: Host::NONE,
             own_agent_tool: false,
             shortcuts: &[],
@@ -873,6 +880,7 @@ impl CommandSpec {
             palette: self.palette,
             agent: self.agent,
             doc_write: self.doc_write,
+            secret_output: self.secret_output,
         }
     }
 

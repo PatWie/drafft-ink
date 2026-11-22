@@ -21,6 +21,8 @@ pub enum TransportEvent {
     Opened,
     /// One binary frame arrived.
     Message(Vec<u8>),
+    /// One text frame arrived. Only the keepalive answer of a sealed room (`pong`) is one.
+    Text(String),
     /// The connection is gone, or never opened. `error` says why when it was not a clean close. After this event
     /// the transport emits nothing for that connection.
     Closed {
@@ -47,6 +49,10 @@ pub trait Transport {
     fn open(&mut self, url: &ServerUrl) -> Result<(), TransportError>;
     /// Queues one binary frame. Frames sent before a `close` are delivered before the close.
     fn send(&mut self, frame: Vec<u8>) -> Result<(), TransportError>;
+    /// Queues one text frame: the keepalive `ping` of a sealed room. A transport that cannot say so refuses.
+    fn send_text(&mut self, _text: &str) -> Result<(), TransportError> {
+        Err(TransportError::Failed("this transport sends no text frames".to_owned()))
+    }
     /// Closes the connection after the queued frames are written. Emits no event.
     fn close(&mut self);
     /// The next event, without blocking.
@@ -67,6 +73,7 @@ pub fn loopback() -> (LoopbackTransport, LoopbackServer) {
 struct Link {
     to_client: VecDeque<TransportEvent>,
     from_client: VecDeque<Vec<u8>>,
+    texts_from_client: VecDeque<String>,
     opens: Vec<String>,
     open: bool,
     auto_accept: bool,
@@ -92,6 +99,7 @@ impl Transport for LoopbackTransport {
         let mut l = lock(&self.link);
         l.to_client.clear();
         l.from_client.clear();
+        l.texts_from_client.clear();
         l.opens.push(url.to_string());
         l.open = false;
         if l.auto_accept {
@@ -107,6 +115,15 @@ impl Transport for LoopbackTransport {
             return Err(TransportError::NotOpen);
         }
         l.from_client.push_back(frame);
+        Ok(())
+    }
+
+    fn send_text(&mut self, text: &str) -> Result<(), TransportError> {
+        let mut l = lock(&self.link);
+        if !l.open {
+            return Err(TransportError::NotOpen);
+        }
+        l.texts_from_client.push_back(text.to_owned());
         Ok(())
     }
 
@@ -191,6 +208,21 @@ impl LoopbackServer {
     /// Sends raw bytes to the client.
     pub fn push_raw(&self, bytes: Vec<u8>) {
         self.queue(TransportEvent::Message(bytes));
+    }
+
+    /// Sends a text frame to the client.
+    pub fn push_text(&self, text: &str) {
+        self.queue(TransportEvent::Text(text.to_owned()));
+    }
+
+    /// The text frames the client sent so far, oldest first.
+    pub fn take_texts(&self) -> Vec<String> {
+        lock(&self.link).texts_from_client.drain(..).collect()
+    }
+
+    /// The next frame the client sent, as bytes.
+    pub fn recv_raw(&self) -> Option<Vec<u8>> {
+        lock(&self.link).from_client.pop_front()
     }
 
     /// The next frame the client sent, decoded.

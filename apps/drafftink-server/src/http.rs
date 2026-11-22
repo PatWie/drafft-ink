@@ -181,8 +181,12 @@ enum Refused {
 impl IntoResponse for Refused {
     fn into_response(self) -> Response {
         match self {
-            Refused::Origin => (StatusCode::FORBIDDEN, "this origin is not allowed to connect; see --allowed-origin").into_response(),
-            Refused::Busy => (StatusCode::SERVICE_UNAVAILABLE, "the server has reached its connection limit").into_response(),
+            Refused::Origin => {
+                (StatusCode::FORBIDDEN, "this origin is not allowed to connect; see --allowed-origin").into_response()
+            }
+            Refused::Busy => {
+                (StatusCode::SERVICE_UNAVAILABLE, "the server has reached its connection limit").into_response()
+            }
         }
     }
 }

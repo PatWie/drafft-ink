@@ -93,6 +93,7 @@ impl Harness {
             match out {
                 Output::Connect(_) => self.connects += 1,
                 Output::Close => self.closes += 1,
+                Output::SendText(_) => {}
                 Output::Send(bytes) => {
                     self.frames.push(ClientMessage::decode(&bytes).expect("the client sends valid frames"))
                 }

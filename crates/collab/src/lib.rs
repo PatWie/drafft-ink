@@ -23,6 +23,8 @@ mod awareness;
 mod client;
 #[cfg(not(target_arch = "wasm32"))]
 mod native;
+mod room_client;
+mod sealed;
 mod session;
 mod status;
 mod transport;
@@ -38,6 +40,10 @@ pub use client::{
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use native::{NativeOptions, NativeTransport, TlsOptions};
+pub use room_client::RoomClient;
+pub use sealed::{
+    CATCHUP_REPLY_TIMEOUT_MS, COMPACT_RETRY_MS, GAP_GRACE_MS, Resume, SealedClient, SealedConfig, SealedConfigError,
+};
 pub use session::{CollabSession, Pump};
 pub use status::{ConnState, Problem, ProblemAction, Status, StopReason, explain};
 pub use transport::{LoopbackServer, LoopbackTransport, Transport, TransportError, TransportEvent, WakeFn, loopback};

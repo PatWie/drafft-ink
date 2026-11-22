@@ -42,6 +42,7 @@ const REPLACES: Facts = Facts {
     palette: true,
     agent: true,
     doc_write: DocWrite::Replaces,
+    secret_output: false,
 };
 
 /// A command that edits the document.
