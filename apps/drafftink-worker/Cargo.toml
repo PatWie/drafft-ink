@@ -16,6 +16,9 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 drafftink-protocol = { path = "../../crates/protocol", version = "0.2.0" }
 drafftink-relay = { path = "../../crates/relay", version = "0.2.0" }
+base64.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
@@ -24,3 +27,6 @@ js-sys.workspace = true
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
