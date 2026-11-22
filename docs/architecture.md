@@ -22,7 +22,7 @@ A crate may depend on workspace crates of strictly lower layers. It may not depe
 | L4 | `edit` | domain rules with typed errors: binding solver, elbow routing, groups, frames, align/distribute, z-order, snapping, flowchart helpers, bound text |
 | L4 | `io` | native JSON (versioned, migration), `.excalidraw` and `.excalidrawlib` import/export, Mermaid import, SVG export |
 | L4 | `collab` | sync client over a `Transport` trait, presence. Depends on `doc` and `protocol`; `engine` owns it and routes remote edits into the session |
-| L5 | `engine` | command registry, `Session`, `execute` / `execute_batch`, refusals, editor state, gesture protocol, ports (clipboard, storage, files, clock) as traits |
+| L5 | `engine` | command registry, `Session`, `execute` / `execute_batch`, refusals, editor state, gesture protocol, ports (clipboard, storage, files, clock, secrets) as traits |
 | L6 | `gpu` | wgpu device and surface, offscreen render, compositing Vello and egui |
 | L6 | `ui` | egui UI. Reads the registry, calls `execute`, shows refusals. No document logic |
 | L6 | `bridge` | agent bridge: loopback JSON-RPC over WebSocket, the tools generated from the registry (builds for wasm), MCP over HTTP for the desktop app |
