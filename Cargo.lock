@@ -2055,11 +2055,14 @@ dependencies = [
 name = "drafftink-worker"
 version = "0.2.0"
 dependencies = [
+ "base64 0.22.1",
  "base64ct",
  "drafftink-protocol",
  "drafftink-relay",
  "drafftink-seal",
  "js-sys",
+ "proptest",
+ "serde",
  "serde_json",
  "sha2 0.11.1",
  "thiserror 2.0.21",

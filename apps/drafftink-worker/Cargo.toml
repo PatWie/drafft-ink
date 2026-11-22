@@ -16,7 +16,9 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 drafftink-protocol = { path = "../../crates/protocol", version = "0.2.0" }
 drafftink-relay = { path = "../../crates/relay", version = "0.2.0" }
+base64.workspace = true
 base64ct = { version = "1.8", features = ["alloc"] }
+serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 
@@ -28,6 +30,7 @@ js-sys.workspace = true
 # The fixtures of the TypeScript tests are sealed with the real library and a known nonce (tests/fixtures.rs).
 drafftink-seal = { path = "../../crates/seal", version = "0.2.0" }
 sha2 = "0.11"
+proptest.workspace = true
 # The smoke test (tests/smoke.rs) talks to a running `wrangler dev` with plain blocking clients.
 tungstenite = { workspace = true, features = ["handshake"] }
 ureq.workspace = true

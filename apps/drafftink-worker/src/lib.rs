@@ -2,6 +2,7 @@
 //! TypeScript shell in this directory owns the sockets, the clock and the storage calls; the rules live in
 //! `drafftink-relay`.
 //!
+//! - [`access_jwt`] checks the claims of a Cloudflare Access token (the signature is checked in TypeScript).
 //! - [`config`] reads the relay policy from the environment variables of the Worker.
 //! - [`edge`] holds what the Worker decides before it calls a Durable Object: room id, picture name, membership
 //!   token. It hashes 32 bytes and never reads a payload (the Free plan gives a Worker 10 ms of CPU).
@@ -12,6 +13,7 @@
 #![warn(missing_docs)]
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
+pub mod access_jwt;
 pub mod config;
 pub mod driver;
 pub mod edge;
