@@ -346,12 +346,22 @@ impl<S: RelayStore, B: BlobStore> Relay<S, B> {
                 let text = "this connection already joined a room";
                 self.refuse(conn, now_ms, ServerMessage::error(ErrorCode::AlreadyJoined, text), true, out);
             }
-            ClientMessage::Append { record } => self.append(conn, now_ms, record, out),
+            ClientMessage::Append { record } => {
+                if self.ensure_meta(conn, now_ms, out) {
+                    self.append(conn, now_ms, record, out);
+                }
+            }
             ClientMessage::PutSnapshot { expected_snapshot_seq, record } => {
-                self.put_snapshot(conn, now_ms, expected_snapshot_seq, record, out);
+                if self.ensure_meta(conn, now_ms, out) {
+                    self.put_snapshot(conn, now_ms, expected_snapshot_seq, record, out);
+                }
             }
             ClientMessage::Presence { record } => self.presence_in(conn, now_ms, &record),
-            ClientMessage::Catchup { after_seq } => self.catchup_request(conn, now_ms, after_seq, out),
+            ClientMessage::Catchup { after_seq } => {
+                if self.ensure_meta(conn, now_ms, out) {
+                    self.catchup_request(conn, now_ms, after_seq, out);
+                }
+            }
             ClientMessage::Direct { to, record } => self.direct(conn, now_ms, to, &record, out),
             ClientMessage::DeleteRoom => self.delete_requested(conn, now_ms, out),
             ClientMessage::Leave => {
@@ -449,6 +459,26 @@ impl<S: RelayStore, B: BlobStore> Relay<S, B> {
                 let loaded = self.quota.watch(self.store.load_meta())?;
                 self.meta = loaded.map_or(MetaState::Missing, MetaState::Loaded);
                 Ok(loaded)
+            }
+        }
+    }
+
+    /// Makes sure the room's meta is read before a member's request that needs it. A joined connection normally finds
+    /// it loaded (its join loaded it), but a core rebuilt after hibernation has restored members over a store it has
+    /// not read yet. When the read fails, the member gets the error instead of silence: the daily limit or
+    /// `Unavailable`, and `RoomMissing` (with the connection closed) when the store holds no room. Returns whether
+    /// the request may go on.
+    fn ensure_meta(&mut self, conn: ConnId, now_ms: u64, out: &mut Output) -> bool {
+        match self.load_meta() {
+            Ok(Some(_)) => true,
+            Ok(None) => {
+                let text = "This room does not exist (any more). Rooms are deleted after a period without visitors.";
+                self.refuse(conn, now_ms, ServerMessage::error(ErrorCode::RoomMissing, text), true, out);
+                false
+            }
+            Err(e) => {
+                self.refuse_store(conn, now_ms, &e, false, out);
+                false
             }
         }
     }

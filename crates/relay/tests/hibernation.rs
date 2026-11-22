@@ -300,3 +300,87 @@ proptest! {
         let _ = relay.member_of(ConnId(1));
     }
 }
+
+// ---- a restored member's first frame is not the first read of the store --------------------------------------------
+
+/// A core over the stores of `old`, with the members restored and no wake before the first frame: the host gets
+/// a frame on a sleeping object before any alarm.
+fn wake_without_tick(old: Harness, members: &[ConnId]) -> Harness {
+    let saved: Vec<_> = members.iter().map(|c| (*c, old.relay.member_of(*c).unwrap())).collect();
+    let heard = old.now;
+    let mut woken = Harness::wake_from(old);
+    for (conn, (id, order)) in saved {
+        woken.restore_member(conn, id, order, heard);
+    }
+    woken
+}
+
+fn room_with_two_and_three_records() -> (Harness, ConnId, ConnId) {
+    let (mut h, a, b) = two_members();
+    for ctr in 1..=3 {
+        h.send(a, &ClientMessage::Append { record: update(client(1), ctr) });
+    }
+    h.advance(2 * SECOND);
+    h.take(a);
+    h.take(b);
+    (h, a, b)
+}
+
+#[test]
+fn the_first_append_of_a_restored_member_loads_the_room_and_is_not_dropped() {
+    let (h, a, b) = room_with_two_and_three_records();
+    let mut h = wake_without_tick(h, &[a, b]);
+    h.send(a, &ClientMessage::Append { record: update(client(1), 4) });
+    let seen = records(&h.take(b));
+    assert_eq!(seen.iter().map(|r| r.seq).collect::<Vec<_>>(), [4], "old head 3, plus one");
+    h.advance(2 * SECOND);
+    assert_eq!(acks(&h.take(a)), [(4, 4)]);
+    assert_eq!(h.store.segment_count(), 2);
+}
+
+#[test]
+fn a_restored_member_can_catch_up_and_snapshot_as_its_first_frame() {
+    let (h, a, b) = room_with_two_and_three_records();
+    let mut h = wake_without_tick(h, &[a, b]);
+    h.send(b, &ClientMessage::Catchup { after_seq: 1 });
+    assert_eq!(catchup_seqs(&h.take(b)), [2, 3]);
+
+    let (h, a, b) = room_with_two_and_three_records();
+    let mut h = wake_without_tick(h, &[a, b]);
+    h.send(a, &ClientMessage::PutSnapshot { expected_snapshot_seq: 0, record: snapshot(client(1), 9, 3) });
+    assert!(h.take(a).iter().any(|m| matches!(m, ServerMessage::SnapshotResult { ok: true, covers_seq: 3, .. })));
+}
+
+#[test]
+fn a_restored_member_whose_room_cannot_be_read_hears_why() {
+    let (h, a, b) = room_with_two_and_three_records();
+    let mut h = wake_without_tick(h, &[a, b]);
+    h.store.fail_next(1);
+    h.send(a, &ClientMessage::Append { record: update(client(1), 4) });
+    assert_eq!(error_code(&h.take(a)), Some(ErrorCode::Unavailable));
+    assert!(!h.is_closed(a), "a plain failure is retried by the client");
+    h.send(a, &ClientMessage::Append { record: update(client(1), 4) });
+    assert!(h.take(a).is_empty(), "the second read worked, and the record waits for its flush");
+    assert_eq!(records(&h.take(b)).len(), 1);
+
+    let (h, a, b) = room_with_two_and_three_records();
+    let mut h = wake_without_tick(h, &[a, b]);
+    h.store.set_daily_limit(true);
+    h.send(b, &ClientMessage::Catchup { after_seq: 0 });
+    assert!(h.quota_hit && h.is_closed(b));
+    assert_eq!(error_code(&h.take(b)), Some(ErrorCode::DailyLimit));
+}
+
+#[test]
+fn a_restored_member_of_a_room_that_is_gone_is_told_so() {
+    let mut h = Harness::self_host();
+    let a = h.open(1);
+    h.take(a);
+    let saved = h.relay.member_of(a).unwrap();
+    let mut woken = Harness::on(h.relay.config().clone(), MemoryRelayStore::new(), MemoryBlobStore::new());
+    woken.now = h.now;
+    woken.restore_member(a, saved.0, saved.1, h.now);
+    woken.send(a, &ClientMessage::Append { record: update(client(1), 1) });
+    assert_eq!(error_code(&woken.take(a)), Some(ErrorCode::RoomMissing));
+    assert!(woken.is_closed(a));
+}
