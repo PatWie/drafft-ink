@@ -2,9 +2,7 @@
 //! catch-up and the advice to compact.
 
 use drafftink_protocol::v2::{CatchupSnapshot, ErrorCode, RecordHeader, ServerMessage, StoredRecord};
-use drafftink_protocol::{
-    CATCHUP_MIN_INTERVAL_MS, CATCHUP_TARGET_BYTES, MAX_CATCHUP_RECORDS, MAX_FRAME_BYTES, PUT_SNAPSHOT_MIN_INTERVAL_MS,
-};
+use drafftink_protocol::{CATCHUP_TARGET_BYTES, MAX_CATCHUP_RECORDS, MAX_FRAME_BYTES, PUT_SNAPSHOT_MIN_INTERVAL_MS};
 
 use super::{ConnId, MetaState, Output, Relay, StoreOp, retry_error};
 use crate::config::FlushRules;
@@ -209,8 +207,7 @@ impl<S: RelayStore, B: BlobStore> Relay<S, B> {
     // ---- catch-up ---------------------------------------------------------------------------------------------
 
     pub(super) fn catchup_request(&mut self, conn: ConnId, now_ms: u64, after_seq: u64, out: &mut Output) {
-        let gap = u64::from(CATCHUP_MIN_INTERVAL_MS);
-        if let Some(Err(wait)) = self.member_mut(conn).map(|m| m.catchup.take(now_ms, gap)) {
+        if let Some(Err(wait)) = self.member_mut(conn).map(|m| m.catchup.take(now_ms)) {
             let close = self.breach(conn, now_ms);
             self.refuse(
                 conn,

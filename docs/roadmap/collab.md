@@ -1,6 +1,6 @@
 # Collaboration: plan and to-do (later)
 
-Status: **phase 1a is built** (the `seal` crate and protocol v2: `docs/protocol.md` section 11, `docs/design/collab-e2e.md` section 14.1); the rest is planned. Named versions come first. The full design is [docs/design/collab-e2e.md](../design/collab-e2e.md); this page is the short plan and checklist.
+Status: **phases 1a and 1b are built** (1a: the `seal` crate and protocol v2, `docs/protocol.md` section 11; 1b: the relay core `crates/relay`, relay mode in `drafftink-headless serve`, the sealed client in `crates/collab`, the `collab.*` changes and the workspace schema 2: `docs/design/collab-e2e.md` section 14.2); the rest is planned. Named versions come first. The full design is [docs/design/collab-e2e.md](../design/collab-e2e.md); this page is the short plan and checklist.
 
 ## What we build
 

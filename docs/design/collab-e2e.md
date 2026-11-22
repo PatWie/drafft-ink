@@ -722,6 +722,20 @@ L7  apps/drafftink-worker   host: Worker + Durable Object around `relay`; DO SQL
 - **No JSON debug form for v2.**
 - **The nonce source is a trait** (`NonceSource`, `OsNonces` in production) so that tests can seal with a known nonce and compare with vectors from another implementation.
 
+### 14.2 What phase 1b built, and where it differs from the text above (2026-11-22)
+
+`crates/relay` (`drafftink-relay`, L1), relay mode in `drafftink-headless serve`, `crates/collab/src/sealed`, the `collab.*` changes of section 13 and workspace schema 2 exist. Differences and gaps, with the reason:
+
+- **The core owns its stores.** `Relay<S: RelayStore, B: BlobStore>` calls the synchronous stores itself and reports what it wrote in `Output::store_ops` (for the row accounting of section 11), next to the frames to send, `wake_at` and `deleted`. `RelayStore::put_snapshot_cas` is the transaction (the stores check `RoomMeta::accepts_snapshot` too), and the meta has `has_snapshot` because a seed covers sequence number 0.
+- **The seed.** A seed is accepted only for an empty room (`head_seq == 0`, no snapshot) and does not count against the snapshot rate limit. A plain `Catchup` after sequence number 0 does not carry a snapshot that covers 0; only a `Join` does. A `Join` with a `last_seq` above the head is served as 0, and a client that sees `head_seq < last_seq` (or a room it created) drops its `last_seq` and `relay_vv`: a room that expired and was made again is a new room, and claiming the old room's content as held would lose edits.
+- **Catch-up requests** are a token bucket of one a second with a burst of four, not one a second flat, so a joiner is not held to 64 records a second.
+- **Edge membership check.** The host reads the first frame itself and starts a room task only for a proof that hashes to the room in the path, so a stranger costs no task (the demo's Worker does the same before its object).
+- **Quota and slow readers.** A record over the room's state quota is `RoomFull` and closes the connection (the protocol's rule for that code). A reader whose queue of 512 frames is full is closed and rejoins from `last_seq`; the plaintext server's resync is not needed because sequence numbers make a gap visible.
+- **`RoomClient`** holds either client, so `CollabSession`, `Output` (`SendText`), `TransportEvent` (`Text`) and `CollabEvent` (`Retention`) grew a variant.
+- **`collab.join_room` and `collab.connect`**: `room_missing` is not a command refusal, because the join returns before the relay answers. The client stops with `StopReason::RoomMissing` and the notice of section 10.4, and the person (or the startup path) joins again with `if_missing: "restore"` or `"create"`. `wrong_server_mode` is not a command refusal for the same reason; a plaintext join to a relay that refuses plaintext rooms is `UnsupportedVersion` with the server's text ("This server only hosts end-to-end encrypted rooms. Use a room link that has a key.").
+- **Workspace schema 2** stores the link (it holds the key) in `room.link`, the relay version as hex, and the Loro snapshot at `workspace.t<id>.loro`. A room tab without a readable snapshot comes back as a local copy. Startup matches a link to a restored tab by room id (`Session::room_tab_for_link`) and joins with `if_missing: "restore"`.
+- **Not built:** pictures as files and the `BlobTransport` (phase 2; the relay routes and the `BlobStore` exist), the peer fallback with `Direct`, the crash fence, `collab.delete_room`, the `Secrets` port and the Access service token, the laser flag as a presence field, and the `images` part of `collab.status`.
+
 ---
 
 ## 15. Testing plan

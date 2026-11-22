@@ -14,6 +14,21 @@ The engine side (the `collab` command family, `Session::collab_poll`, the `Net` 
 | `LocalPresence`, `PeerTable` | Ephemeral presence: cursor, selection, viewport, user, laser trail, peers with timeouts. Never enters the document. |
 | `ServerUrl`, `AuthToken` | The checked address and the secret token. |
 
+| `SealedClient` | The same kind of state machine for an end-to-end encrypted room (protocol v2, module `sealed`). See "Encrypted rooms" below. |
+| `RoomClient` | One type for the session and the engine: `Plain(CollabClient)` or `Sealed(SealedClient)`. Every method forwards. |
+
+## Encrypted rooms
+
+`SealedClient` is built from a `SealedConfig { url, key, client_id, user, mode, resume, .. }`. The room id and the path `/r/<id>/ws` come from the key. It seals every update, snapshot and presence message with `drafftink-seal` and opens everything it receives, and it keeps three things that the plaintext client gets from its server:
+
+- **`relay_vv`**: the version of what the relay is known to hold (the end version of every applied record and snapshot, and of every acknowledged update of its own). The relay cannot say which operations a client lacks. After every catch-up the client uploads `export_updates_since(relay_vv)`, one step that repairs offline edits, a lost `Ack`, a rate limit and a crashed tab.
+- **`last_seq`**: the highest sequence number held with none missing below it. A reconnect joins with it and gets only what is new. A client that remembers a number above the room's head, or that created the room, forgets both (the room is new under the old id).
+- **Counters**: one per kind of record it makes. A jump in the update counter of a sender, or a hole in the sequence numbers that stays for 3 s (an acknowledgement of its own record fills one), makes it ask for the records after `last_seq`.
+
+On advice from the relay it seals a snapshot with the sequence number it covers and swaps it in by compare-and-set (`PutSnapshot`). A room that is empty (a new one, or an expired one restored from a local copy) is seeded the same way: one client wins, the others rejoin and merge. A record that cannot be opened, or that Loro refuses, is skipped, counted (`skipped()`) and shown once. `resume()` gives `{last_seq, relay_vv}` for the workspace record; `expires_at_ms()` and `expiring()` carry the retention state (`CollabEvent::Retention`).
+
+The keepalive is the text frame `ping` (`Transport::send_text`) and the answer `pong` (`TransportEvent::Text`). Not built yet: the peer-to-peer fallback when the relay's storage fails (a `Direct` request goes unanswered), the crash fence for a malformed update, and pictures as files (phase 2).
+
 ## How the engine drives it
 
 ```text
@@ -104,6 +119,8 @@ A tab with no content that joins a room of 256 KiB or more (about 1,700 elements
 Rules while a room loads: local edits are allowed and are sent; `doc.save` and `doc.export` refuse with `room_loading`; `collab.leave_room` finishes the import first; a second update from a peer is applied at once for the elements it touches. Tests: `crates/doc/tests/remote.rs` (slices, equal result, edits between slices, no staging with content), `crates/engine/src/cmd/collab_tests.rs` (`a_big_room_is_taken_in_slices_and_the_session_answers_between_them` and its neighbours).
 
 ## Known limits
+
+- Encrypted rooms: no peer fallback and no crash fence yet (`docs/design/collab-e2e.md` sections 8.2 and 8.5); a record that makes Loro assert still ends a wasm page.
 
 - A very large room joined into an empty tab is taken in slices (next section). Importing a big update into a tab that already has content still happens inside `pump` on the caller's thread (about 25 us per element, 2.5 s at 100k elements): the engine holds it back for one poll so the app can draw "loading" first, but it cannot be cut, because merging into existing content needs the CRDT's own diff. The same holds for a trimmed snapshot that replaces a copy with its own work (`NeedsDecision`).
 - The one part of a staged import that cannot be sliced is the first call: about 10 ms plus 0.8 us per element to list the ids (80 ms at 100k elements), so it stays inside one 16 ms frame up to about 8,000 elements. Past that a web page has one long frame, once, until the import runs in a Web Worker.

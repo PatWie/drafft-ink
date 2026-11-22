@@ -157,16 +157,21 @@ fn catchup_pages_stop_at_64_records_and_say_more() {
 }
 
 #[test]
-fn catchup_requests_are_limited_to_one_a_second() {
+fn catchup_requests_are_limited_to_one_a_second_with_a_burst_of_four() {
     let mut h = Harness::self_host();
     let a = h.open(1);
     h.take(a);
-    h.send(a, &ClientMessage::Catchup { after_seq: 0 });
-    assert_eq!(catchups(&h.take(a)).len(), 1);
+    for _ in 0..4 {
+        h.send(a, &ClientMessage::Catchup { after_seq: 0 });
+    }
+    assert_eq!(catchups(&h.take(a)).len(), 4, "a long catch-up may ask for its pages one after the other");
     h.send(a, &ClientMessage::Catchup { after_seq: 0 });
     let messages = h.take(a);
     assert_eq!(error_code(&messages), Some(ErrorCode::RateLimited));
     assert!(matches!(messages[0], ServerMessage::Error { retry_after_ms: Some(_), .. }));
+    h.advance(1100);
+    h.send(a, &ClientMessage::Catchup { after_seq: 0 });
+    assert_eq!(catchups(&h.take(a)).len(), 1, "one more a second later");
 }
 
 #[test]

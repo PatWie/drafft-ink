@@ -52,12 +52,31 @@ pub(crate) fn start(session: &mut Session, config: &AppConfig) -> Vec<String> {
         run(session, &mut notes, "doc.show_intro", json!({}));
     }
     if let Some(room) = &config.join.link.room {
-        // A room fills an empty tab. Work the person already has stays in its own tab.
-        if session.store().len() > 0 {
-            run(session, &mut notes, "tab.new", json!({}));
-        }
         let server = config.join.link.server.clone().or_else(|| config.default_server.clone());
-        run(session, &mut notes, "collab.connect", json!({ "url": server, "room": room, "token": config.token_arg() }));
+        if let Some(tab) = session.room_tab_for_link(room) {
+            // The link names a room whose tab was restored: open that tab (it has the room's history) and join again
+            // from it. A room that expired meanwhile is made again from this copy.
+            run(session, &mut notes, "tab.switch", json!({ "tab": tab }));
+            run(session, &mut notes, "collab.leave_room", json!({}));
+            let joined =
+                json!({ "room": room, "on_local": "merge", "if_missing": "restore", "token": config.token_arg() });
+            if session.execute_from(Origin::Ui, "collab.join_room", joined.clone()).is_err() {
+                // No server was chosen yet (the restored room could not reconnect): choose it, then join.
+                run(session, &mut notes, "collab.connect", json!({ "url": server }));
+                run(session, &mut notes, "collab.join_room", joined);
+            }
+        } else {
+            // A room fills an empty tab. Work the person already has stays in its own tab.
+            if session.store().len() > 0 {
+                run(session, &mut notes, "tab.new", json!({}));
+            }
+            run(
+                session,
+                &mut notes,
+                "collab.connect",
+                json!({ "url": server, "room": room, "token": config.token_arg() }),
+            );
+        }
     }
     notes
 }

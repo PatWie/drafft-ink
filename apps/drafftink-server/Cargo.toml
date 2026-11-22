@@ -44,10 +44,13 @@ object_store = { workspace = true, optional = true }
 
 [dev-dependencies]
 drafftink-seal = { path = "../../crates/seal", version = "0.2.0" }
+drafftink-collab = { path = "../../crates/collab", version = "0.2.0" }
+drafftink-scene = { path = "../../crates/scene", version = "0.2.0" }
 # Only to check that SERVED_SCHEMA is the schema of the document crate.
 drafftink-doc = { path = "../../crates/doc" }
 tokio-tungstenite.workspace = true
 tempfile.workspace = true
+sha2.workspace = true
 
 [lints]
 workspace = true

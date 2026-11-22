@@ -5,6 +5,9 @@ use drafftink_protocol::ClientId;
 use crate::config::RelayConfig;
 use crate::rate::{MinGap, TokenBucket};
 
+/// Catch-up requests a connection may make at once: one a second, with a burst for the pages of a long catch-up.
+const CATCHUP_BURST: u32 = 4;
+
 /// A connection of the host.
 pub(super) struct Conn {
     /// The last time a frame arrived on it.
@@ -33,7 +36,7 @@ pub(super) struct Member {
     pub(super) updates: TokenBucket,
     pub(super) presence: TokenBucket,
     pub(super) direct: TokenBucket,
-    pub(super) catchup: MinGap,
+    pub(super) catchup: TokenBucket,
     pub(super) snapshots: MinGap,
     breaches: u32,
     last_breach_ms: Option<u64>,
@@ -52,7 +55,7 @@ impl Member {
                 u32::from(drafftink_protocol::MAX_DIRECT_PER_SEC) * 2,
                 now_ms,
             ),
-            catchup: MinGap::default(),
+            catchup: TokenBucket::new(1, CATCHUP_BURST, now_ms),
             snapshots: MinGap::default(),
             breaches: 0,
             last_breach_ms: None,

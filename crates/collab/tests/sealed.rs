@@ -680,3 +680,26 @@ fn base64(bytes: &[u8]) -> String {
     }
     out
 }
+
+#[test]
+fn the_key_is_in_no_debug_output_and_no_status_text() {
+    let mut rig = Loop::new(RelayConfig::self_host());
+    let mut a = peer(&mut rig, 1, JoinMode::Create, None, Resume::default());
+    rig.drive(&mut [&mut a], "online", &|p| p[0].online());
+    let link = drafftink_seal::RoomLink::new(key());
+    let fragment = link.fragment();
+    let key_text = fragment.rsplit(',').next().unwrap().to_owned();
+    let shown = format!("{:?} {:?} {:?} {:?}", a.client(), a.client().status(), a.events, a.client().resume());
+    assert!(!shown.contains(&key_text), "{shown}");
+    let cfg = SealedConfig {
+        url: rig.url(),
+        key: key(),
+        client_id: ClientId::from_bytes([1; 16]),
+        user: None,
+        mode: JoinMode::Open,
+        resume: Resume::default(),
+        jitter_seed: 1,
+        replace_when_trimmed: false,
+    };
+    assert!(!format!("{cfg:?}").contains(&key_text));
+}

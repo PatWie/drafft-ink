@@ -617,6 +617,20 @@ fn follow(s: &mut Session, a: FollowArgs) -> Result<FollowOut, Refusal> {
     Ok(out)
 }
 
+impl Session {
+    /// The position of the tab (as `tab.list` counts) that is bound to the encrypted room `room` names: a link or
+    /// `<id>,<key>`. A shell uses it at start-up, so that a link to a room whose tab was restored opens that tab and
+    /// not a second one.
+    pub fn room_tab_for_link(&self, room: &str) -> Option<u32> {
+        let RoomSpec::Sealed(link) = RoomSpec::parse(room).ok()? else { return None };
+        let wanted = link.id();
+        let index = self.tabs.iter().position(|t| {
+            t.ext.get::<SealedBinding>().and_then(|b| b.0.as_ref()).is_some_and(|r| r.key.room_id() == wanted)
+        })?;
+        u32::try_from(index).ok()
+    }
+}
+
 // ---- collab.share_link ----
 
 /// The page that opens a room link.

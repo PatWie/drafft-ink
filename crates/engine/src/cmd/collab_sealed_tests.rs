@@ -334,3 +334,47 @@ fn leaving_removes_the_stored_snapshot_with_the_next_save() {
     let index = String::from_utf8(storage.bytes(crate::ports::Ns::Autosave, "workspace").unwrap()).unwrap();
     assert!(!index.contains("\"room\""), "the key is gone from the record: {index}");
 }
+
+// ---- an expired room ----
+
+#[test]
+fn a_link_finds_the_restored_tab_of_its_room() {
+    let mut w = World::new(1);
+    let link = w.create(0);
+    testing::add_rect(w.s(0), 0.0, 0.0, 10.0, 10.0).unwrap();
+    w.settle();
+    w.s(0).save_workspace().unwrap();
+    let mut s = reload(&w.c[0].1);
+    s.restore_workspace().unwrap();
+    assert_eq!(s.room_tab_for_link(&link), Some(0));
+    assert_eq!(s.room_tab_for_link("#room=AAAAAAAAAAAAAAAAAAAAAA,x"), None);
+    assert_eq!(s.room_tab_for_link("plain-room"), None, "a plain name is no encrypted room");
+}
+
+#[test]
+fn an_expired_room_is_refused_by_default_and_restored_from_the_copy_on_request() {
+    let mut w = World::new(2);
+    let link = w.create(0);
+    testing::add_rect(w.s(0), 0.0, 0.0, 100.0, 60.0).unwrap();
+    w.settle();
+    w.s(0).save_workspace().unwrap();
+    // The relay forgot the room (it expired): a new relay with nothing in it.
+    w.relay = FakeRelay::new(RelayConfig::self_host());
+    let mut s = reload(&w.c[0].1);
+    s.restore_workspace().unwrap();
+    w.c[0].0 = s;
+    w.settle();
+    let view = run(w.s(0), "collab.status", json!({}));
+    assert_eq!(view["state"], "error", "the reconnect did not make a room: {view}");
+    assert!(view["error"].as_str().unwrap().contains("This room is gone"), "{view}");
+    assert_eq!(w.relay.members(), 0);
+
+    // The person asks for it to be restored from the copy this tab holds.
+    run(w.s(0), "collab.leave_room", json!({}));
+    run(w.s(0), "collab.join_room", json!({"room": link, "on_local": "merge", "if_missing": "restore"}));
+    w.settle();
+    assert_eq!(run(w.s(0), "collab.status", json!({}))["state"], "connected");
+    // Somebody else opens the link and finds the restored drawing.
+    w.join(1, &link, json!({}));
+    assert_eq!(elements(w.s(1)), 1);
+}
