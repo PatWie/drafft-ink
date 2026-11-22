@@ -28,7 +28,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use self::address::{AddressError, RoomName, RoomSpec, RoomSpecError, encode_server, resolve_server, room_link};
+use self::address::{AddressError, RoomSpec, RoomSpecError, encode_server, resolve_server, room_link};
 use self::connection::{Target, has_content, leave, user_from_settings};
 use self::state::CollabState;
 use self::token::TokenArg;

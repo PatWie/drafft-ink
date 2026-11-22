@@ -166,6 +166,7 @@ impl SealedClient {
         let empty = self.pos.head_seq == 0 && !self.pos.saw_content;
         let Some(local) = self.local_version(store) else { return };
         if empty && !local.is_empty() && self.try_seed(store, local) {
+            self.compact_after_ms = now_ms.saturating_add(COMPACT_RETRY_MS);
             return;
         }
         self.upload_missing(now_ms, store);

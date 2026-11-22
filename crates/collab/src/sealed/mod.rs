@@ -585,6 +585,10 @@ impl SealedClient {
             self.pos.gap_since = None;
             self.ask_catchup(now_ms);
         }
+        // A snapshot that gets no answer is forgotten, so that the next advice is acted on.
+        if self.snapshot_out.is_some() && self.uploads.seed.is_none() && now_ms >= self.compact_after_ms {
+            self.snapshot_out = None;
+        }
         if self.pos.catchup_asked.is_some_and(|t| now_ms.saturating_sub(t) >= CATCHUP_REPLY_TIMEOUT_MS) {
             self.pos.catchup_asked = None;
             self.ask_catchup(now_ms);

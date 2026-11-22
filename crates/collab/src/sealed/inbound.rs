@@ -89,6 +89,14 @@ impl SealedClient {
         }
         self.limits = joined.limits;
         self.room_state = Some(joined.room_state);
+        if joined.room_state == RoomState::Created || joined.head_seq < self.pos.last_seq {
+            // The room is a new one under the old id (it expired and was made again): what this client remembers of
+            // the old one is not true of it. It holds no sequence number and the relay holds nothing of its.
+            self.pos.last_seq = 0;
+            self.pos.held.clear();
+            self.pos.sender_ctrs.clear();
+            self.relay_vv = VersionVector::default();
+        }
         // The room exists now. A reconnect must not make a new one if it is deleted meanwhile.
         self.cfg.mode = JoinMode::Open;
         let infos: Vec<PeerInfo> = joined.peers.iter().map(|id| PeerInfo { client_id: *id, user: None }).collect();
@@ -436,6 +444,10 @@ impl SealedClient {
         match code {
             ErrorCode::RateLimited => {
                 let wait = retry.unwrap_or(1000).clamp(50, crate::client::RESYNC_MAX_GAP_MS);
+                if self.snapshot_out.take().is_some() && self.uploads.seed.is_none() {
+                    // A compaction came too soon after the last snapshot: try again later.
+                    self.compact_after_ms = now_ms.saturating_add(wait);
+                }
                 self.uploads.send_not_before = now_ms.saturating_add(wait);
                 // The update that was refused was taken from the document already: upload what the relay lacks.
                 self.reupload_at = Some(self.uploads.send_not_before);

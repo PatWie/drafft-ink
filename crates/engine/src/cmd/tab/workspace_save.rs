@@ -127,10 +127,10 @@ impl SaveJob {
             let room = room_entry(t);
             if room.is_some() {
                 let loro_key = format!("{key}{LORO_KEY_SUFFIX}");
-                if written.get(&t.id) != Some(&(revision, name.clone())) {
-                    if let Ok(bytes) = t.doc.replicated().export_snapshot() {
-                        job.snapshots.push((loro_key.clone(), bytes));
-                    }
+                if written.get(&t.id) != Some(&(revision, name.clone()))
+                    && let Ok(bytes) = t.doc.replicated().export_snapshot()
+                {
+                    job.snapshots.push((loro_key.clone(), bytes));
                 }
                 job.snapshot_keys.push(loro_key);
             }

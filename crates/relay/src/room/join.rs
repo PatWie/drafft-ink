@@ -106,6 +106,9 @@ impl<S: RelayStore, B: BlobStore> Relay<S, B> {
                 limits,
             },
         );
+        // A client that holds more than the room has knew another room under this id (it was deleted and made
+        // again): it gets everything.
+        let last_seq = if last_seq > meta.head_seq { 0 } else { last_seq };
         match self.build_catchup(last_seq, true) {
             Ok(catchup) => out.send(conn, &catchup),
             Err(_) => {

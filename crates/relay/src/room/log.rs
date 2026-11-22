@@ -153,7 +153,9 @@ impl<S: RelayStore, B: BlobStore> Relay<S, B> {
             return;
         }
         let gap = u64::from(PUT_SNAPSHOT_MIN_INTERVAL_MS);
-        if let Some(Err(wait)) = self.member_mut(conn).map(|m| m.snapshots.take(now_ms, gap)) {
+        // The seed of an empty room is not a compaction: it does not count against the gap.
+        let seeding = self.meta_now().is_some_and(|m| m.is_empty());
+        if let Some(Err(wait)) = self.member_mut(conn).filter(|_| !seeding).map(|m| m.snapshots.take(now_ms, gap)) {
             let close = self.breach(conn, now_ms);
             let text = "snapshots may be sent once every few seconds";
             self.refuse(conn, now_ms, retry_error(ErrorCode::RateLimited, text, wait), close, out);
