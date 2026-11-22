@@ -21,6 +21,8 @@ struct RelayState {
     segments: Vec<Segment>,
     /// Calls that fail before they change anything.
     failures: u32,
+    /// Every call fails with the daily limit until this is cleared.
+    daily_limit: bool,
     /// Segments written, for the cost tests.
     segments_written: u32,
 }
@@ -40,6 +42,12 @@ impl MemoryRelayStore {
     /// Makes the next `calls` store calls fail with a backend error, without changing anything.
     pub fn fail_next(&self, calls: u32) {
         lock(&self.state).failures = calls;
+    }
+
+    /// While `on`, every store call fails with [`StoreError::DailyLimit`] without changing anything, as a host does
+    /// whose daily capacity is used up.
+    pub fn set_daily_limit(&self, on: bool) {
+        lock(&self.state).daily_limit = on;
     }
 
     /// How many segments were written so far.
@@ -62,6 +70,9 @@ impl MemoryRelayStore {
 
     fn with<T>(&self, f: impl FnOnce(&mut RelayState) -> Result<T, StoreError>) -> Result<T, StoreError> {
         let mut state = lock(&self.state);
+        if state.daily_limit {
+            return Err(StoreError::DailyLimit);
+        }
         if state.failures > 0 {
             state.failures -= 1;
             return Err(StoreError::backend("injected failure"));
@@ -156,6 +167,7 @@ impl RelayStore for MemoryRelayStore {
 struct BlobState {
     blobs: BTreeMap<ImageName, Vec<u8>>,
     failures: u32,
+    daily_limit: bool,
 }
 
 /// A [`BlobStore`] in memory. Clones share the data.
@@ -175,6 +187,11 @@ impl MemoryBlobStore {
         lock(&self.state).failures = calls;
     }
 
+    /// While `on`, every store call fails with [`StoreError::DailyLimit`] without changing anything.
+    pub fn set_daily_limit(&self, on: bool) {
+        lock(&self.state).daily_limit = on;
+    }
+
     /// Every stored image, as stored.
     pub fn dump(&self) -> Vec<Vec<u8>> {
         lock(&self.state).blobs.values().cloned().collect()
@@ -182,6 +199,9 @@ impl MemoryBlobStore {
 
     fn with<T>(&self, f: impl FnOnce(&mut BTreeMap<ImageName, Vec<u8>>) -> T) -> Result<T, StoreError> {
         let mut state = lock(&self.state);
+        if state.daily_limit {
+            return Err(StoreError::DailyLimit);
+        }
         if state.failures > 0 {
             state.failures -= 1;
             return Err(StoreError::backend("injected failure"));
