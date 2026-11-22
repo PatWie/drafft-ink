@@ -231,7 +231,7 @@ mod tests {
         let text = "aé€b😀c";
         let runs = [
             TextRun { start: 1, end: 3, color: Some(RED), ..Default::default() },
-            TextRun { start: 4, end: 5, color: Some(BLUE), bold: true, italic: true },
+            TextRun { start: 4, end: 5, color: Some(BLUE), bold: true, italic: true, ..Default::default() },
         ];
         let r = StyleRuns::from_text_runs(text, &runs);
         assert_eq!(spans(&r), vec![(1..6, RED), (7..11, BLUE)]);

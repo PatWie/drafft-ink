@@ -17,6 +17,7 @@
 //! [`classify_text`] decides what some text is: a drafft.ink envelope, Excalidraw clipboard JSON, a Mermaid diagram
 //! of a supported type, or plain text. The decision sniffs the first characters and parses only the one candidate.
 
+use drafftink_scene::unknown::UnknownFields;
 use drafftink_scene::{Document, IdSource};
 use serde_json::{Value, json};
 
@@ -67,7 +68,9 @@ pub fn is_envelope(v: &Value) -> bool {
 }
 
 /// Reads an envelope. Refuses a newer version, a missing or damaged document, and a document that breaks a rule.
-pub fn unpack(v: &Value) -> Result<Document, IoError> {
+/// Fields of a newer build that this one does not know are left out, and the report says so
+/// ([`UnknownFields::WARNING`]).
+pub fn unpack(v: &Value) -> Result<Imported, IoError> {
     if !is_envelope(v) {
         return Err(IoError::WrongFormat {
             expected: Expected::NativeClipboard,
@@ -92,13 +95,15 @@ pub fn unpack(v: &Value) -> Result<Document, IoError> {
             max: drafftink_scene::SCHEMA_VERSION,
         }));
     }
-    let document: Document =
-        serde_json::from_value(doc.clone()).map_err(|e| IoError::parse(FormatName::Clipboard, e.to_string()))?;
-    let report = document.validate();
-    if report.has_errors() {
-        return Err(IoError::Document(drafftink_scene::DocumentError::Invalid(report)));
+    let loaded = Document::from_value_lenient(doc.clone()).map_err(|e| match e {
+        drafftink_scene::DocumentError::Invalid(_) => IoError::Document(e),
+        other => IoError::parse(FormatName::Clipboard, other.to_string()),
+    })?;
+    let mut report = ImportReport::default();
+    if !loaded.unknown.is_empty() {
+        report.warn(UnknownFields::WARNING);
     }
-    Ok(document)
+    Ok(Imported { document: loaded.document, report })
 }
 
 /// What pasted text is.
@@ -137,8 +142,7 @@ pub fn classify_text(text: &str, ids: &mut dyn IdSource) -> Result<TextKind, IoE
                 && let Ok(v) = serde_json::from_str::<Value>(text)
                 && is_envelope(&v)
             {
-                let document = unpack(&v)?;
-                return Ok(TextKind::Elements(Imported { document, report: ImportReport::default() }));
+                return Ok(TextKind::Elements(unpack(&v)?));
             }
             Ok(TextKind::Plain { note: None })
         }
@@ -167,7 +171,7 @@ mod tests {
         assert!(is_envelope(&packed.payload));
         let text = packed.payload["text"].as_str().unwrap();
         assert!(text.contains("excalidraw/clipboard"));
-        assert_eq!(unpack(&packed.payload).unwrap(), doc());
+        assert_eq!(unpack(&packed.payload).unwrap().document, doc());
         assert!(pack(&doc(), false).unwrap().payload.get("text").is_none());
     }
 

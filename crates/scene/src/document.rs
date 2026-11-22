@@ -282,9 +282,10 @@ impl Document {
         }
     }
 
-    /// The slow path of [`Document::from_json_lenient`]. The elements are read one by one, so the cost of a retry
+    /// Reads a document from a JSON value like [`Document::from_json_lenient`] (the version is not checked here; the
+    /// slow path of that function). The elements are read one by one, so the cost of a retry
     /// is that of one element and not of the document.
-    fn from_value_lenient(mut value: serde_json::Value) -> Result<Loaded, DocumentError> {
+    pub fn from_value_lenient(mut value: serde_json::Value) -> Result<Loaded, DocumentError> {
         let parse = |e| DocumentError::Parse(Arc::new(e));
         let mut unknown = UnknownFields::new();
         let items = match value.as_object_mut().and_then(|o| o.remove("elements")) {

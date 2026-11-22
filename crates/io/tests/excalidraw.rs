@@ -946,7 +946,7 @@ fn native_documents_survive_a_trip_through_excalidraw() {
     t.runs = vec![
         TextRun { start: 0, end: 3, color: Some(Color::rgb(255, 0, 0)), ..Default::default() },
         TextRun { start: 5, end: 6, color: None, ..Default::default() },
-        TextRun { start: 6, end: 8, color: None, bold: true, italic: true },
+        TextRun { start: 6, end: 8, color: None, bold: true, italic: true, ..Default::default() },
         TextRun { start: 8, end: 11, italic: true, ..Default::default() },
     ];
     t.container_id = Some(doc.elements[rect].id.clone());

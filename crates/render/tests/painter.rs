@@ -336,7 +336,7 @@ fn bold_and_italic_runs_change_the_glyphs_the_width_and_the_cache_key() {
     let (same_width, _) = widths(&e, vec![TextRun { start: 6, end: 10, ..Default::default() }]);
     assert_eq!(same_width, plain.bounds.width());
     if let ElementKind::Text(t) = &mut e.kind {
-        t.runs = vec![TextRun { start: 0, end: 5, color: Some(Color::rgb(255, 0, 0)), bold: true, italic: false }];
+        t.runs = vec![TextRun { start: 0, end: 5, color: Some(Color::rgb(255, 0, 0)), bold: true, italic: false, ..Default::default() }];
     }
     let red_bold = paint(&e);
     assert!(colors(&red_bold).contains(&packed(PColor::from_rgba8(255, 0, 0, 255))), "colour and bold together");

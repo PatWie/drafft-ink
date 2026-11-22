@@ -8,7 +8,7 @@
 //! those are decoded and patched into the view.
 
 use std::cell::Cell;
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -94,6 +94,8 @@ pub(crate) struct Core {
     /// would keep the fitted value that Loro does not hold once the points become valid again, and peers would end
     /// with different views of one document.
     pub refitted: BTreeSet<ElementId>,
+    /// Per element, the stored keys written by a newer build that this one does not understand. They stay in Loro.
+    pub newer: BTreeMap<ElementId, Vec<String>>,
     /// Frontiers just before each recent undoable local commit, oldest first.
     pub marks: VecDeque<Frontiers>,
     /// Counts local commits; stamps the undo step a commit pushes (`UndoInfo::seq`).
@@ -191,6 +193,7 @@ impl Core {
             stats: WorkStats::default(),
             invalid: BTreeSet::new(),
             refitted: BTreeSet::new(),
+            newer: BTreeMap::new(),
             marks: VecDeque::new(),
             commit_seq: 0,
             last_merged: false,
@@ -430,6 +433,7 @@ impl LoroStore {
         self.core.reset_doc(fresh.doc.clone());
         self.core.invalid.clear();
         self.core.refitted.clear();
+        self.core.newer.clear();
         let cs = sync::rebuild_all(&mut self.view, &mut self.core)?;
         self.core.notify(&cs);
         Ok(cs)
@@ -476,6 +480,12 @@ impl LoroStore {
     /// Elements that exist in the CRDT but are hidden because they failed to decode or validate.
     pub fn invalid_elements(&self) -> impl Iterator<Item = &ElementId> {
         self.core.invalid.iter()
+    }
+
+    /// How many elements carry fields that a newer build wrote and this one does not understand. The elements are
+    /// shown without those fields, and the fields stay in the shared document when this build edits the element.
+    pub fn newer_element_count(&self) -> usize {
+        self.core.newer.len()
     }
 
     /// The raw content of the Loro document as JSON (containers resolved). For tests, tools and bug reports; not

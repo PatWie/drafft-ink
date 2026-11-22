@@ -174,10 +174,11 @@ fn note_import(s: &mut Session, imported: &Imported) {
 fn from_elements(s: &mut Session, v: &Value) -> Result<Found, Refusal> {
     let cmd = s.cmd();
     if wire::is_envelope(v) {
-        let doc = wire::unpack(v).map_err(|e| {
+        let imported = wire::unpack(v).map_err(|e| {
             unreadable(cmd, "The copied elements", &e.to_string(), "Copy them again with `clipboard.copy`.")
         })?;
-        return Ok(Found::Elements { doc, kind: Kind::Elements });
+        note_import(s, &imported);
+        return Ok(Found::Elements { doc: imported.document, kind: Kind::Elements });
     }
     let text = v.to_string();
     let imported = drafftink_io::excalidraw::import_clipboard(&text, &mut *s.ports.ids).map_err(|e| {

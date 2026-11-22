@@ -354,9 +354,11 @@ impl Core {
         let fields = if self.refitted.remove(&ch.id) { Fields::all() } else { ch.fields };
         let flat = codec::flatten(e, fields)?;
         let mut stale: Vec<String> = Vec::new();
+        // Keys a newer build wrote stay, whatever group they would belong to.
+        let newer = self.newer.get(&ch.id).map_or(&[][..], Vec::as_slice);
         map.for_each(|k, _| {
             let in_scope = reset || codec::group_of(k).intersects(fields);
-            if in_scope && !flat.contains_key(k) {
+            if in_scope && !flat.contains_key(k) && !codec::is_kept(k, newer) {
                 stale.push(k.to_owned());
             }
         });

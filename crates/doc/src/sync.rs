@@ -138,6 +138,14 @@ fn sync_view_inner(view: &mut MemoryStore, core: &mut Core, mut t: Touched) -> R
         } else {
             core.refitted.remove(&id);
         }
+        match decoded.as_ref().map(|d| d.unknown.as_slice()).filter(|u| !u.is_empty()) {
+            Some(keys) => {
+                core.newer.insert(id.clone(), keys.to_vec());
+            }
+            None => {
+                core.newer.remove(&id);
+            }
+        }
         let decoded = decoded.map(|d| d.element);
         let present = tx.get(&id).is_some();
         match (present, decoded) {
@@ -221,6 +229,7 @@ fn begin_staged(store: &mut LoroStore, bytes: &[u8]) -> Result<ChangeSet, DocErr
     let fresh = opened?;
     store.core.reset_doc(fresh.doc.clone());
     store.core.invalid.clear();
+    store.core.newer.clear();
     store.core.pending = pending;
     store.core.stats.remote_updates += 1;
     store.core.staged = Some(Staged::scan(&store.view, &store.core)?);
