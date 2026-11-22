@@ -164,6 +164,36 @@ impl MarkerColor {
         LEGACY.iter().find(|l| l.eq_ignore_ascii_case(name)).and_then(|l| MarkerColor::new(l, MarkerShade::Standard))
     }
 
+    /// The marker that a colour stands for, for a tool that takes any colour the stroke picker offers.
+    ///
+    /// * A marker name (`yellow-400`, or one of the five old names) is that marker.
+    /// * Another palette colour `<family>-<shade>` is the marker of that family at the nearest marker shade: the
+    ///   shades below 300 (25 to 200) become 300, the shades above 500 (600 to 950) become 500.
+    /// * Any other colour (`#rrggbb`, `#rgb`, an alpha is ignored) is the marker, of every family in every marker
+    ///   shade, whose ink on the light canvas is nearest in RGB.
+    ///
+    /// `None` when the text is no colour at all.
+    pub fn nearest(text: &str) -> Option<MarkerColor> {
+        let text = text.trim();
+        if let Some(marker) = MarkerColor::from_name(text) {
+            return Some(marker);
+        }
+        if let Some((family, shade)) = text.rsplit_once('-')
+            && let Ok(number) = shade.parse::<u16>()
+            && palette::SHADES.contains(&number)
+        {
+            let marker_shade = MarkerShade::ALL.into_iter().find(|s| s.number() == number.clamp(300, 500))?;
+            return MarkerColor::new(family, marker_shade);
+        }
+        let wanted = Color::parse(text).ok()?;
+        let distance = |m: &MarkerColor| {
+            let c = m.rgb(Tone::Light);
+            let d = |a: u8, b: u8| u32::from(a.abs_diff(b)).pow(2);
+            d(c.r, wanted.r) + d(c.g, wanted.g) + d(c.b, wanted.b)
+        };
+        MarkerColor::all().min_by_key(distance)
+    }
+
     /// True for a family that is nearly grey (slate, gray, zinc, neutral, stone).
     fn is_grey(self) -> bool {
         matches!(self.family_name(), "slate" | "gray" | "zinc" | "neutral" | "stone")

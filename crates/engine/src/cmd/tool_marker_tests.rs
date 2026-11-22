@@ -29,3 +29,31 @@ fn it_is_tool_state_and_makes_no_undo_step_and_an_unknown_colour_is_refused() {
     assert_eq!(r.code, "bad_args", "{}", r.message);
     assert!(r.message.contains("purple"), "{}", r.message);
 }
+
+#[test]
+fn any_palette_or_custom_colour_becomes_the_nearest_marker_and_the_answer_says_which() {
+    let mut s = testing::headless_session();
+    for (given, want) in [
+        ("blue-50", "blue-300"),
+        ("blue-300", "blue-300"),
+        ("rose-400", "rose-400"),
+        ("emerald-900", "emerald-500"),
+        ("#ef4444", "red-500"),
+    ] {
+        let out = s.execute_from(Origin::Test, "tool.set_marker", json!({ "color": given })).unwrap();
+        assert_eq!(out["color"], json!(want), "{given}");
+        assert_eq!(s.tool.marker, MarkerColor::from_name(want), "{given}");
+    }
+    let r = s.execute_from(Origin::Test, "tool.set_marker", json!({ "color": "#12" })).unwrap_err();
+    assert_eq!(r.code, "bad_args", "{}", r.message);
+    assert_eq!(s.tool.marker, MarkerColor::from_name("red-500"), "a refused pick changes nothing");
+}
+
+#[test]
+fn picking_a_highlighter_colour_never_changes_the_stroke_colour_of_new_shapes() {
+    let mut s = testing::headless_session();
+    let stroke = s.tool.style_defaults.stroke_color;
+    s.execute_from(Origin::Test, "tool.set_marker", json!({ "color": "green-300" })).unwrap();
+    s.execute_from(Origin::Test, "tool.set_marker", json!({ "color": null })).unwrap();
+    assert_eq!(s.tool.style_defaults.stroke_color, stroke);
+}

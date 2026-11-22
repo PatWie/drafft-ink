@@ -22,6 +22,7 @@
 //!   draw on.
 //! * The rectangle of the strip, and of the menu button, go to `UiState::chrome` for the surfaces below.
 
+use drafftink_engine::state::Tool;
 use egui::{
     Align, Align2, Area, Context, CornerRadius, Id, Layout, Order, Rect, Role, ScrollArea, Sense, Shadow, Stroke, Ui,
     UiBuilder, WidgetInfo, pos2, vec2,
@@ -195,6 +196,10 @@ fn style_button(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState) {
             // is.
             let color = colors::to_egui(cx.model.brush.color);
             paint_swatch(ui.painter(), rect.center(), side * 0.3, Some(color), false, false, &pal, true);
+        } else if cx.model.tool == Tool::Highlighter {
+            // The one colour the highlighter has: the ink of its marker, or the empty swatch for none.
+            let ink = cx.model.tool_marker.map(|m| colors::marker_offer(m, pal.dark).shown);
+            paint_swatch(ui.painter(), rect.center(), side * 0.3, ink, false, false, &pal, true);
         } else {
             let current = |prop: &str| -> Option<egui::Color32> {
                 let name = cx.model.style.prop(prop)?.value.as_ref().and_then(Value::as_str)?;
@@ -218,7 +223,13 @@ fn style_button(ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState) {
             ui.painter().circle_stroke(rect.center() - vec2(offset, offset), radius, Stroke::new(2.5, ring));
         }
     }
-    let name = if cx.model.paint_editing { "Brush colour" } else { "Stroke and fill" };
+    let name = if cx.model.paint_editing {
+        "Brush colour"
+    } else if cx.model.tool == Tool::Highlighter {
+        "Highlight colour"
+    } else {
+        "Stroke and fill"
+    };
     resp.widget_info(|| {
         let mut info = WidgetInfo::labeled(Role::Button, true, name);
         info.selected = Some(st.style_open);

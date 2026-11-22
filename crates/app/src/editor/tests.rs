@@ -507,17 +507,16 @@ fn drag_selects_and_copy_and_cut_use_the_selection() {
 #[test]
 fn a_highlight_chosen_while_editing_marks_the_selected_characters_and_commits_with_the_text() {
     use drafftink_scene::MarkerColor;
-    use drafftink_ui::MarkerState;
     let mut r = Rig::new();
     let id = r.create(json!({ "kind": "text", "text": "plain words here", "at": [40, 30] }));
     r.begin(json!({ "id": id.as_str() }), request(Some(&id)));
-    assert_eq!(r.editor().marker(), MarkerState::Off);
+    assert_eq!(r.editor().highlight(), Some(None));
     r.editor().model.select_chars(6..11);
     assert!(r.editor().add_style(&json!({ "highlight": "green" }), 1.0));
     assert!(!r.editor().add_style(&json!({ "highlight": "green" }), 2.0), "it is on already");
-    assert_eq!(r.editor().marker(), MarkerState::On(MarkerColor::from_name("green-400").unwrap()));
+    assert_eq!(r.editor().highlight(), Some(MarkerColor::from_name("green-400")));
     r.editor().model.select_chars(0..16);
-    assert_eq!(r.editor().marker(), MarkerState::Mixed);
+    assert_eq!(r.editor().highlight(), None);
     // Only the characters carry it, and it goes with the text when the edit ends.
     let args = r.editor().finish_args();
     assert_eq!(args["runs"], json!([{ "start": 6, "end": 11, "highlight": "green-400" }]));

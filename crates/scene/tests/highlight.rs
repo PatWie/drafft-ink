@@ -354,3 +354,44 @@ fn the_dark_canvas_is_not_the_light_one_with_a_filter() {
     let chosen = over(MarkerColor::YELLOW.rgb(Tone::Dark), MARKER_ALPHA, dark_canvas);
     assert!(contrast(chosen, dark_canvas) > contrast(filtered, dark_canvas), "{filtered:?} {chosen:?}");
 }
+
+// ---- any colour as a marker ----
+
+#[test]
+fn a_marker_name_is_itself_and_a_palette_colour_takes_the_nearest_marker_shade() {
+    for marker in MarkerColor::all() {
+        assert_eq!(MarkerColor::nearest(&marker.name()), Some(marker));
+    }
+    assert_eq!(MarkerColor::nearest("yellow"), Some(m("yellow-400")), "the old names still mean the standard shade");
+    for (picked, want) in [
+        ("blue-25", "blue-300"),
+        ("blue-50", "blue-300"),
+        ("blue-200", "blue-300"),
+        ("blue-300", "blue-300"),
+        ("blue-400", "blue-400"),
+        ("blue-500", "blue-500"),
+        ("blue-600", "blue-500"),
+        ("blue-950", "blue-500"),
+        ("rose-100", "rose-300"),
+        ("Rose-900", "rose-500"),
+    ] {
+        assert_eq!(MarkerColor::nearest(picked), Some(m(want)), "{picked}");
+    }
+}
+
+#[test]
+fn a_custom_colour_takes_the_nearest_marker_and_a_non_colour_takes_none() {
+    // The ink of a marker is the marker's own nearest; a colour a little off still lands on it.
+    for marker in MarkerColor::all() {
+        let c = marker.rgb(Tone::Light);
+        let near = Color::rgb(c.r.saturating_add(2), c.g.saturating_sub(2), c.b).to_hex();
+        assert_eq!(MarkerColor::nearest(&near), Some(marker), "{near}");
+    }
+    assert_eq!(MarkerColor::nearest("#ff0000").map(|x| x.family_name()), Some("red"));
+    assert_eq!(MarkerColor::nearest("#0000ff80"), MarkerColor::nearest("#0000ff"), "an alpha is ignored");
+    assert_eq!(MarkerColor::nearest("#0000ff").map(|x| x.family_name()), Some("indigo"), "the palette's nearest blue");
+    assert_eq!(MarkerColor::nearest("#fff").map(|x| x.shade()), Some(MarkerShade::Soft), "white is the palest marker");
+    for bad in ["", "banana", "blue-", "blue-7", "nope-500", "#12"] {
+        assert_eq!(MarkerColor::nearest(bad), None, "{bad:?}");
+    }
+}

@@ -36,10 +36,6 @@ pub(crate) const DIVIDER_WIDTH: f32 = 2.0 * space::MD + 1.0;
 /// Whether a property is relevant to the tool being drawn with (used only when nothing is selected). This is
 /// presentation: the engine skips and reports the properties that do not apply.
 fn tool_shows(tool: Tool, prop: &str) -> bool {
-    // New elements are never highlighted (the defaults carry no highlight): the button needs a selection.
-    if prop == "highlight" {
-        return false;
-    }
     const TEXT: [&str; 4] = ["font_family", "font_weight", "font_size", "text_align"];
     const FREEHAND: [&str; 3] = ["freehand_style", "tip", "pressure_mode"];
     match tool {
@@ -61,6 +57,11 @@ fn shows(cx: &Cx<'_>, prop: &str) -> bool {
     let m = cx.model;
     // The paint editor has the brush in place of the style of the selection (`Group::Paint`).
     if m.paint_editing {
+        return false;
+    }
+    // The highlighter has only its colour (the top strip's colour group): what it applies is not the style of a
+    // selection, so no property control may write to one while the tool is active.
+    if m.tool == Tool::Highlighter {
         return false;
     }
     if m.selection_count > 0 { m.style.applies(prop) } else { tool_shows(m.tool, prop) }
@@ -85,8 +86,6 @@ enum Row {
     Brush,
     /// Round or chisel tip.
     Tip,
-    /// The colour of the highlighter, and none.
-    Marker,
     /// The font dropdown.
     FontFamily,
     /// Light, regular, heavy.
@@ -132,8 +131,6 @@ pub(crate) enum Group {
     Arrow,
     /// Normal or calligraphy over round or chisel.
     Brush,
-    /// The colours of the highlighter tool.
-    Marker,
     /// Family over weight.
     Font,
     /// Size over bold and italic.
@@ -154,12 +151,11 @@ pub(crate) enum Group {
 
 impl Group {
     /// Every group, in order.
-    pub(crate) const ALL: [Group; 13] = [
+    pub(crate) const ALL: [Group; 12] = [
         Group::Stroke,
         Group::Shape,
         Group::Arrow,
         Group::Brush,
-        Group::Marker,
         Group::Font,
         Group::TextSize,
         Group::TextAlign,
@@ -193,7 +189,6 @@ impl Group {
                 (Row::ArrowHeads, controls::new_arrows(cx) || (selected && model.style.has_kind("arrow"))),
             ],
             Group::Brush => vec![(Row::Brush, shows(cx, "freehand_style")), (Row::Tip, shows(cx, "tip"))],
-            Group::Marker => vec![(Row::Marker, model.tool == Tool::Highlighter)],
             Group::Font => {
                 vec![(Row::FontFamily, shows(cx, "font_family")), (Row::FontWeight, shows(cx, "font_weight"))]
             }

@@ -1210,7 +1210,6 @@ impl ShellApp for App {
         let collab = collab_view_of(&mut self.session);
         self.ui.set_collab(collab);
         self.ui.set_editor_faces(self.editor.as_ref().map(TextEditor::faces));
-        self.ui.set_editor_highlight(self.editor.as_ref().map(TextEditor::marker));
         let view_ns = self.set_debug_panel(cx, now);
         let live_camera = self.live_camera();
         self.ui.set_live_camera(live_camera);

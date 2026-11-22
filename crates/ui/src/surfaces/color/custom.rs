@@ -116,7 +116,7 @@ impl Live {
             ColorTarget::Stroke => Self::Gesture(ScrubControl::StrokeColor),
             ColorTarget::Fill => Self::Gesture(ScrubControl::FillColor),
             // The brush has no style gesture: a pick is `image.paint_brush`, run once when the drag ends.
-            ColorTarget::Background | ColorTarget::Brush => Self::OnRelease,
+            ColorTarget::Background | ColorTarget::Brush | ColorTarget::Marker => Self::OnRelease,
         }
     }
 }

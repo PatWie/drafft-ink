@@ -102,13 +102,16 @@ pub enum ColorTarget {
     /// The brush of the paint editor (`image.paint_brush` `color`). It is a colour of the picture, which the canvas
     /// does not map for the dark theme, so swatches and picks of it are never mapped either.
     Brush,
+    /// The colour of the highlighter tool (`tool.set_marker`). A marker is a token that each theme resolves
+    /// (`MarkerColor::rgb`), so swatches show the marker's ink and picks are never mapped for the dark theme.
+    Marker,
 }
 
 impl ColorTarget {
     /// True when the canvas draws what the target colours through the dark mapping (`colors::shown`), so that a
     /// swatch must show the mapped colour and a pick of a colour seen on the canvas must store its inverse.
     pub fn is_themed(self) -> bool {
-        !matches!(self, ColorTarget::Brush)
+        !matches!(self, ColorTarget::Brush | ColorTarget::Marker)
     }
 }
 
@@ -119,6 +122,7 @@ pub struct LastPicked {
     stroke: Option<String>,
     fill: Option<String>,
     brush: Option<String>,
+    marker: Option<String>,
 }
 
 impl LastPicked {
@@ -129,6 +133,7 @@ impl LastPicked {
             ColorTarget::Stroke => self.stroke.as_deref(),
             ColorTarget::Fill => self.fill.as_deref(),
             ColorTarget::Brush => self.brush.as_deref(),
+            ColorTarget::Marker => self.marker.as_deref(),
             ColorTarget::Background => None,
         }
     }
@@ -139,6 +144,7 @@ impl LastPicked {
             ColorTarget::Stroke => self.stroke = Some(color),
             ColorTarget::Fill => self.fill = Some(color),
             ColorTarget::Brush => self.brush = Some(color),
+            ColorTarget::Marker => self.marker = Some(color),
             ColorTarget::Background => {}
         }
     }
@@ -503,8 +509,6 @@ pub enum RibbonMenu {
     EndHead,
     /// The corner radius slider of a shape's corners.
     CornerRadius,
-    /// The marker colours of the highlight button (and "none").
-    Highlight,
 }
 
 /// A ribbon menu that is open, and where its button is.
@@ -550,9 +554,6 @@ pub struct UiState {
     pub font_picker_open: bool,
     /// The menu of a ribbon control, when open.
     pub ribbon_menu: Option<OpenRibbonMenu>,
-    /// The marker colour the highlight button puts on when it is clicked: the last one the selection showed or the
-    /// person picked. `None` until there was one, which reads as yellow.
-    pub last_marker: Option<drafftink_scene::MarkerColor>,
     /// The search box is open.
     pub search_open: bool,
     /// What the last search found, while the search box is open.
@@ -794,11 +795,13 @@ impl UiState {
             Verb::OpenColorStroke => self.toggle_color(ColorTarget::Stroke),
             Verb::OpenColorFill => self.toggle_color(ColorTarget::Fill),
             Verb::OpenColorBrush => self.toggle_color(ColorTarget::Brush),
+            Verb::OpenColorMarker => self.toggle_color(ColorTarget::Marker),
             Verb::OpenColorBackground => self.toggle_color(ColorTarget::Background),
-            Verb::PickColorStroke | Verb::PickColorFill | Verb::PickColorBrush => {
+            Verb::PickColorStroke | Verb::PickColorFill | Verb::PickColorBrush | Verb::PickColorMarker => {
                 let target = match verb {
                     Verb::PickColorStroke => ColorTarget::Stroke,
                     Verb::PickColorBrush => ColorTarget::Brush,
+                    Verb::PickColorMarker => ColorTarget::Marker,
                     _ => ColorTarget::Fill,
                 };
                 if self.screen_picker {

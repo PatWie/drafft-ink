@@ -2,18 +2,15 @@
 //! that have no control of their own) and the heads of an arrow. They are menu-kit popups, so they look and
 //! behave like every other menu: rows with check marks, a click outside closes them, a greyed row says why.
 
-use drafftink_engine::state::Tool;
 use egui::{Align2, Context, Id, Sense, pos2, vec2};
 use serde_json::{Value, json};
 
-use super::controls::{CORNERS, LINE_HEIGHTS, Pick, corner_ctl, corner_slider, has_path, new_arrows};
+use super::controls::{CORNERS, LINE_HEIGHTS, corner_ctl, corner_slider, has_path, new_arrows};
 use super::heads::{COLUMNS, End, HEADS, head_sample};
 use super::{Group, shows};
 use crate::chrome::GAP;
 use crate::menu_kit::{MENU_WIDTH, Menu, Popup, Row, outer_width, popup_sized};
-use crate::model::MarkerState;
 use crate::state::{OpenRibbonMenu, RibbonMenu, UiState};
-use crate::surfaces::color::{MarkerPicker, marker_popover};
 use crate::theme::space;
 use crate::widgets::{Ctl, Cx, icon_color, paint_button_bg};
 
@@ -138,7 +135,7 @@ impl HeadRows {
     fn read(cx: &Cx<'_>, kind: RibbonMenu) -> Self {
         let (side, end, arg, setting) = match kind {
             RibbonMenu::StartHead => ("Start", "start", "start_head", "arrow.start_head"),
-            RibbonMenu::EndHead | RibbonMenu::More | RibbonMenu::CornerRadius | RibbonMenu::Highlight => {
+            RibbonMenu::EndHead | RibbonMenu::More | RibbonMenu::CornerRadius => {
                 ("End", "end", "end_head", "arrow.end_head")
             }
         };
@@ -190,26 +187,11 @@ pub(crate) fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState, overflow: &
         st.ribbon_menu = None;
         return;
     }
-    if kind == RibbonMenu::Highlight {
-        // The colours of a highlight are the colour popover's layout (`color::marker_popover`), not a menu. The
-        // highlighter tool has its own colour; with any other tool the colours go to the selection.
-        let (current, pick) = if cx.model.tool == Tool::Highlighter {
-            (Some(cx.model.tool_marker.map_or(MarkerState::Off, MarkerState::On)), Pick::Tool)
-        } else {
-            (cx.model.marker(), Pick::Style)
-        };
-        let command = |value: Value| pick.ctl(value);
-        if marker_popover(ctx, cx, anchor, &MarkerPicker { current, command: &command }) {
-            st.ribbon_menu = None;
-        }
-        return;
-    }
     let label = match kind {
         RibbonMenu::More => "More options menu",
         RibbonMenu::StartHead => "Start head menu",
         RibbonMenu::EndHead => "End head menu",
         RibbonMenu::CornerRadius => "Corner radius menu",
-        RibbonMenu::Highlight => "Highlight colours",
     };
     let result = match kind {
         RibbonMenu::More => {
@@ -245,7 +227,6 @@ pub(crate) fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState, overflow: &
             })
         }
         // Drawn above, as a colour popover.
-        RibbonMenu::Highlight => return,
         RibbonMenu::StartHead | RibbonMenu::EndHead => {
             let spec = Popup {
                 key: Id::unique(("ribbon_menu", kind)),

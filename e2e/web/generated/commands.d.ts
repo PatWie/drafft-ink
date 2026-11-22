@@ -7888,16 +7888,13 @@ export namespace ToolSetArrow {
 
 /** Sets the colour of the highlighter tool: a palette family in shade 300, 400 or 500, such as yellow-400. null is none: the tool then removes highlights. */
 export namespace ToolSetMarker {
-  /** A highlight colour: `<family>-<shade>`, a palette family and shade 300, 400 or 500 (`yellow-400`). The old names yellow, green, pink, blue and orange mean the 400 shade. */
-  type A_MarkerColor = string;
   /** Arguments of `tool.set_marker`. */
   export type Args = {
     /**
-     * The marker colour: `<family>-<shade>` with a palette family and shade 300, 400 or 500 (`yellow-400`); the
-     * old names `yellow`, `green`, `pink`, `blue` and `orange` mean the 400 shade. `null` (or absent) is none: the
-     * highlighter then removes highlights.
+     * A marker (`yellow-400`; shades 300, 400, 500) or any colour (`blue-100`, `#ef4444`), mapped to the nearest
+     * marker. `null` is none: the highlighter then removes highlights.
      */
-    color?: A_MarkerColor | null;
+    color?: string | null;
   };
   /** A highlight colour: `<family>-<shade>`, a palette family and shade 300, 400 or 500 (`yellow-400`). The old names yellow, green, pink, blue and orange mean the 400 shade. */
   type O_MarkerColor = string;
