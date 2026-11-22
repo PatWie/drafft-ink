@@ -1,0 +1,20 @@
+# Template for the Cloudflare Worker that serves the web app. `make cf-config` fills in the @...@ values from .env
+# and writes target/cloudflare/wrangler.toml; do not edit that generated file.
+#
+# Today the Worker serves static files only (dist/). The collaboration relay will be added to this same Worker,
+# so the app and the relay share one origin (docs/design/collab-e2e.md, section 14).
+
+name = "@CF_WORKER_NAME@"
+compatibility_date = "2026-11-01"
+
+# Only the custom domain below serves the app. The automatic *.workers.dev address and preview addresses
+# would bypass a Cloudflare Access login on the custom domain, so they are turned off.
+workers_dev = false
+preview_urls = false
+
+routes = [
+  { pattern = "@CF_DOMAIN@", custom_domain = true },
+]
+
+[assets]
+directory = "@ASSETS_DIR@"
