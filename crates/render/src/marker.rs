@@ -18,7 +18,8 @@
 use std::ops::Range;
 
 use drafftink_scene::{
-    Element, ElementKind, Head, LinearData, MarkerColor, MathData, TEXT_END_PAD, TEXT_END_WOBBLE, TextData, band_width, text_band_overhang,
+    Element, ElementKind, Head, LinearData, MarkerColor, MathData, TEXT_END_PAD, TEXT_END_WOBBLE, TextData, band_width,
+    text_band_overhang,
 };
 use drafftink_sketch::fit_head_size;
 use drafftink_typeset::Typesetter;
@@ -159,7 +160,9 @@ impl Band {
             .iter()
             .map(|p| p.control_box().inflate(stroke_reach(self.width), stroke_reach(self.width)))
             .chain(self.fills.iter().map(|p| p.control_box().inflate(1.0, 1.0)));
-        boxes.reduce(|a, b| a.union(b)).filter(|r| r.x0.is_finite() && r.y0.is_finite() && r.x1.is_finite() && r.y1.is_finite())
+        boxes
+            .reduce(|a, b| a.union(b))
+            .filter(|r| r.x0.is_finite() && r.y0.is_finite() && r.x1.is_finite() && r.y1.is_finite())
     }
 
     /// Draws the band into `ink`.
@@ -332,8 +335,8 @@ pub(crate) fn paint_text_highlight(ink: &mut Ink, e: &Element, t: &TextData, ts:
 
 #[cfg(test)]
 mod tests {
-    use drafftink_scene::{CharStyle, SpanHighlight, TextRun};
     use MarkerColor::{Green, Yellow};
+    use drafftink_scene::{CharStyle, SpanHighlight, TextRun};
 
     use super::*;
 
@@ -378,7 +381,10 @@ mod tests {
         assert!((b.y0 - 3.0).abs() < 1e-9 && (b.y1 - 20.0).abs() < 1e-9, "{b:?}");
         // Reaches a little past the characters but never by more than pad plus wobble.
         let slack = 20.0 * (END_PAD + END_WOBBLE) + 1e-9;
-        assert!(b.x0 >= 10.0 - slack && b.x0 <= 10.0 + slack && b.x1 >= 110.0 - slack && b.x1 <= 110.0 + slack, "{b:?}");
+        assert!(
+            b.x0 >= 10.0 - slack && b.x0 <= 10.0 + slack && b.x1 >= 110.0 - slack && b.x1 <= 110.0 + slack,
+            "{b:?}"
+        );
         assert_eq!(marker_quad(r, 3, 0), q, "same seed, same band");
         assert_ne!(marker_quad(r, 4, 0), q);
     }

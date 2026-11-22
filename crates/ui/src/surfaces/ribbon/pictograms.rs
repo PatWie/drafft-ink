@@ -267,7 +267,13 @@ pub(super) fn marker_pen(p: &Painter, rect: Rect, ink: Color32) {
 
 /// One choice of the marker menu: a band of the marker's colour as the strip would show it, or a crossed band for
 /// "none". `dark` picks the value the marker has on the dark canvas.
-pub(super) fn marker_swatch(p: &Painter, rect: Rect, color: Option<drafftink_scene::MarkerColor>, dark: bool, ink: Color32) {
+pub(super) fn marker_swatch(
+    p: &Painter,
+    rect: Rect,
+    color: Option<drafftink_scene::MarkerColor>,
+    dark: bool,
+    ink: Color32,
+) {
     match color {
         Some(m) => {
             let tone = if dark { drafftink_scene::Tone::Dark } else { drafftink_scene::Tone::Light };

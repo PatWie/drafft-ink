@@ -2,13 +2,13 @@
 //! that have no control of their own) and the heads of an arrow. They are menu-kit popups, so they look and
 //! behave like every other menu: rows with check marks, a click outside closes them, a greyed row says why.
 
-use egui::{Align2, Context, Id, Sense, pos2, vec2};
 use drafftink_scene::MarkerColor;
+use egui::{Align2, Context, Id, Sense, pos2, vec2};
 use serde_json::{Value, json};
 
-use super::pictograms::marker_swatch;
 use super::controls::{CORNERS, LINE_HEIGHTS, corner_ctl, corner_slider, has_path, new_arrows};
 use super::heads::{COLUMNS, End, HEADS, head_sample};
+use super::pictograms::marker_swatch;
 use super::{Group, shows};
 use crate::chrome::GAP;
 use crate::menu_kit::{MENU_WIDTH, Menu, Popup, Row, outer_width, popup_sized};

@@ -101,7 +101,12 @@ fn the_band_is_wider_than_the_stroke_and_follows_the_outline_not_the_inside() {
     let thin = paint(&rect(Some(MarkerColor::Yellow)));
     let plain = paint(&rect(None));
     // 10 wide at least: the band reaches 5 beyond the outline.
-    assert!(thin.bounds.x0 <= plain.bounds.x0 - 4.0 && thin.bounds.x1 >= plain.bounds.x1 + 4.0, "{:?} {:?}", thin.bounds, plain.bounds);
+    assert!(
+        thin.bounds.x0 <= plain.bounds.x0 - 4.0 && thin.bounds.x1 >= plain.bounds.x1 + 4.0,
+        "{:?} {:?}",
+        thin.bounds,
+        plain.bounds
+    );
     let mut thick = rect(Some(MarkerColor::Yellow));
     thick.style.stroke_width = 8.0;
     assert!(paint(&thick).bounds.width() > thin.bounds.width() + 10.0, "3 x 8 = 24 wide");
@@ -163,7 +168,8 @@ fn freehand_image_and_math_have_a_band_and_a_frame_has_none() {
     let mut m = math_el(&mut ts, "m", &ZIndex::first(), 0.0, 0.0, "x^2");
     m.style.highlight = Some(MarkerColor::Yellow);
     assert_eq!(layers(&paint(&m)), 1);
-    let mut frame = Element::new(id("fr"), ElementKind::Frame(FrameData::default()), ZIndex::first()).with_bounds(0.0, 0.0, 50.0, 50.0);
+    let mut frame = Element::new(id("fr"), ElementKind::Frame(FrameData::default()), ZIndex::first())
+        .with_bounds(0.0, 0.0, 50.0, 50.0);
     frame.style.highlight = Some(MarkerColor::Yellow);
     assert_eq!(layers(&paint(&frame)), 0, "a frame is a container, not content to mark");
 }
@@ -303,7 +309,9 @@ fn every_band_stays_inside_the_paint_bounds_whatever_the_shape() {
         elements.push(ellipse_el("e", &z, 5.0, 5.0, w, h));
         elements.push(Element::new(id("d"), ElementKind::Diamond, z.clone()).with_bounds(5.0, 5.0, w, h));
     }
-    for head in [Head::None, Head::Arrow, Head::Triangle, Head::Circle, Head::CardinalityZeroOrMany, Head::CardinalityOneOrMany] {
+    for head in
+        [Head::None, Head::Arrow, Head::Triangle, Head::Circle, Head::CardinalityZeroOrMany, Head::CardinalityOneOrMany]
+    {
         let mut a = line_el("a", &z, LinearKind::Arrow, &[(0.0, 0.0), (60.0, 10.0), (90.0, -30.0)]);
         if let ElementKind::Arrow(d) = &mut a.kind {
             d.start_head = head;
@@ -318,7 +326,9 @@ fn every_band_stays_inside_the_paint_bounds_whatever_the_shape() {
     elements.push(text_el(&mut ts, "t", &z, 0.0, 0.0, "marker\npen and a longer second line"));
     elements.push(math_el(&mut ts, "m", &z, 0.0, 0.0, "\\frac{a}{b}"));
     for mut e in elements {
-        for (sw, seed, color) in [(0.0, 1, MarkerColor::Yellow), (2.0, 99, MarkerColor::Pink), (14.0, 7, MarkerColor::Blue)] {
+        for (sw, seed, color) in
+            [(0.0, 1, MarkerColor::Yellow), (2.0, 99, MarkerColor::Pink), (14.0, 7, MarkerColor::Blue)]
+        {
             e.style.stroke_width = sw;
             e.style.seed = seed;
             e.style.highlight = Some(color);

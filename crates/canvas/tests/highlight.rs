@@ -55,7 +55,8 @@ fn a_line_is_hit_along_its_band() {
 }
 
 fn arrow_with_head(highlight: bool) -> Element {
-    let mut e = Element::linear(id("a"), LinearKind::Arrow, ZIndex::first(), &[p(0.0, 100.0), p(200.0, 100.0)]).unwrap();
+    let mut e =
+        Element::linear(id("a"), LinearKind::Arrow, ZIndex::first(), &[p(0.0, 100.0), p(200.0, 100.0)]).unwrap();
     if let ElementKind::Arrow(d) = &mut e.kind {
         d.end_head = Head::Triangle;
         d.head_size = Some(40.0);
@@ -88,7 +89,11 @@ fn a_text_band_reaches_a_little_past_the_box_and_an_unmarked_text_does_not() {
     assert_eq!(top(&band, 100.0 - 7.0, 115.0).as_deref(), Some("t"));
     // A highlight on some characters only counts as well.
     if let ElementKind::Text(d) = &mut t.kind {
-        d.runs = vec![TextRun::new(0, 2, CharStyle { highlight: SpanHighlight::On(MarkerColor::Pink), ..Default::default() })];
+        d.runs = vec![TextRun::new(
+            0,
+            2,
+            CharStyle { highlight: SpanHighlight::On(MarkerColor::Pink), ..Default::default() },
+        )];
     }
     let spans = canvas_with(vec![t]);
     assert_eq!(top(&spans, 100.0 - 7.0, 115.0).as_deref(), Some("t"));
@@ -105,7 +110,11 @@ fn the_index_holds_the_band_so_that_nothing_it_covers_is_missed() {
         let mut bare = e.clone();
         bare.style.highlight = None;
         let (with, without) = (index_bounds(&e).unwrap(), index_bounds(&bare).unwrap());
-        assert!(with.x0 < without.x0 && with.x1 > without.x1 && with.y0 <= without.y0, "{:?}: {with:?} {without:?}", e.tag());
+        assert!(
+            with.x0 < without.x0 && with.x1 > without.x1 && with.y0 <= without.y0,
+            "{:?}: {with:?} {without:?}",
+            e.tag()
+        );
     }
     let c = canvas_with(vec![marked(rect("r", 100.0, 100.0, 200.0, 100.0))]);
     assert!(c.index().verify(c.store()).is_ok());

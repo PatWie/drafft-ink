@@ -29,8 +29,8 @@ mod points;
 pub mod scenegen;
 mod shared;
 mod store;
-pub mod unknown;
 mod style;
+pub mod unknown;
 mod validate;
 mod visibility;
 pub mod words;
@@ -41,7 +41,7 @@ pub mod conformance;
 
 pub use color::Color;
 pub use derived::DerivedIndex;
-pub use document::{DocMeta, Document, DocumentError, FORMAT_NAME, Loaded, FileEntry, SCHEMA_VERSION, json_schema};
+pub use document::{DocMeta, Document, DocumentError, FORMAT_NAME, FileEntry, Loaded, SCHEMA_VERSION, json_schema};
 pub use element::{
     BindMode, Binding, Brush, CharStyle, Crop, DEFAULT_HEAD_SIZE, Element, ElementKind, FixedSegment, FrameData,
     FreehandData, Head, ImageData, Kind, LinearData, LinearKind, MathData, ParseKindError, PathType, PressureMode,
@@ -50,11 +50,11 @@ pub use element::{
 pub use id::{
     ElementId, FileId, GroupId, IdError, IdSource, MAX_ID_LEN, RandomIds, Rng64, SeqIds, SplitMix64, StrokeId,
 };
+pub use label_cut::{LABEL_CUT_PADDING, LabelCut};
 pub use marker::{
     MARKER_ALPHA, MarkerColor, SpanHighlight, TEXT_END_PAD, TEXT_END_WOBBLE, Tone, band_width, has_highlight,
     text_band_overhang,
 };
-pub use label_cut::{LABEL_CUT_PADDING, LabelCut};
 pub use memory::{MemoryStore, MemoryTx};
 pub use paint::{Paint, PaintMode, PaintStroke};
 pub use shared::{DocumentCheck, JsonJob, SharedDocument};

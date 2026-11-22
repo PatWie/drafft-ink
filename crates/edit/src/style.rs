@@ -25,9 +25,9 @@ use drafftink_scene::limits::{MAX_CORNER_RADIUS, MAX_FONT_SIZE, MAX_STROKE_WIDTH
 use drafftink_scene::palette;
 use drafftink_scene::words::Article;
 use drafftink_scene::{
-    Brush, Color, Element, ElementId, ElementKind, FillPattern, FontFamily, FontWeight, Kind, PressureMode, SceneRead,
-    MarkerColor, SceneTx, Sloppiness, SpanHighlight, StoreError, StrokeStyle, Style, TextAlign, TextRun, TextStyle,
-    VerticalAlign,
+    Brush, Color, Element, ElementId, ElementKind, FillPattern, FontFamily, FontWeight, Kind, MarkerColor,
+    PressureMode, SceneRead, SceneTx, Sloppiness, SpanHighlight, StoreError, StrokeStyle, Style, TextAlign, TextRun,
+    TextStyle, VerticalAlign,
 };
 use drafftink_scene::{fill_paints, style_shows};
 

@@ -19,7 +19,8 @@ fn store() -> MemoryStore {
     let z = ZIndex::rebalance(5).unwrap();
     let mut s = MemoryStore::new();
     let mut tx = s.begin();
-    tx.insert(Element::new(id("rect"), ElementKind::Rectangle, z[0].clone()).with_bounds(0.0, 0.0, 50.0, 30.0)).unwrap();
+    tx.insert(Element::new(id("rect"), ElementKind::Rectangle, z[0].clone()).with_bounds(0.0, 0.0, 50.0, 30.0))
+        .unwrap();
     tx.insert(Element::new(id("ell"), ElementKind::Ellipse, z[1].clone()).with_bounds(60.0, 0.0, 50.0, 30.0)).unwrap();
     tx.insert(
         Element::new(id("text"), ElementKind::Text(TextData::new("héllo wörld")), z[2].clone())
@@ -67,7 +68,10 @@ fn elements_and_ranges_go_through_one_transaction_and_one_change_set() {
     assert_eq!(highlight_of(&s, "rect"), Some(Yellow));
     assert_eq!(highlight_of(&s, "frame"), None);
     assert_eq!(highlight_of(&s, "text"), None, "the text itself is not highlighted, five of its characters are");
-    assert_eq!(runs(&s), [TextRun::new(0, 5, CharStyle { highlight: SpanHighlight::On(Yellow), ..Default::default() })]);
+    assert_eq!(
+        runs(&s),
+        [TextRun::new(0, 5, CharStyle { highlight: SpanHighlight::On(Yellow), ..Default::default() })]
+    );
 }
 
 #[test]

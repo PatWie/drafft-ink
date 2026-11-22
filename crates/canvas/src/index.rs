@@ -43,8 +43,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::overlay::{InvisibleOutline, LinkIcon};
 use crate::shape::{
-    box_overhang, element_box, head_band_hit, hit_reach_width, hits_inside, index_bounds, shape_of,
-    stroke_reach_width,
+    box_overhang, element_box, head_band_hit, hit_reach_width, hits_inside, index_bounds, shape_of, stroke_reach_width,
 };
 
 /// A change set that touches more entries than this, and more than half the index, rebuilds in bulk.

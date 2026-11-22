@@ -21,11 +21,13 @@
 //! ([`box_overhang`]). [`selection_box`] is the dashed outline of a selected element with the band inside it.
 
 use drafftink_geom::kurbo::Rect;
+use drafftink_geom::kurbo::{Line, ParamCurveNearest, Point};
 use drafftink_geom::spline::catmull_rom_path;
 use drafftink_geom::transform::ElementFrame;
 use drafftink_geom::{DiamondShape, EllipseShape, OrientedBox, Outline, PathShape, Polyline, Primitive, RectShape};
-use drafftink_geom::kurbo::{Line, ParamCurveNearest, Point};
-use drafftink_scene::{Element, ElementKind, Head, LinearData, PathType, band_width, has_highlight, text_band_overhang};
+use drafftink_scene::{
+    Element, ElementKind, Head, LinearData, PathType, band_width, has_highlight, text_band_overhang,
+};
 
 /// The rotated box of an element (position, size, angle).
 pub fn element_box(e: &Element) -> OrientedBox {
@@ -129,7 +131,8 @@ pub fn stroke_reach_width(e: &Element) -> f64 {
 /// Whether the highlight band of `e` follows its outline (shapes, lines, arrows, freehand strokes, pictures), as
 /// opposed to lying behind lines of text or a formula, or not existing (frames).
 fn has_outline_band(e: &Element) -> bool {
-    e.style.highlight.is_some() && !matches!(e.kind, ElementKind::Text(_) | ElementKind::Math(_) | ElementKind::Frame(_))
+    e.style.highlight.is_some()
+        && !matches!(e.kind, ElementKind::Text(_) | ElementKind::Math(_) | ElementKind::Frame(_))
 }
 
 /// The width a pointer hits around the outline: the stroke's, or the band's when the element has a band and the band
@@ -158,7 +161,10 @@ pub fn head_band_hit(e: &Element, world: Point, tol: f64) -> bool {
     let size = head_extent(e, d);
     let reach = size * 0.5 + band_width(stroke_reach_width(e)) * 0.5 + tol.max(0.0);
     let to_world = |p: Point| e.transform.local_to_world(p);
-    let ends = [(d.end_head, d.points.last(), d.points.iter().rev().nth(1)), (d.start_head, d.points.first(), d.points.get(1))];
+    let ends = [
+        (d.end_head, d.points.last(), d.points.iter().rev().nth(1)),
+        (d.start_head, d.points.first(), d.points.get(1)),
+    ];
     ends.into_iter().filter(|(head, ..)| *head != Head::None).any(|(_, tip, toward)| {
         let (Some(tip), Some(toward)) = (tip, toward) else { return false };
         let (tip, toward) = (to_world(*tip), to_world(*toward));
@@ -192,7 +198,11 @@ pub fn selection_box(e: &Element) -> OrientedBox {
     if dx <= 0.0 && dy <= 0.0 {
         return b;
     }
-    OrientedBox::new(b.center, drafftink_geom::kurbo::Size::new(b.size.width + 2.0 * dx, b.size.height + 2.0 * dy), b.angle)
+    OrientedBox::new(
+        b.center,
+        drafftink_geom::kurbo::Size::new(b.size.width + 2.0 * dx, b.size.height + 2.0 * dy),
+        b.angle,
+    )
 }
 
 #[cfg(test)]

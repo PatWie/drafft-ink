@@ -10,8 +10,8 @@ use std::sync::Arc;
 
 use drafftink_profile::{Counter, count};
 use drafftink_scene::{
-    Color, Element, ElementKind, FileId, FillPattern, FreehandData, Head, ImageData as ImageElem, LabelCut, MARKER_ALPHA,
-    MarkerColor, MathData, TextData,
+    Color, Element, ElementKind, FileId, FillPattern, FreehandData, Head, ImageData as ImageElem, LabelCut,
+    MARKER_ALPHA, MarkerColor, MathData, TextData,
 };
 use drafftink_sketch::{FillKind, SketchCache, SketchGeometry, fit_head_size};
 use drafftink_typeset::{MathFontSlot, Typesetter};

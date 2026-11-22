@@ -52,8 +52,8 @@ use drafftink_scene::{
     InlineMath, LabelCut, MARKER_ALPHA, PressureMode, StrokeStyle, Style, TextAlign, TextData, Tone, label,
 };
 use drafftink_sketch::{
-    Arrowhead, Curve, FillKind, FillStyle, LineDash, PressureProfile, Roundness, SketchInput, SketchParams,
-    SketchGeometry, SketchShape, sketch,
+    Arrowhead, Curve, FillKind, FillStyle, LineDash, PressureProfile, Roundness, SketchGeometry, SketchInput,
+    SketchParams, SketchShape, sketch,
 };
 use kurbo::Rect;
 

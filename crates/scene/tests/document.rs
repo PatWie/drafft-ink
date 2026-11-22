@@ -326,7 +326,14 @@ fn bold_and_italic_runs_round_trip_and_documents_without_them_still_open() {
     let mut text = TextData::new("plain bold both");
     text.runs = vec![
         TextRun { start: 6, end: 10, bold: true, ..Default::default() },
-        TextRun { start: 11, end: 15, color: Some(Color::rgb(1, 2, 3)), bold: true, italic: true, ..Default::default() },
+        TextRun {
+            start: 11,
+            end: 15,
+            color: Some(Color::rgb(1, 2, 3)),
+            bold: true,
+            italic: true,
+            ..Default::default()
+        },
     ];
     doc.elements = vec![Element::new(ElementId::new("t").unwrap(), ElementKind::Text(text), ZIndex::first())];
     let json = doc.to_json().unwrap();

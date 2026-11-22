@@ -15,9 +15,9 @@ use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 
 use crate::id::{ElementId, FileId, GroupId};
+use crate::marker::SpanHighlight;
 use crate::paint::Paint;
 use crate::points::{pt, pts};
-use crate::marker::SpanHighlight;
 use crate::style::{Style, TextStyle};
 use crate::{color::Color, zindex::ZIndex};
 

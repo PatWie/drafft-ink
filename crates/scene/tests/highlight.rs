@@ -1,8 +1,8 @@
 //! Highlight: the model, the files, the marker colours and the reading of files from a newer version.
 
 use drafftink_scene::{
-    CharStyle, Color, Document, DocumentError, Element, ElementId, ElementKind, MARKER_ALPHA, MarkerColor, SpanHighlight,
-    Style, TextData, TextRun, Tone, ZIndex, unknown::UnknownFields,
+    CharStyle, Color, Document, DocumentError, Element, ElementId, ElementKind, MARKER_ALPHA, MarkerColor,
+    SpanHighlight, Style, TextData, TextRun, Tone, ZIndex, unknown::UnknownFields,
 };
 use serde_json::json;
 

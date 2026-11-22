@@ -384,8 +384,7 @@ pub(crate) fn read_element(id: &ElementId, map: &LoroMap) -> Result<Decoded, Doc
     top.insert("kind".into(), Value::Object(kind));
     top.insert("style".into(), Value::Object(style));
     let mut found = UnknownFields::new();
-    let mut e: Element =
-        unknown::from_value(Value::Object(top), &mut found).map_err(|er| bad(er.to_string()))?;
+    let mut e: Element = unknown::from_value(Value::Object(top), &mut found).map_err(|er| bad(er.to_string()))?;
     let mut refitted = false;
     if let Err(first) = validate_element(&e) {
         // A merge of two edits of a line (one changed the points, one the box) can leave the box and the points

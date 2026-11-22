@@ -527,7 +527,12 @@ fn a_highlight_chosen_while_editing_marks_the_selected_characters_and_commits_wi
     assert_eq!(stored.style.highlight, None);
     assert_eq!(
         stored.text_data().expect("text").runs,
-        vec![TextRun { start: 6, end: 11, highlight: drafftink_scene::SpanHighlight::On(MarkerColor::Green), ..Default::default() }]
+        vec![TextRun {
+            start: 6,
+            end: 11,
+            highlight: drafftink_scene::SpanHighlight::On(MarkerColor::Green),
+            ..Default::default()
+        }]
     );
 }
 
@@ -543,5 +548,8 @@ fn taking_a_highlight_off_part_of_a_highlighted_text_while_editing_keeps_the_res
     r.commit();
     let stored = r.element(&id);
     assert_eq!(stored.style.highlight, Some(MarkerColor::Yellow));
-    assert_eq!(stored.text_data().expect("text").runs.iter().map(|t| (t.start, t.end, t.highlight)).collect::<Vec<_>>(), vec![(6, 11, SpanHighlight::Off)]);
+    assert_eq!(
+        stored.text_data().expect("text").runs.iter().map(|t| (t.start, t.end, t.highlight)).collect::<Vec<_>>(),
+        vec![(6, 11, SpanHighlight::Off)]
+    );
 }

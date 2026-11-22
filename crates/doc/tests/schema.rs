@@ -85,7 +85,14 @@ fn every_kind() -> Document {
         TextRun { start: 0, end: 5, color: Some(Color::parse("#ff0000").unwrap()), ..Default::default() },
         TextRun { start: 8, end: 12, color: Some(Color::parse("#0000ff80").unwrap()), ..Default::default() },
         TextRun { start: 12, end: 15, color: None, bold: true, italic: false, ..Default::default() },
-        TextRun { start: 15, end: 18, color: Some(Color::parse("#00ff00").unwrap()), bold: true, italic: true, ..Default::default() },
+        TextRun {
+            start: 15,
+            end: 18,
+            color: Some(Color::parse("#00ff00").unwrap()),
+            bold: true,
+            italic: true,
+            ..Default::default()
+        },
         TextRun { start: 19, end: 22, color: None, bold: false, italic: true, ..Default::default() },
     ];
     t.font.family = FontFamily::VanillaExtract;

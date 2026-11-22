@@ -751,7 +751,10 @@ fn the_result_carries_bold_and_italic_in_characters() {
     r.ed.set_face(Face::Italic, true);
     r.ed.set_color(Some(RED));
     let done = r.ed.finish();
-    assert_eq!(done.runs, vec![TextRun { start: 1, end: 3, color: Some(RED), bold: true, italic: true, ..Default::default() }]);
+    assert_eq!(
+        done.runs,
+        vec![TextRun { start: 1, end: 3, color: Some(RED), bold: true, italic: true, ..Default::default() }]
+    );
     // And the same runs open again.
     let again = Editor::new("aé€b", &done.runs, InlineMath::Auto);
     assert_eq!(bold(&again), vec![1..6]);
