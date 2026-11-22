@@ -2052,6 +2052,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "drafftink-worker"
+version = "0.2.0"
+dependencies = [
+ "drafftink-protocol",
+ "drafftink-relay",
+ "js-sys",
+ "thiserror 2.0.21",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "dunce"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
