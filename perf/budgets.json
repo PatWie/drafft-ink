@@ -1639,8 +1639,8 @@
       "note": "the file the server sends. 12,363,143 measured on 2026-11-08 (full app, release-wasm, wasm-opt -Oz); the limit is 3% above. Raised on 2026-11-13 for SVG pictures (resvg 0.48.1, usvg and tiny-skia: `drafftink_io::picture::svg`, docs/performance.md 8.5): 13,058,818 measured, 12,343,931 with GIF, BMP and ICO but no SVG; the limit is 3% above the new number."
     },
     "wasm.gzip_bytes": {
-      "max": 5130000,
-      "note": "4,576,123 measured on 2026-11-08; the limit is 3% above. Raised on 2026-11-13 for SVG pictures (resvg 0.48.1, usvg and tiny-skia: `drafftink_io::picture::svg`, docs/performance.md 8.5): 4,982,942 measured, 4,709,819 with GIF, BMP and ICO but no SVG; the limit is 3% above the new number."
+      "max": 5300000,
+      "note": "4,576,123 measured on 2026-11-08; the limit is 3% above. Raised on 2026-11-13 for SVG pictures (resvg 0.48.1, usvg and tiny-skia: `drafftink_io::picture::svg`, docs/performance.md 8.5): 4,982,942 measured, 4,709,819 with GIF, BMP and ICO but no SVG; the limit is 3% above the new number. Raised on 2026-11-22 with `fallback.gzip_bytes`, for the same two features (`docs/performance.md` 8.6): 5,144,180 measured; 5,102,043 at dbec1a5 and 5,210,640 on main before the size work; the limit is 3% above the new number."
     },
     "wasm.brotli_bytes": {
       "max": 3640000,
@@ -1659,8 +1659,8 @@
       "note": "the WebGL2 module for browsers without WebGPU (dist/pkg-gl), loaded by those browsers only, so the wasm.* limits do not include it. 12,238,249 measured on 2026-11-09 (whole app, vello_gpu and egui_glow instead of Vello and wgpu, release-wasm, wasm-opt -Oz); the limit is 3% above. Raised on 2026-11-13 for SVG pictures (resvg 0.48.1, usvg and tiny-skia: `drafftink_io::picture::svg`, docs/performance.md 8.5): 12,688,189 measured, 11,974,961 with GIF, BMP and ICO but no SVG; the limit is 3% above the new number."
     },
     "fallback.gzip_bytes": {
-      "max": 5080000,
-      "note": "4,606,581 measured on 2026-11-09; the limit is 3% above. Raised on 2026-11-13 for SVG pictures (resvg 0.48.1, usvg and tiny-skia: `drafftink_io::picture::svg`, docs/performance.md 8.5): 4,928,672 measured, 4,655,469 with GIF, BMP and ICO but no SVG; the limit is 3% above the new number."
+      "max": 5250000,
+      "note": "4,606,581 measured on 2026-11-09; the limit is 3% above. Raised on 2026-11-13 for SVG pictures (resvg 0.48.1, usvg and tiny-skia: `drafftink_io::picture::svg`, docs/performance.md 8.5): 4,928,672 measured, 4,655,469 with GIF, BMP and ICO but no SVG; the limit is 3% above the new number. Raised on 2026-11-22 for named versions and the highlight style (`docs/performance.md` 8.6): 5,088,823 measured; 5,046,234 at dbec1a5 and 5,156,875 on main before the size work, which took 68,000 out of it (a second reader type for stored scenes, `drafftink-edit` at `z`, one copy of the argument refusal). Before the cuts the named versions cost 57,953 bytes of gzip, the highlight style 48,065 and the highlight palette 4,623; the limit is 3% above the new number."
     },
     "fallback.brotli_bytes": {
       "max": 3610000,
