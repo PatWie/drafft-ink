@@ -503,3 +503,45 @@ fn drag_selects_and_copy_and_cut_use_the_selection() {
     assert!(editor.paste(&selected, 4.0));
     assert_eq!(editor.model.text(), "hello world");
 }
+
+#[test]
+fn a_highlight_chosen_while_editing_marks_the_selected_characters_and_commits_with_the_text() {
+    use drafftink_scene::MarkerColor;
+    use drafftink_ui::MarkerState;
+    let mut r = Rig::new();
+    let id = r.create(json!({ "kind": "text", "text": "plain words here", "at": [40, 30] }));
+    r.begin(json!({ "id": id.as_str() }), request(Some(&id)));
+    assert_eq!(r.editor().marker(), MarkerState::Off);
+    r.editor().model.select_chars(6..11);
+    assert!(r.editor().add_style(&json!({ "highlight": "green" }), 1.0));
+    assert!(!r.editor().add_style(&json!({ "highlight": "green" }), 2.0), "it is on already");
+    assert_eq!(r.editor().marker(), MarkerState::On(MarkerColor::Green));
+    r.editor().model.select_chars(0..16);
+    assert_eq!(r.editor().marker(), MarkerState::Mixed);
+    // Only the characters carry it, and it goes with the text when the edit ends.
+    let args = r.editor().finish_args();
+    assert_eq!(args["runs"], json!([{ "start": 6, "end": 11, "highlight": "green" }]));
+    assert!(args.get("style").is_none(), "the element itself is not highlighted");
+    r.commit();
+    let stored = r.element(&id);
+    assert_eq!(stored.style.highlight, None);
+    assert_eq!(
+        stored.text_data().expect("text").runs,
+        vec![TextRun { start: 6, end: 11, highlight: drafftink_scene::SpanHighlight::On(MarkerColor::Green), ..Default::default() }]
+    );
+}
+
+#[test]
+fn taking_a_highlight_off_part_of_a_highlighted_text_while_editing_keeps_the_rest() {
+    use drafftink_scene::{MarkerColor, SpanHighlight};
+    let mut r = Rig::new();
+    let id = r.create(json!({ "kind": "text", "text": "plain words here", "at": [40, 30] }));
+    r.run("style.set", json!({ "ids": [id.as_str()], "props": { "highlight": "yellow" } }));
+    r.begin(json!({ "id": id.as_str() }), request(Some(&id)));
+    r.editor().model.select_chars(6..11);
+    assert!(r.editor().add_style(&json!({ "highlight": null }), 1.0));
+    r.commit();
+    let stored = r.element(&id);
+    assert_eq!(stored.style.highlight, Some(MarkerColor::Yellow));
+    assert_eq!(stored.text_data().expect("text").runs.iter().map(|t| (t.start, t.end, t.highlight)).collect::<Vec<_>>(), vec![(6, 11, SpanHighlight::Off)]);
+}

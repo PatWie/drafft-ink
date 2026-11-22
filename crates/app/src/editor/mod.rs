@@ -23,7 +23,7 @@ use drafftink_gpu::TextInput;
 use drafftink_render::{TextEdit as TextEditOverlay, Theme};
 use drafftink_scene::{Color, ElementId, InlineMath};
 use drafftink_typeset::Typesetter;
-use drafftink_ui::TextFaces;
+use drafftink_ui::{MarkerState, TextFaces};
 use serde_json::{Value, json};
 
 #[cfg(test)]
@@ -294,6 +294,11 @@ impl TextEditor {
                 changed |= self.model.set_color(Some(color.0));
             }
         }
+        // A highlight goes to the selected characters, or to what is typed next. The whole element keeps its own: a
+        // person who wants the whole text highlighted selects it all, or leaves the edit and highlights the element.
+        if let Some(marker) = chosen.highlight.take() {
+            changed |= self.model.set_highlight(marker);
+        }
         if chosen != StyleProps::default() {
             merge(&mut self.props, chosen);
             changed = true;
@@ -319,6 +324,15 @@ impl TextEditor {
             self.keep_caret_on(now_ms);
         }
         changed
+    }
+
+    /// The highlight at the selection (or at the caret), for the style panel.
+    pub(crate) fn marker(&self) -> MarkerState {
+        match self.model.highlight_state(self.subject.highlight()) {
+            Some(Some(color)) => MarkerState::On(color),
+            Some(None) => MarkerState::Off,
+            None => MarkerState::Mixed,
+        }
     }
 
     /// Bold and italic at the selection, for the style panel.
