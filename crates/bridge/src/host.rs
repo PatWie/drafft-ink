@@ -87,8 +87,9 @@ pub struct Polled {
     pub more: bool,
 }
 
-/// The code of the refusal that parks a request: the command needs a picture that the port is still drawing.
-const RENDER_PENDING: &str = "render_pending";
+/// The codes of the refusals that park a request: the command needs a picture that the port is still drawing
+/// (`render_pending`), or pictures of a room that are still downloading (`images_pending`).
+const PENDING: [&str; 2] = ["render_pending", "images_pending"];
 
 /// True when the answer says "run me again when the port is done".
 ///
@@ -99,7 +100,11 @@ fn is_render_pending(out: &Result<Value, RpcError>) -> bool {
     match out {
         Err(e) => {
             e.code == REFUSED
-                && e.data.as_ref().and_then(|d| d.get("code")).and_then(Value::as_str) == Some(RENDER_PENDING)
+                && e.data
+                    .as_ref()
+                    .and_then(|d| d.get("code"))
+                    .and_then(Value::as_str)
+                    .is_some_and(|c| PENDING.contains(&c))
         }
         Ok(result) => result.get("pending_render").and_then(Value::as_bool) == Some(true),
     }

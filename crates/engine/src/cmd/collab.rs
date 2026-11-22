@@ -16,7 +16,7 @@ pub(crate) mod images;
 mod connection;
 pub mod fake_server;
 #[cfg(test)]
-mod fake_relay;
+pub(crate) mod fake_relay;
 mod poll;
 mod state;
 mod token;

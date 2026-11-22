@@ -951,3 +951,51 @@ fn a_cropped_picture_keeps_its_crop_in_the_library_and_in_its_thumbnail() {
     assert_eq!(crops[0], crops[1]);
     assert!(crops[1].is_some());
 }
+
+// ---- pictures in an encrypted room (docs/design/collab-e2e.md section 9) ----
+
+mod room {
+    use super::*;
+    use crate::cmd::image::room_tests::{Room, png_of_size};
+    use drafftink_protocol::MAX_IMAGE_BYTES;
+
+    /// A session whose library holds an item with the picture `bytes`, and whose active tab is a new room.
+    fn room_with_item(bytes: &[u8], name: &str) -> Room {
+        let (mut s, f) = testing::session();
+        run(&mut s, "image.insert", json!({"images": [{"base64": b64(bytes)}]}));
+        run(&mut s, "library.add", json!({"name": name}));
+        run(&mut s, "tab.new", json!({}));
+        let mut w = Room::of(vec![(s, f)]);
+        w.create(0);
+        w
+    }
+
+    #[test]
+    fn a_library_item_with_a_picture_over_the_room_limit_is_refused_and_one_within_it_is_inserted() {
+        let mut w = room_with_item(&png_of_size(MAX_IMAGE_BYTES + 1, 1), "Photo");
+        assert!(w.s(0).room_images().is_some());
+        let r = refuse(w.s(0), "library.insert", json!({"item": "Photo"}));
+        assert_eq!(r.code, "image_too_large");
+        assert!(r.message.starts_with("This picture is 4.1 MB"), "{}", r.message);
+
+        let mut ok = room_with_item(&png_of_size(MAX_IMAGE_BYTES, 2), "Photo");
+        run(ok.s(0), "library.insert", json!({"item": "Photo"}));
+        assert_eq!(ok.s(0).room_images().map(|r| r.count), Some(1));
+    }
+
+    #[test]
+    fn merging_a_file_with_a_big_picture_into_a_room_is_refused_and_a_new_tab_is_not() {
+        let (mut local, _) = testing::session();
+        run(&mut local, "image.insert", json!({"images": [{"base64": b64(&png_of_size(MAX_IMAGE_BYTES + 1, 3))}]}));
+        let file = base64::engine::general_purpose::STANDARD
+            .decode(run(&mut local, "doc.export", json!({"format": "json", "scope": "all"}))["bytes"]["base64"].as_str().unwrap())
+            .unwrap();
+        let mut w = Room::new(1);
+        w.create(0);
+        let args = json!({"source": {"base64": b64(&file), "name": "pic.json"}, "mode": "merge"});
+        let r = refuse(w.s(0), "doc.open", args);
+        assert_eq!(r.code, "image_too_large");
+        assert_eq!(r.command, "doc.open");
+        run(w.s(0), "doc.open", json!({"source": {"base64": b64(&file), "name": "pic.json"}, "mode": "new_tab"}));
+    }
+}

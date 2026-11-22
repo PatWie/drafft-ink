@@ -11,18 +11,21 @@
 //!   named version, so a restore can itself be taken back, or be undone by restoring the version made just before it.
 //! * `version.open` puts a version in a tab of its own, as an independent copy.
 
+use std::collections::BTreeSet;
+
 use drafftink_edit::version::{self as restore_rule, RestoreError};
 use drafftink_scene::limits::{
     MAX_NAME_CHARS, MAX_VERSION_AUTHOR_CHARS, MAX_VERSION_NAME_CHARS, MAX_VERSIONS, MAX_VERSIONS_TOTAL_BYTES,
 };
 use drafftink_scene::{
-    Document, NamedVersion, SceneRead, SceneTx, StoreError, VersionError, VersionId, VersionRejection,
+    Document, FileId, NamedVersion, SceneRead, SceneTx, StoreError, VersionError, VersionId, VersionRejection,
     VersionScene,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use super::image::room;
 use super::tab::{MAX_TABS, activate_new, tab_from, too_many_tabs};
 use crate::cmd::element_common::prune_selection;
 use crate::refusal::{Refusal, echo};
@@ -324,6 +327,14 @@ fn open(s: &mut Session, a: OpenArgs) -> Result<OpenOut, Refusal> {
     let v = find(s, id, &a.id)?;
     let scene = v.open().map_err(|e| unreadable(id, &v, &e))?;
     let name = tab_name(&s.store().meta().name, &v.name);
+    // In a room the open tab may hold the manifest of a picture and not its bytes yet: take what the blob cache has.
+    let wanted: BTreeSet<FileId> = v.files.iter().cloned().collect();
+    let not_here = room::missing_pictures(s, &wanted).len();
+    if not_here > 0 {
+        s.warn(format!(
+            "{not_here} picture(s) of this version have not been downloaded yet, so they show as missing in the new tab. Open the version again once they have."
+        ));
+    }
     let doc = as_document(s, name.clone(), &v, scene);
     if let Some(issue) = doc.validate().errors().next() {
         return Err(unreadable(id, &v, &VersionError::Corrupt(issue.to_string())));
@@ -372,10 +383,14 @@ fn restore(s: &mut Session, a: RestoreArgs) -> Result<RestoreOut, Refusal> {
         RestoreError::Store(e) => Refusal::internal(id, format!("restoring \"{}\" failed: {e}", echo(&v.name))),
     })?;
     prune_selection(s);
-    if !r.missing_files.is_empty() {
+    // A picture of a room that is described in the document and not downloaded yet is not gone: it arrives, and
+    // the restored element shows it then. Only a picture the document no longer describes is missing.
+    let missing: Vec<&FileId> =
+        r.missing_files.iter().filter(|f| s.tab().doc.replicated().manifest(f).is_none()).collect();
+    if !missing.is_empty() {
         s.warn(format!(
             "{} picture(s) of \"{}\" are no longer in the document and show as missing.",
-            r.missing_files.len(),
+            missing.len(),
             echo(&v.name)
         ));
     }
@@ -386,7 +401,7 @@ fn restore(s: &mut Session, a: RestoreArgs) -> Result<RestoreOut, Refusal> {
         brought_back: r.brought_back,
         reset: r.changed,
         deleted: r.deleted,
-        missing_pictures: r.missing_files.len(),
+        missing_pictures: missing.len(),
     })
 }
 

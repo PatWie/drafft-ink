@@ -513,3 +513,164 @@ fn two_sessions_that_name_a_version_at_the_same_time_both_keep_both() {
     assert_eq!(live(&b), live(&a));
     assert_eq!(names(&mut b).len(), 2);
 }
+
+// ---- pictures of an encrypted room (docs/design/collab-e2e.md section 15, rows Images and Schema) ----
+
+mod room {
+    use super::*;
+    use crate::cmd::image::room_tests::{Room, png_of_size};
+    use base64::Engine as _;
+    use base64::engine::general_purpose::STANDARD;
+    use drafftink_scene::{ElementKind, FileId};
+
+    /// A room with one picture. Session 0 holds the bytes, session 1 the manifest only.
+    fn two() -> (Room, Vec<u8>, FileId) {
+        let mut w = Room::new(2);
+        let link = w.create(0);
+        let bytes = png_of_size(60_000, 5);
+        run(w.s(0), "image.insert", json!({"images": [{"base64": STANDARD.encode(&bytes)}], "at": [0, 0]}));
+        w.settle();
+        w.join(1, &link);
+        let id = FileId::of(&bytes);
+        assert!(w.s(1).store().file(&id).is_none());
+        (w, bytes, id)
+    }
+
+    fn picture_elements(s: &Session) -> Vec<(String, Option<FileId>)> {
+        s.store()
+            .iter()
+            .filter_map(|e| match &e.kind {
+                ElementKind::Image(i) => Some((e.id.to_string(), i.file_id.clone())),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn manifests(s: &Session) -> Vec<FileId> {
+        s.tab().doc.replicated().manifests().map(|(id, _)| id.clone()).collect()
+    }
+
+    #[test]
+    fn a_version_saved_in_a_room_names_the_pictures_by_id_and_copies_no_bytes() {
+        let (mut w, bytes, id) = two();
+        let vid = save(w.s(0), "With picture");
+        let v = w.s(0).store().version(&drafftink_scene::VersionId::new(&vid).unwrap()).cloned().unwrap();
+        assert_eq!(v.files, vec![id.clone()]);
+        assert!(v.stored_bytes() < bytes.len() / 4, "the version holds the scene ({} bytes), not the picture ({})", v.stored_bytes(), bytes.len());
+        // The version reaches the other session, which has the same ids.
+        w.settle();
+        let other = w.s(1).store().version(&drafftink_scene::VersionId::new(&vid).unwrap()).cloned().unwrap();
+        assert_eq!(other.files, vec![id]);
+    }
+
+    #[test]
+    fn opening_a_version_takes_the_bytes_the_tab_holds() {
+        let (mut w, bytes, id) = two();
+        let vid = save(w.s(0), "With picture");
+        let out = run(w.s(0), "version.open", json!({"id": vid}));
+        assert_eq!(out["changed"], true);
+        assert_eq!(w.s(0).store().file(&id).map(|f| f.bytes.len()), Some(bytes.len()));
+        assert_eq!(picture_elements(w.s(0)), vec![("e1".to_owned(), Some(id))]);
+        assert!(w.s(0).room_images().is_none(), "the opened version is a local copy, not a room");
+    }
+
+    #[test]
+    fn opening_a_version_whose_picture_is_not_downloaded_shows_the_placeholder_and_does_not_fail() {
+        let (mut w, _, id) = two();
+        w.settle();
+        let vid = save(w.s(1), "Manifest only");
+        let out = run(w.s(1), "version.open", json!({"id": vid}));
+        let warnings: Vec<String> = out["warnings"].as_array().unwrap().iter().filter_map(|n| n.as_str().map(str::to_owned)).collect();
+        assert!(warnings.iter().any(|n| n.contains("1 picture(s) of this version have not been downloaded yet")), "{warnings:?}");
+        assert!(w.s(1).store().file(&id).is_none());
+        assert_eq!(picture_elements(w.s(1)).len(), 1, "the element is there, drawn as the missing picture");
+        let report = w.s(1).tab().doc.snapshot().validate();
+        assert!(!report.has_errors(), "a missing blob is a warning: {:?}", report.errors().collect::<Vec<_>>());
+        assert!(report.issues.iter().any(|i| i.error.to_string().contains("not in the files table")), "and it is reported as one");
+    }
+
+    #[test]
+    fn opening_a_version_takes_a_not_yet_downloaded_picture_from_the_blob_cache() {
+        let (mut w, bytes, id) = two();
+        let vid = save(w.s(1), "Cached");
+        w.cache(1, &bytes);
+        let out = run(w.s(1), "version.open", json!({"id": vid}));
+        assert!(out["warnings"].as_array().is_none_or(|w| w.is_empty()), "{out}");
+        assert_eq!(w.s(1).store().file(&id).map(|f| f.bytes.len()), Some(bytes.len()));
+    }
+
+    #[test]
+    fn restoring_brings_the_picture_back_under_the_same_file_id_and_the_manifest_never_loses_it() {
+        let (mut w, _, id) = two();
+        let vid = save(w.s(0), "Before");
+        run(w.s(0), "element.delete", json!({"ids": ["e1"]}));
+        assert!(picture_elements(w.s(0)).is_empty());
+        assert_eq!(manifests(w.s(0)), vec![id.clone()], "deleting the element leaves the picture in the manifest");
+        let out = run(w.s(0), "version.restore", json!({"id": vid}));
+        assert_eq!((out["brought_back"].clone(), out["missing_pictures"].clone()), (json!(1), json!(0)));
+        assert_eq!(picture_elements(w.s(0)), vec![("e1".to_owned(), Some(id.clone()))]);
+        assert_eq!(manifests(w.s(0)), vec![id]);
+    }
+
+    #[test]
+    fn restoring_on_a_device_without_the_bytes_is_not_a_missing_picture_because_the_room_describes_it() {
+        let (mut w, _, id) = two();
+        w.settle();
+        let vid = save(w.s(1), "Before");
+        run(w.s(1), "element.delete", json!({"ids": ["e1"]}));
+        let out = run(w.s(1), "version.restore", json!({"id": vid}));
+        assert_eq!(out["missing_pictures"], 0, "{out}");
+        assert!(!out["warnings"].as_array().is_some_and(|w| w.iter().any(|n| n.as_str().is_some_and(|n| n.contains("no longer in the document")))), "{out}");
+        assert_eq!(picture_elements(w.s(1)), vec![("e1".to_owned(), Some(id))]);
+    }
+
+    /// A workspace record whose Loro snapshot is as the previous build wrote it: schema 1, and no `size` in the
+    /// entries of `files`.
+    fn downgrade_to_schema_one(snapshot: &[u8]) -> Vec<u8> {
+        use loro::{ExportMode, LoroDoc, LoroValue};
+        let doc = LoroDoc::new();
+        doc.import(snapshot).unwrap();
+        doc.get_map("meta").insert("schema", 1i64).unwrap();
+        let files = doc.get_map("files");
+        let keys: Vec<String> = files.keys().map(|k| k.to_string()).collect();
+        for key in keys {
+            let Some(loro::ValueOrContainer::Value(LoroValue::Map(entry))) = files.get(&key) else { continue };
+            let old: std::collections::HashMap<String, LoroValue> =
+                entry.iter().filter(|(k, _)| k.as_str() != "size").map(|(k, v)| (k.clone(), v.clone())).collect();
+            files.insert(&key, LoroValue::from(old)).unwrap();
+        }
+        doc.commit();
+        assert!(!format!("{:?}", files.get_deep_value()).contains("size"), "the entries have no size, as before");
+        assert!(format!("{:?}", files.get_deep_value()).contains("bytes"), "and they hold their bytes");
+        doc.export(ExportMode::Snapshot).unwrap()
+    }
+
+    #[test]
+    fn a_version_made_before_the_change_still_opens_after_the_schema_migration() {
+        use drafftink_doc::FilePolicy;
+        // A room as the previous build kept it: the bytes of the picture are in the Loro document.
+        let mut w = Room::new(1);
+        w.create(0);
+        w.s(0).tab_mut().doc.replicated_mut().set_file_policy(FilePolicy::Embedded);
+        let bytes = png_of_size(3_000, 9);
+        run(w.s(0), "image.insert", json!({"images": [{"base64": STANDARD.encode(&bytes)}]}));
+        let vid = save(w.s(0), "Old version");
+        w.settle();
+        w.s(0).save_workspace().unwrap();
+        let key = format!("workspace.t{}.loro", w.s(0).tab().id.0);
+        let stored = w.fakes(0).storage.bytes(crate::ports::Ns::Autosave, &key).expect("the tab's Loro snapshot");
+        let old = downgrade_to_schema_one(&stored);
+        let mut storage = w.fakes(0).storage.clone();
+        crate::ports::Storage::put(&mut storage, crate::ports::Ns::Autosave, &key, &old).unwrap();
+
+        let mut reopened = Session::with_services(w.fakes(0).ports(), crate::services::Services::fake());
+        assert_eq!(reopened.restore_workspace().unwrap().restored, 1);
+        let id = FileId::of(&bytes);
+        assert_eq!(reopened.tab().doc.replicated().schema_version(), drafftink_doc::SCHEMA_VERSION, "migrated on open");
+        assert_eq!(reopened.tab().doc.replicated().manifest(&id).map(|m| m.size), Some(bytes.len() as u64), "the step wrote the size");
+        let out = run(&mut reopened, "version.open", json!({"id": vid}));
+        assert_eq!(out["changed"], true);
+        assert_eq!(reopened.store().file(&id).map(|f| f.bytes.len()), Some(bytes.len()));
+        assert_eq!(picture_elements(&reopened), vec![("e1".to_owned(), Some(id))]);
+    }
+}
