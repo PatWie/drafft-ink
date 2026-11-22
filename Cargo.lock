@@ -1835,6 +1835,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "drafftink-relay"
+version = "0.2.0"
+dependencies = [
+ "drafftink-protocol",
+ "proptest",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "drafftink-render"
 version = "0.2.0"
 dependencies = [

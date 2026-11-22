@@ -55,6 +55,8 @@ pub const TABLE: &[(&str, Class)] = &[
     ("drafftink-sketch", Class::Layer(1)),
     // End-to-end encryption of collaboration rooms (docs/design/collab-e2e.md): keys, sealed records, the room link.
     ("drafftink-seal", Class::Layer(1)),
+    // The blind relay of those rooms: a sans-IO room core with no Loro, no tokio and no clock.
+    ("drafftink-relay", Class::Layer(1)),
     // L2
     ("drafftink-render", Class::Layer(2)),
     // L3
@@ -185,6 +187,8 @@ pub const ALLOWED_EXTERNAL: &[(&str, &[&str])] = &[
             "zeroize",
         ],
     ),
+    // The relay core uses the protocol and nothing else (no crypto: it checks the room id with the protocol's hash).
+    ("drafftink-relay", &[]),
     // L2
     ("drafftink-render", &["base64", "image", "kurbo", "peniko", "png", "pollster", "schemars", "vello"]),
     // L3
@@ -584,7 +588,7 @@ mod tests {
         for n in ["geom", "profile", "protocol"] {
             assert_eq!(layer(&format!("drafftink-{n}")), Some(0));
         }
-        for n in ["scene", "typeset", "sketch", "seal"] {
+        for n in ["scene", "typeset", "sketch", "seal", "relay"] {
             assert_eq!(layer(&format!("drafftink-{n}")), Some(1));
         }
         assert_eq!(layer("drafftink-render"), Some(2));
