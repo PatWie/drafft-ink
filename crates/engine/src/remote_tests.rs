@@ -171,3 +171,40 @@ fn a_remote_update_that_reverts_an_edit_brings_the_tab_back_to_clean() {
     assert_eq!(b.tab().doc.undo_depth(), 0);
     assert!(!b.tab().dirty(), "the content is the saved content again");
 }
+
+/// A raw Loro writer sharing `s`'s history, as a newer build would be: it writes a field this build does not know.
+fn newer_update(s: &Session, id: &str, extra: &[(&str, i64)]) -> Vec<u8> {
+    use loro::{ExportMode, LoroDoc};
+    let doc = LoroDoc::new();
+    doc.set_peer_id(777).unwrap();
+    doc.import(&s.tab().doc.replicated().export_snapshot().unwrap()).unwrap();
+    let m = doc.get_map("elements").ensure_mergeable_map(id).unwrap();
+    m.insert("kind", "rectangle").unwrap();
+    for k in ["x", "y", "w", "h"] {
+        m.insert(k, 5.0).unwrap();
+    }
+    m.insert("index", "a5").unwrap();
+    m.insert("style.highlight", "pink").unwrap();
+    for (k, v) in extra {
+        m.insert(k, *v).unwrap();
+    }
+    doc.commit();
+    let from = loro::VersionVector::decode(&s.tab().doc.replicated().version_vector().unwrap()).unwrap();
+    doc.export(ExportMode::updates(&from)).unwrap()
+}
+
+#[test]
+fn fields_of_a_newer_build_show_the_element_and_warn_once() {
+    use crate::cmd::collab::CollabNotice;
+    let mut s = peer();
+    let tab = tab_of(&s);
+    let warning = drafftink_scene::unknown::UnknownFields::WARNING;
+    s.apply_remote(tab, &newer_update(&s, "n1", &[])).unwrap();
+    assert!(s.take_collab_notices().is_empty(), "everything in it is known: no warning");
+    s.apply_remote(tab, &newer_update(&s, "n2", &[("style.glow", 3)])).unwrap();
+    let id = ElementId::new("n2").unwrap();
+    assert_eq!(s.element(&id).unwrap().style.highlight, Some(drafftink_scene::MarkerColor::Pink), "shown, not hidden");
+    assert_eq!(s.take_collab_notices(), vec![CollabNotice::Info(warning.to_owned())]);
+    s.apply_remote(tab, &newer_update(&s, "n3", &[("style.glow", 4)])).unwrap();
+    assert!(s.take_collab_notices().is_empty(), "told once for the document");
+}

@@ -176,6 +176,16 @@ mod tests {
     }
 
     #[test]
+    fn an_envelope_with_fields_of_a_newer_build_unpacks_with_a_warning() {
+        let mut v = pack(&doc(), false).unwrap().payload;
+        v["document"]["elements"][0]["style"]["glow"] = json!(3);
+        let imported = unpack(&v).unwrap();
+        assert_eq!(imported.document, doc(), "the element is the one that was copied, without the new field");
+        assert_eq!(imported.report.warnings, [UnknownFields::WARNING]);
+        assert!(unpack(&pack(&doc(), false).unwrap().payload).unwrap().report.is_clean());
+    }
+
+    #[test]
     fn unpack_refuses_foreign_newer_and_broken_envelopes() {
         assert!(unpack(&json!({"type": "excalidraw/clipboard"})).is_err());
         assert!(unpack(&json!({"format": FORMAT, "version": 2, "document": {}})).is_err());

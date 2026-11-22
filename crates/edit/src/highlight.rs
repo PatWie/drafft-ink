@@ -10,7 +10,7 @@
 //!
 //! Everything is checked before anything is written, so a failed call changes nothing.
 
-use drafftink_scene::{Element, ElementId, ElementKind, Kind, MarkerColor, SceneRead, SceneTx};
+use drafftink_scene::{Element, ElementId, ElementKind, Kind, MarkerColor, SceneRead, SceneTx, StoreError};
 
 use crate::style::{self, Prop, StyleError, StyleProps};
 use crate::target::TargetError;
@@ -50,6 +50,9 @@ pub enum HighlightError {
     /// A range rule: not a text, out of range, empty.
     #[error(transparent)]
     Text(#[from] TextBindError),
+    /// The store refused the write.
+    #[error(transparent)]
+    Store(#[from] StoreError),
 }
 
 fn live<'a, R: SceneRead>(r: &'a R, id: &ElementId) -> Result<&'a Element, TargetError> {
