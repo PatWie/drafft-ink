@@ -308,3 +308,11 @@ fn the_desktop_switch_toggles_the_setting_and_shows_where_to_connect() {
     h.run();
     assert!(h.query_by_label_contains("Port 3737 is in use.").is_some());
 }
+
+#[test]
+fn the_colourful_toolbar_switch_toggles_its_setting_and_is_off_by_default() {
+    let mut h = open();
+    let key = "ui.colourful_toolbar";
+    assert!(!h.state().session.settings.bool_or(key, true), "off by default");
+    press(&mut h, "Colourful toolbar", "settings.toggle", json!({ "key": key }));
+}

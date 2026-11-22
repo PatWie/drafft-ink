@@ -146,6 +146,18 @@ impl Pen<'_> {
     fn dot(&self, x: f32, y: f32, r: f32) {
         self.painter.circle_filled(self.p(x, y), r * self.scale(), self.color);
     }
+    /// The highlighter: a marker slanted to the right (an outlined body and a filled chisel tip) over a bar. The bar
+    /// is a filled rectangle on whole pixels, so that it stays crisp at the size of the toolbar.
+    fn marker(&self, bar: Color32) {
+        self.poly(&[(10.7, 11.3), (15.8, 3.8), (19.0, 5.9), (13.9, 13.4)], true);
+        self.fill_poly(&[(10.7, 11.3), (13.9, 13.4), (8.8, 15.5), (7.2, 14.0)]);
+        let ppp = self.painter.pixels_per_point();
+        let snap = |v: f32| (v * ppp).round() / ppp;
+        let (a, b) = (self.p(4.0, 19.0), self.p(20.0, 22.0));
+        let rect =
+            Rect::from_min_max(pos2(snap(a.x), snap(a.y)), pos2(snap(b.x), snap(b.y).max(snap(a.y) + 1.0 / ppp)));
+        self.painter.rect_filled(rect, 0.0, bar);
+    }
     fn curve(&self, a: (f32, f32), c1: (f32, f32), c2: (f32, f32), b: (f32, f32)) {
         self.painter.add(Shape::CubicBezier(CubicBezierShape::from_points_stroke(
             [self.p(a.0, a.1), self.p(c1.0, c1.1), self.p(c2.0, c2.1), self.p(b.0, b.1)],
@@ -154,6 +166,16 @@ impl Pen<'_> {
             self.stroke,
         )));
     }
+}
+
+/// The share of the ink colour that the bar under the highlighter has: a neutral grey on either theme, as the ink
+/// is black-ish on the light one and white-ish on the dark one (and white on the accent of a selected button).
+const NEUTRAL_BAR: f32 = 0.5;
+
+/// Draws the highlighter icon with `bar` under the marker, instead of the neutral grey.
+pub fn paint_highlighter(painter: &Painter, rect: Rect, ink: Color32, bar: Color32) {
+    let s = rect.width().min(rect.height()) / 24.0;
+    Pen { painter, rect, stroke: Stroke::new((1.7 * s).max(1.0), ink), color: ink }.marker(bar);
 }
 
 /// Draws `icon` into `rect` with `color`.
@@ -210,10 +232,7 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             pen.curve((3.5, 17.0), (7.0, 5.0), (10.0, 22.0), (13.0, 12.0));
             pen.curve((13.0, 12.0), (16.0, 3.0), (18.0, 8.0), (20.5, 9.0));
         }
-        Icon::Highlighter => {
-            pen.fill_poly(&[(14.5, 4.0), (20.0, 9.5), (11.0, 18.5), (5.5, 13.0)]);
-            pen.line((4.0, 20.5), (12.0, 20.5));
-        }
+        Icon::Highlighter => pen.marker(color.gamma_multiply(NEUTRAL_BAR)),
         Icon::Text => {
             pen.line((6.0, 6.0), (18.0, 6.0));
             pen.line((12.0, 6.0), (12.0, 19.5));
@@ -626,4 +645,76 @@ pub fn hue(h: f32) -> Color32 {
         _ => (1.0, 0.0, 1.0 - f),
     };
     Color32::from_rgb((r * 255.0) as u8, (g * 255.0) as u8, (b * 255.0) as u8)
+}
+
+#[cfg(test)]
+mod tests {
+    use egui::{Context, Rect, Shape, pos2};
+
+    use super::*;
+
+    /// The filled rectangles that `draw` paints into a 20 point square at a fractional place, at `ppp` pixels to a
+    /// point.
+    fn rects(ppp: f32, draw: impl FnOnce(&Painter, Rect)) -> Vec<(Rect, Color32)> {
+        let ctx = Context::default();
+        let mut raw = egui::RawInput::default();
+        raw.viewports.entry(raw.viewport_id).or_default().native_pixels_per_point = Some(ppp);
+        let mut out = Vec::new();
+        let mut draw = Some(draw);
+        let mut full = ctx.run_ui(raw, |ui| {
+            if let Some(draw) = draw.take() {
+                draw(ui.painter(), Rect::from_min_size(pos2(10.3, 7.2), egui::vec2(20.0, 20.0)));
+            }
+        });
+        full.textures_delta.clear();
+        for clipped in full.shapes {
+            let mut stack = vec![clipped.shape];
+            while let Some(shape) = stack.pop() {
+                match shape {
+                    Shape::Vec(v) => stack.extend(v),
+                    Shape::Rect(r) if r.fill != Color32::TRANSPARENT && r.rect.width() < 19.0 => {
+                        out.push((r.rect, r.fill));
+                    }
+                    _ => {}
+                }
+            }
+        }
+        out
+    }
+
+    fn bar(ppp: f32, ink: Color32) -> (Rect, Color32) {
+        let found = rects(ppp, |p, r| paint(p, r, Icon::Highlighter, ink));
+        found.into_iter().last().expect("the highlighter paints a bar")
+    }
+
+    #[test]
+    fn the_bar_under_the_marker_is_a_neutral_grey_in_both_themes() {
+        for ink in [Color32::from_rgb(30, 30, 30), Color32::from_rgb(235, 235, 235), Color32::WHITE] {
+            let (_, fill) = bar(1.0, ink);
+            assert!(fill.r() == fill.g() && fill.g() == fill.b(), "{ink:?} gives {fill:?}");
+            assert!(fill.a() < 255 && fill.a() > 60, "a half share of the ink, not the ink itself: {fill:?}");
+        }
+    }
+
+    #[test]
+    fn the_bar_sits_on_whole_pixels_so_it_is_crisp() {
+        for ppp in [1.0, 1.5, 2.0, 3.0] {
+            let (rect, _) = bar(ppp, Color32::BLACK);
+            for edge in [rect.min.x, rect.min.y, rect.max.x, rect.max.y] {
+                let px = edge * ppp;
+                assert!((px - px.round()).abs() < 1e-3, "{edge} at {ppp} pixels per point is {px} pixels");
+            }
+            assert!(rect.height() * ppp >= 1.0 - 1e-3, "at least one pixel tall at {ppp}");
+        }
+    }
+
+    #[test]
+    fn a_bar_colour_replaces_the_grey_and_leaves_the_marker_alone() {
+        let accent = Color32::from_rgb(250, 204, 21);
+        let plain = rects(1.0, |p, r| paint(p, r, Icon::Highlighter, Color32::BLACK));
+        let tinted = rects(1.0, |p, r| paint_highlighter(p, r, Color32::BLACK, accent));
+        assert_eq!(plain.len(), tinted.len());
+        assert_eq!(tinted.last().map(|(_, c)| *c), Some(accent));
+        assert_eq!(plain.last().map(|(r, _)| *r), tinted.last().map(|(r, _)| *r), "same place");
+    }
 }

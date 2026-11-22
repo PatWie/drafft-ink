@@ -209,6 +209,12 @@ pub const KEYS: &[KeyDef] = &[
         Def::Str("swatches"),
         "The colour menu shows the preset swatches, or a custom picker: a saturation and value square with a hue slider.",
     ),
+    key(
+        "ui.colourful_toolbar",
+        Kind::Bool,
+        Def::Bool(false),
+        "The bar under the highlighter in the left toolbar shows the highlighter's colour instead of a neutral grey.",
+    ),
 ];
 
 /// The definition of a key.

@@ -78,7 +78,7 @@ fn every_key_default_passes_its_own_check_and_the_table_matches_the_catalog() {
     sorted.sort_unstable();
     sorted.dedup();
     assert_eq!(sorted.len(), names.len(), "a key is listed twice");
-    // The keys of docs/commands.md §5, plus `theme`, `ui.font` and `ui.color_picker`.
+    // The keys of docs/commands.md §5, plus `theme`, `ui.font`, `ui.color_picker` and `ui.colourful_toolbar`.
     for k in [
         "view.grid_style", "view.minimap", "snap.grid", "snap.smart_guides", "snap.angle", "snap.angle_step", "export.scale",
         "export.padding", "export.background", "export.dark", "export.embed_scene", "doc.default_background",
@@ -87,10 +87,11 @@ fn every_key_default_passes_its_own_check_and_the_table_matches_the_catalog() {
         "frame.clip", "frame.show_names", "frame.outline", "history.depth", "autosave.enabled",
         "autosave.interval_s", "clipboard.excalidraw_compat", "collab.server_url", "collab.user_name",
         "collab.user_color", "doc.recent", "theme", "agent.mcp_http", "ui.font", "ui.color_picker",
+        "ui.colourful_toolbar",
     ] {
         assert!(names.contains(&k), "`{k}` is missing from the table");
     }
-    assert_eq!(names.len(), 35);
+    assert_eq!(names.len(), 36);
 }
 
 #[test]

@@ -13,9 +13,7 @@ use drafftink_engine::Session;
 use drafftink_engine::interact::UiRequest;
 use drafftink_geom::kurbo::{Affine, Point, Size};
 use drafftink_render::{element_to_world, text_spec};
-use drafftink_scene::{
-    Element, ElementId, ElementKind, InlineMath, Kind, MarkerColor, SceneRead, TextData, TextRun, ZIndex,
-};
+use drafftink_scene::{Element, ElementId, ElementKind, InlineMath, Kind, SceneRead, TextData, TextRun, ZIndex};
 use drafftink_typeset::{TextLayout, Typesetter, Wrap};
 
 /// Where the text goes.
@@ -154,7 +152,8 @@ impl Subject {
     }
 
     /// The highlight of the text as a whole: the one the element being edited has. A new text has none.
-    pub(super) fn highlight(&self) -> Option<MarkerColor> {
+    #[cfg(test)]
+    pub(super) fn highlight(&self) -> Option<drafftink_scene::MarkerColor> {
         self.template.style.highlight
     }
 

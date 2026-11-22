@@ -153,10 +153,10 @@ fn each_drawing_tool_shows_the_groups_of_its_new_elements() {
     assert!(has(&h, "Thin"), "a freehand stroke has a width");
     assert!(has(&h, "Tip: Round") && has(&h, "Tip: Chisel"), "the pencil has a tip, and width and opacity beside it");
     assert!(has(&h, "Opacity"));
-    assert!(!has(&h, "Highlighter: none"), "the colours are the highlighter's");
-    // The highlighter applies a colour: the split button of the highlight control, and no stroke settings.
+    assert!(!has(&h, "No highlight"), "the colours are the highlighter's");
+    // The highlighter applies a colour: the colour control of its marker, and no stroke settings.
     let h = desk(with_tool("highlighter"));
-    assert!(has(&h, "Highlighter: none") && has(&h, "Highlight colours"));
+    assert!(has(&h, "No highlight") && has(&h, "Pick the highlight colour"));
     assert!(!has(&h, "Thin") && !has(&h, "Tip: Chisel") && !has(&h, "Brush: Normal") && !has(&h, "Opacity"));
     for tool in ["text", "math"] {
         let h = desk(with_tool(tool));
@@ -1236,25 +1236,7 @@ fn swatch_circle(h: &H, label: &str) -> egui::Color32 {
         .unwrap_or_else(|| panic!("no swatch is painted for {label:?}"))
 }
 
-// ---- the highlight button ----
-
-fn marker_button(h: &H) -> bool {
-    h.query_by_role_and_label(egui::accesskit::Role::Button, "Highlight colours").is_some()
-}
-
-#[test]
-fn only_what_can_be_highlighted_gets_the_highlight_button() {
-    assert!(marker_button(&desk(one_rect())), "a shape");
-    assert!(marker_button(&desk(free_text())), "a text");
-    assert!(marker_button(&desk(arrow())), "an arrow");
-    assert!(marker_button(&desk(freehand())), "a pencil stroke");
-    assert!(!marker_button(&desk(dialog::fixture())), "nothing selected: new elements are never highlighted");
-    let mut f = dialog::fixture();
-    let frame = create(&mut f, json!({ "kind": "frame", "bounds": { "x": 0, "y": 0, "w": 200, "h": 100 } }));
-    selecting(&mut f, &[frame]);
-    assert!(!marker_button(&desk(f)), "a frame has none");
-    assert!(!marker_button(&desk(with_tool("rectangle"))), "a tool has none either");
-}
+// ---- the highlighter tool's colour ----
 
 /// Clicks, runs what the click asked for on the session as the app would, and draws again.
 fn click_and_apply(h: &mut H, label: &str) -> Vec<drafftink_ui::Call> {
@@ -1264,121 +1246,128 @@ fn click_and_apply(h: &mut H, label: &str) -> Vec<drafftink_ui::Call> {
     calls
 }
 
-/// The cells of the quick column of the highlight popover: none, yellow (the default marker) and the families of the
-/// stroke and fill swatches, at the standard shade.
-const QUICK_MARKERS: [&str; 7] =
-    ["yellow-400", "blue-400", "red-400", "emerald-400", "amber-400", "purple-400", "slate-400"];
+/// The quick markers of the top bar: yellow, then the families of the stroke swatches.
+const QUICK_MARKERS: [&str; 7] = ["yellow", "blue", "red", "emerald", "amber", "purple", "slate"];
 
 #[test]
-fn the_marker_toggles_the_highlight_with_the_last_colour_and_the_popover_picks_one() {
-    let mut h = desk(one_rect());
-    // Off: a click puts the default (yellow) on.
-    let calls = click_and_apply(&mut h, "Highlight (yellow-400)");
-    assert_eq!(
-        calls.last().map(|c| (c.id.as_str(), c.args.clone())),
-        Some(("style.set", json!({ "props": { "highlight": "yellow-400" } })))
-    );
-    // On: the button now takes it off.
-    let calls = click_and_apply(&mut h, "Take the highlight off");
-    assert_eq!(calls.last().map(|c| c.args.clone()), Some(json!({ "props": { "highlight": null } })));
-    // The popover starts with the quick column and "none", like the stroke popover, and a pick is `style.set` too.
-    open(&mut h, "Highlight colours");
-    for name in QUICK_MARKERS.into_iter().chain(["none"]) {
-        assert!(has(&h, &format!("Highlight: {name}")), "{name}");
-    }
-    assert!(!has(&h, "Highlight: pink-400"), "the grid waits for \"More colours\"");
-    let calls = click_and_apply(&mut h, "Highlight: blue-400");
-    assert_eq!(calls.last().map(|c| c.args.clone()), Some(json!({ "props": { "highlight": "blue-400" } })));
-    // Any family is in the expanded grid, in the three marker shades only.
-    h.get_by_label("Take the highlight off");
-    open(&mut h, "Highlight colours");
-    open(&mut h, "More colours");
-    for family in drafftink_scene::palette::family_names() {
-        for shade in [300, 400, 500] {
-            // The quick column repeats some of them, as the stroke popover's does.
-            let cells = h.query_all_by_label(&format!("Highlight: {family}-{shade}")).count();
-            assert!(cells >= 1, "{family}-{shade}");
+fn the_top_bar_has_no_highlight_button_for_any_element_or_tool() {
+    let gone = ["Highlight colours", "Take the highlight off", "Highlight (yellow-400)"];
+    let mut free = free_text();
+    free.model.text_editing = true;
+    for (name, f) in [
+        ("a shape", one_rect()),
+        ("a text", free_text()),
+        ("a text being edited", free),
+        ("an arrow", arrow()),
+        ("a pencil stroke", freehand()),
+        ("the pencil tool", with_tool("freehand")),
+        ("the highlighter tool", with_tool("highlighter")),
+    ] {
+        let h = desk(f);
+        for label in gone {
+            assert!(!has(&h, label), "{name} still has {label:?}");
         }
-        assert!(!has(&h, &format!("Highlight: {family}-200")), "{family}-200 is not a marker shade");
     }
-    let calls = click_and_apply(&mut h, "Highlight: pink-300");
-    assert_eq!(calls.last().map(|c| c.args.clone()), Some(json!({ "props": { "highlight": "pink-300" } })));
-    // The colour picked is the one the button puts on the next time.
-    assert!(has(&h, "Take the highlight off"));
-    click_and_apply(&mut h, "Take the highlight off");
-    assert!(has(&h, "Highlight (pink-300)"), "the last colour is remembered");
 }
 
 #[test]
-fn the_popover_marks_the_current_colour_and_none() {
-    let mut h = desk(one_rect());
-    click_and_apply(&mut h, "Highlight (yellow-400)");
-    open(&mut h, "Highlight colours");
-    let selected =
-        |h: &H, label: &str| h.get_by_label(label).accesskit_node().toggled() == Some(egui::accesskit::Toggled::True);
-    assert!(selected(&h, "Highlight: yellow-400"));
-    assert!(!selected(&h, "Highlight: blue-400") && !selected(&h, "Highlight: none"));
-    click_and_apply(&mut h, "Highlight: none");
-    open(&mut h, "Highlight colours");
-    assert!(selected(&h, "Highlight: none"));
-}
-
-#[test]
-fn during_a_text_edit_the_highlight_goes_to_the_editor() {
-    let mut f = free_text();
-    f.model.text_editing = true;
-    let mut h = desk(f);
-    h.state_mut().clear();
-    h.get_by_label("Highlight (yellow-400)").click();
-    h.run();
-    assert!(h.state().calls().is_empty(), "`style.set` would refuse while a text is edited");
-    assert_eq!(
-        h.state().actions,
-        vec![drafftink_ui::UiAction::Host(drafftink_ui::HostRequest::TextEditStyle(
-            json!({ "highlight": "yellow-400" })
-        ))]
+fn the_highlighter_tool_shows_the_colour_control_for_its_marker_and_no_stroke_or_fill() {
+    let h = desk(with_tool("highlighter"));
+    assert!(
+        has(&h, "No highlight")
+            && has(&h, "Pick the highlight colour from the canvas")
+            && has(&h, "Pick the highlight colour")
     );
+    for family in QUICK_MARKERS {
+        assert!(has(&h, &format!("Highlight {family}")), "{family}");
+    }
+    for gone in ["No stroke", "No fill", "Stroke blue", "Fill blue", "More stroke colours", "Thin", "Opacity"] {
+        assert!(!has(&h, gone), "{gone}");
+    }
+    // The other tools keep the stroke and the fill.
+    let h = desk(with_tool("rectangle"));
+    assert!(has(&h, "No stroke") && has(&h, "Fill blue") && !has(&h, "No highlight"));
 }
 
 #[test]
-fn the_editor_selection_decides_what_the_button_shows_while_a_text_is_edited() {
-    use drafftink_ui::MarkerState;
-    let mut f = free_text();
-    f.model.text_editing = true;
-    f.model.editor_highlight = Some(MarkerState::On(drafftink_scene::MarkerColor::from_name("green-400").unwrap()));
-    let h = desk(f);
-    assert!(has(&h, "Take the highlight off"));
-    let mut f = free_text();
-    f.model.text_editing = true;
-    f.model.editor_highlight = Some(MarkerState::Mixed);
-    assert!(has(&desk(f), "Highlight (yellow-400)"), "a mixed selection puts the marker on");
-}
-
-#[test]
-fn the_highlighter_tool_has_the_same_colours_as_the_highlight_control_and_none_removes() {
+fn the_quick_markers_set_the_tool_colour_and_none_means_remove() {
     let mut h = desk(with_tool("highlighter"));
-    // The tool starts yellow; the button turns the colour off (none) and back on with the last colour.
-    let calls = click_and_apply(&mut h, "Highlighter: none");
+    let calls = click_and_apply(&mut h, "Highlight blue");
+    assert_eq!(
+        calls.last().map(|c| (c.id.as_str(), c.args.clone())),
+        Some(("tool.set_marker", json!({ "color": "blue-400" })))
+    );
+    let calls = click_and_apply(&mut h, "No highlight");
     assert_eq!(
         calls.last().map(|c| (c.id.as_str(), c.args.clone())),
         Some(("tool.set_marker", json!({ "color": null })))
     );
-    open(&mut h, "Highlight colours");
-    for name in QUICK_MARKERS.into_iter().chain(["none"]) {
-        assert!(has(&h, &format!("Highlight: {name}")), "{name}");
+}
+
+#[test]
+fn the_swatches_show_the_ink_of_the_marker_in_both_themes() {
+    use drafftink_scene::{MarkerColor, Tone};
+    for (theme, tone) in [(egui::Theme::Light, Tone::Light), (egui::Theme::Dark, Tone::Dark)] {
+        let h = at(vec2(1280.0, 800.0), theme, with_tool("highlighter"));
+        for (label, name) in
+            [("Highlight yellow", "yellow-400"), ("Highlight blue", "blue-400"), ("Highlight slate", "slate-400")]
+        {
+            let ink = MarkerColor::from_name(name).unwrap().rgb(tone);
+            assert_eq!(swatch_circle(&h, label), egui::Color32::from_rgb(ink.r, ink.g, ink.b), "{label} on {theme:?}");
+        }
     }
-    open(&mut h, "More colours");
-    let calls = click_and_apply(&mut h, "Highlight: pink-400");
+}
+
+#[test]
+fn the_popover_offers_every_family_in_the_three_marker_shades_and_a_pick_is_that_marker() {
+    let mut h = desk(with_tool("highlighter"));
+    open(&mut h, "Pick the highlight colour");
+    h.get_by_label("Highlight colour");
+    for shade in [300, 400, 500] {
+        assert!(has(&h, &format!("Rose {shade}")), "rose {shade}");
+    }
+    for shade in [50, 100, 200, 600, 900] {
+        assert!(!has(&h, &format!("Rose {shade}")), "rose {shade} is not a marker shade");
+    }
+    assert!(
+        !has(&h, "Colour picker: Custom"),
+        "no custom view: a colour that is no marker would only be mapped to one"
+    );
+    let calls = click_and_apply(&mut h, "Rose 300");
     assert_eq!(
         calls.last().map(|c| (c.id.as_str(), c.args.clone())),
-        Some(("tool.set_marker", json!({ "color": "pink-400" })))
+        Some(("tool.set_marker", json!({ "color": "rose-300" })))
     );
-    let calls = click_and_apply(&mut h, "Highlighter: none");
-    assert_eq!(calls.last().map(|c| c.args.clone()), Some(json!({ "color": null })));
-    open(&mut h, "Highlight colours");
-    let calls = click_and_apply(&mut h, "Highlight: none");
-    assert_eq!(
-        calls.last().map(|c| (c.id.as_str(), c.args.clone())),
-        Some(("tool.set_marker", json!({ "color": null })))
+}
+
+#[test]
+fn a_pick_never_writes_a_style_to_a_selection_that_was_there_before_the_tool_was_chosen() {
+    let mut f = one_rect();
+    dialog::run(&mut f, "tool.set", json!({ "tool": "highlighter", "keep_selection": true }));
+    f.refresh();
+    let mut h = desk(f);
+    // The selection is still there, but the strip offers no style control for it.
+    for gone in ["No stroke", "Stroke blue", "Fill blue", "Thin", "Dashed", "Opacity"] {
+        assert!(!has(&h, gone), "{gone}");
+    }
+    let mut all = Vec::new();
+    all.extend(click_and_apply(&mut h, "Highlight red"));
+    all.extend(click_and_apply(&mut h, "No highlight"));
+    open(&mut h, "Pick the highlight colour");
+    all.extend(click_and_apply(&mut h, "Amber 500"));
+    assert!(!all.is_empty());
+    assert!(
+        all.iter().all(|c| c.id == "tool.set_marker"),
+        "{:?}",
+        all.iter().map(|c| c.id.clone()).collect::<Vec<_>>()
     );
+}
+
+#[test]
+fn the_stroke_key_opens_the_markers_while_the_highlighter_is_active() {
+    let mut h = desk(with_tool("highlighter"));
+    h.state_mut().state.apply_verb(Verb::OpenColorStroke, &mut Vec::new());
+    h.run();
+    h.get_by_label("Highlight colour");
+    assert!(!has(&h, "Stroke colour"), "the stroke popover would write to the selection");
 }

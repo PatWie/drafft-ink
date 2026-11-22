@@ -97,6 +97,12 @@ impl UiState {
                 self.last_picked.remember(target, hex.clone());
                 ("image.paint_brush", json!({ "color": hex }))
             }
+            ColorTarget::Marker => {
+                // The engine maps any colour to the nearest marker; the stored colour is what the canvas shows, undone.
+                let stored = colors::stored(seen, self.dark).to_hex();
+                self.last_picked.remember(target, stored.clone());
+                ("tool.set_marker", json!({ "color": stored }))
+            }
             ColorTarget::Background => return None,
         };
         Some(Call::new(Origin::Ui, id, args))

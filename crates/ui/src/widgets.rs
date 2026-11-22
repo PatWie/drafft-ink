@@ -309,6 +309,20 @@ impl<'a> Cx<'a> {
         self.icon_button(ui, ctl, icon, self.layout.tool_side())
     }
 
+    /// The tool button of the highlighter, with `bar` as the colour of the bar under its marker (the neutral grey
+    /// when `None`).
+    pub fn highlighter_button(&mut self, ui: &mut Ui, ctl: &Ctl<'_>, bar: Option<Color32>) -> Response {
+        let (pal, side) = (self.pal, self.layout.tool_side());
+        self.command_widget(ui, ctl, vec2(side, side), move |p, rect, look| {
+            paint_button_bg(p, rect, look, &pal, true);
+            let ink = icon_color(look, &pal);
+            match bar {
+                Some(bar) => icons::paint_highlighter(p, rect.shrink(side * 0.2), ink, bar),
+                None => icons::paint(p, rect.shrink(side * 0.2), Icon::Highlighter, ink),
+            }
+        })
+    }
+
     /// A small text toggle for a property value (`Architect`, `Dashed`): filled with the accent when selected.
     pub fn toggle_button(&mut self, ui: &mut Ui, ctl: &Ctl<'_>, text: &str) -> Response {
         self.toggle_button_font(ui, ctl, text, TextSize::Caption.font())

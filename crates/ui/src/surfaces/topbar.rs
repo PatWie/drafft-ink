@@ -2,7 +2,8 @@
 //! `style.set`; with nothing selected the engine writes the defaults for new elements, so they are always useful.
 //! `surfaces::strip` places them.
 
-use drafftink_scene::Color;
+use drafftink_engine::state::Tool;
+use drafftink_scene::{Color, MarkerColor};
 use egui::{Sense, vec2};
 use serde_json::{Value, json};
 
@@ -33,6 +34,10 @@ pub(super) fn style_rows(ui: &mut egui::Ui, cx: &mut Cx<'_>, st: &UiState) {
         return super::brush::rows(ui, cx, st);
     }
     let height = cx.layout.small_side();
+    // The highlighter has one colour of its own: a row like the stroke's, for the marker.
+    if cx.model.tool == Tool::Highlighter {
+        return ui.vertical(|ui| strip_row(ui, height, |ui| marker_row(ui, cx, st))).inner;
+    }
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing = vec2(space::SM, space::SM);
         for paint in Paint::BOTH {
@@ -47,6 +52,9 @@ pub(super) fn style_column(ui: &mut egui::Ui, cx: &mut Cx<'_>, st: &UiState) {
         return super::brush::column(ui, cx, st);
     }
     ui.spacing_mut().item_spacing = vec2(space::SM, space::MD);
+    if cx.model.tool == Tool::Highlighter {
+        return ui.horizontal_wrapped(|ui| marker_row(ui, cx, st)).inner;
+    }
     for paint in Paint::BOTH {
         ui.horizontal_wrapped(|ui| colour_row(ui, cx, st, paint));
     }
@@ -58,7 +66,7 @@ pub fn clear_blocked(cx: &Cx<'_>, target: ColorTarget) -> Option<String> {
     let prop = match target {
         ColorTarget::Stroke => "stroke_color",
         ColorTarget::Fill => "fill_color",
-        ColorTarget::Background | ColorTarget::Brush => return None,
+        ColorTarget::Background | ColorTarget::Brush | ColorTarget::Marker => return None,
     };
     not_applicable(cx, prop).or_else(|| cx.model.style.prop(prop).and_then(|p| p.clear_reason.clone()))
 }
@@ -192,6 +200,63 @@ fn colour_row(ui: &mut egui::Ui, cx: &mut Cx<'_>, st: &UiState, paint: Paint) {
     cx.verb_button_gated(ui, paint.pick_verb(), Icon::Eyedropper, side, &tip, picking, blocked);
     let wheel = cx.verb_button(ui, paint.open_verb(), Icon::Wheel, side, &wheel_tip, false);
     remember_anchor_in(ui, paint.popover(), wheel.rect);
+}
+
+/// The row of the highlighter tool: label, the "none" cell, the quick markers, the slot of the marker last picked, the
+/// eyedropper, the wheel. It has the cells of the stroke row, in the same order and size. Every control is
+/// `tool.set_marker` (tool state, never `style.set`), so nothing that is selected can change; "none" makes a drag
+/// remove highlights. The swatches show the ink of the marker a pick stores (`colors::marker_offer`).
+fn marker_row(ui: &mut egui::Ui, cx: &mut Cx<'_>, st: &UiState) {
+    let title = "Highlight";
+    let size = vec2(
+        ui.painter().layout_no_wrap(title.to_owned(), TextSize::Body.hand(), cx.pal.muted).size().x,
+        cx.layout.small_side(),
+    );
+    let label = egui::RichText::new(title).font(TextSize::Body.hand()).color(cx.pal.muted);
+    ui.allocate_ui_with_layout(size, egui::Layout::left_to_right(egui::Align::Center), |ui| {
+        ui.set_min_size(size);
+        ui.add(egui::Label::new(label).wrap_mode(egui::TextWrapMode::Extend));
+    });
+    let swatch = cx.layout.control(Control::Toggle) - 4.0;
+    let dark = cx.pal.dark;
+    let now = cx.model.tool_marker;
+    let (id, args) = color::pick_command(ColorTarget::Marker, &Pick::Clear);
+    let none = Ctl::new(id).args(args).label("No highlight").selected(now.is_none());
+    cx.swatch(ui, &none, None, swatch);
+    for marker in colors::quick_markers() {
+        let ctl = Ctl::new("tool.set_marker")
+            .args(json!({ "color": marker.name() }))
+            .label(format!("Highlight {}", marker.family_name()))
+            .selected(now == Some(marker));
+        cx.swatch(ui, &ctl, Some(colors::marker_offer(marker, dark).shown), swatch);
+    }
+    // The marker last picked in the popover or with the eyedropper, next to the wheel; its place stays empty until
+    // there is one, so the wheel does not move.
+    match st.last_picked.of(ColorTarget::Marker).and_then(MarkerColor::from_name) {
+        Some(marker) => {
+            let ctl = Ctl::new("tool.set_marker")
+                .args(json!({ "color": marker.name() }))
+                .label("Last picked highlight")
+                .selected(now == Some(marker));
+            cx.swatch(ui, &ctl, Some(colors::marker_offer(marker, dark).shown), swatch);
+        }
+        None => {
+            ui.allocate_exact_size(vec2(swatch + 4.0, swatch + 4.0), Sense::hover());
+        }
+    }
+    let side = cx.layout.control(Control::Small);
+    let picking = st.eyedropper_target() == Some(ColorTarget::Marker);
+    cx.verb_button_gated(
+        ui,
+        Verb::PickColorMarker,
+        Icon::Eyedropper,
+        side,
+        "Pick the highlight colour from the canvas",
+        picking,
+        None,
+    );
+    let wheel = cx.verb_button(ui, Verb::OpenColorMarker, Icon::Wheel, side, "More highlight colours", false);
+    remember_anchor_in(ui, PopoverKey::Marker, wheel.rect);
 }
 
 /// True for a colour with no alpha: the stored "no stroke".

@@ -6,7 +6,7 @@
 
 use drafftink_scene::MarkerColor;
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::refusal::Refusal;
 use crate::session::Session;
@@ -18,10 +18,21 @@ use crate::spec::{
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
 pub struct SetMarkerArgs {
-    /// The marker colour: `<family>-<shade>` with a palette family and shade 300, 400 or 500 (`yellow-400`); the
-    /// old names `yellow`, `green`, `pink`, `blue` and `orange` mean the 400 shade. `null` (or absent) is none: the
-    /// highlighter then removes highlights.
+    /// A marker (`yellow-400`; shades 300, 400, 500) or any colour (`blue-100`, `#ef4444`), mapped to the nearest
+    /// marker. `null` is none: the highlighter then removes highlights.
+    #[serde(deserialize_with = "marker_of_any_colour")]
+    #[schemars(with = "Option<String>")]
     pub color: Option<MarkerColor>,
+}
+
+fn marker_of_any_colour<'de, D: Deserializer<'de>>(d: D) -> Result<Option<MarkerColor>, D::Error> {
+    let Some(text) = Option::<String>::deserialize(d)? else { return Ok(None) };
+    MarkerColor::nearest(&text).map(Some).ok_or_else(|| {
+        serde::de::Error::custom(format!(
+            "`{}` is not a colour a marker can have. Use a palette colour such as `yellow-400`, a #rrggbb colour, or null for none",
+            text.chars().take(40).collect::<String>()
+        ))
+    })
 }
 
 /// Result of `tool.set_marker`.

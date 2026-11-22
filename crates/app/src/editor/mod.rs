@@ -23,7 +23,7 @@ use drafftink_gpu::TextInput;
 use drafftink_render::{TextEdit as TextEditOverlay, Theme};
 use drafftink_scene::{Color, ElementId, InlineMath};
 use drafftink_typeset::Typesetter;
-use drafftink_ui::{MarkerState, TextFaces};
+use drafftink_ui::TextFaces;
 use serde_json::{Value, json};
 
 #[cfg(test)]
@@ -326,13 +326,10 @@ impl TextEditor {
         changed
     }
 
-    /// The highlight at the selection (or at the caret), for the style panel.
-    pub(crate) fn marker(&self) -> MarkerState {
-        match self.model.highlight_state(self.subject.highlight()) {
-            Some(Some(color)) => MarkerState::On(color),
-            Some(None) => MarkerState::Off,
-            None => MarkerState::Mixed,
-        }
+    /// The highlight at the selection (or at the caret): `None` when the characters differ.
+    #[cfg(test)]
+    pub(crate) fn highlight(&self) -> Option<Option<drafftink_scene::MarkerColor>> {
+        self.model.highlight_state(self.subject.highlight())
     }
 
     /// Bold and italic at the selection, for the style panel.

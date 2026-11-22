@@ -11,6 +11,7 @@
 
 mod custom;
 
+use drafftink_engine::state::Tool;
 use drafftink_scene::palette::{FAMILIES, SHADES};
 use drafftink_scene::{Color, MarkerColor, MarkerShade};
 use egui::{
@@ -21,7 +22,7 @@ use serde_json::{Value, json};
 use crate::action::Verb;
 use crate::chrome::ChromeRects;
 use crate::colors;
-use crate::model::{MarkerState, Model};
+use crate::model::Model;
 use crate::state::{ColorTarget, UiState};
 use crate::surfaces::dialogs::{enter_pressed, text_field};
 use crate::surfaces::preferences::set_args;
@@ -50,6 +51,8 @@ pub enum PopoverKey {
     Background,
     /// The wheel of the brush colour in the paint editor.
     Brush,
+    /// The wheel of the highlighter's colour.
+    Marker,
     /// The font family button.
     Font,
 }
@@ -61,6 +64,7 @@ impl PopoverKey {
             ColorTarget::Fill => Self::Fill,
             ColorTarget::Background => Self::Background,
             ColorTarget::Brush => Self::Brush,
+            ColorTarget::Marker => Self::Marker,
         }
     }
 }
@@ -96,12 +100,12 @@ fn popover_area(ctx: &Context, chrome: &ChromeRects, id: Id, key: PopoverKey) ->
     let screen = ctx.content_rect();
     let under_strip = chrome.below_strip(screen) + GAP;
     match (anchor_of(ctx, key), key) {
-        (Some(r), PopoverKey::Stroke | PopoverKey::Fill | PopoverKey::Brush) => {
+        (Some(r), PopoverKey::Stroke | PopoverKey::Fill | PopoverKey::Brush | PopoverKey::Marker) => {
             area.pivot(Align2::LEFT_TOP).fixed_pos(r.left_bottom() + vec2(0.0, GAP))
         }
         (Some(r), PopoverKey::Background) => area.pivot(Align2::LEFT_BOTTOM).fixed_pos(r.left_top() - vec2(0.0, GAP)),
         (Some(r), PopoverKey::Font) => area.pivot(Align2::LEFT_TOP).fixed_pos(r.left_bottom() + vec2(0.0, GAP)),
-        (None, PopoverKey::Stroke | PopoverKey::Fill | PopoverKey::Brush) => {
+        (None, PopoverKey::Stroke | PopoverKey::Fill | PopoverKey::Brush | PopoverKey::Marker) => {
             area.pivot(Align2::CENTER_TOP).fixed_pos(pos2(screen.center().x, under_strip))
         }
         (None, PopoverKey::Background) => area
@@ -152,6 +156,10 @@ pub(crate) fn pick_command(target: ColorTarget, pick: &Pick) -> (&'static str, V
         }
         ColorTarget::Background => ("doc.set_background", json!({ "color": text })),
         ColorTarget::Brush => ("image.paint_brush", json!({ "color": text })),
+        // Any colour is taken: the engine maps it to the nearest marker (`MarkerColor::nearest`), and none is null.
+        ColorTarget::Marker => {
+            ("tool.set_marker", json!({ "color": if *pick == Pick::Clear { Value::Null } else { Value::from(text) } }))
+        }
     }
 }
 
@@ -171,6 +179,14 @@ fn pick_value(target: ColorTarget, pick: &Pick) -> Option<Color> {
     }
 }
 
+/// Whether a cell of the marker grid is the highlighter's colour now: a marker by name, "None" for no colour.
+fn marker_selected(model: &Model, pick: &Pick) -> bool {
+    match pick {
+        Pick::Clear => model.tool_marker.is_none(),
+        Pick::Color(name) => model.tool_marker.is_some_and(|m| m.name() == *name),
+    }
+}
+
 /// The colour the target has now. The outer `None` means the model does not know (mixed, not applicable);
 /// the inner `None` is "no fill". Red, green, blue and alpha all count, so None is not Black.
 fn current(model: &Model, target: ColorTarget) -> Option<Option<Color>> {
@@ -183,6 +199,8 @@ fn current(model: &Model, target: ColorTarget) -> Option<Option<Color>> {
         },
         ColorTarget::Background => Color::parse(&model.background).ok().map(Some),
         ColorTarget::Brush => Some(Some(model.brush.color)),
+        // A marker is compared by name, not by colour (`marker_selected`).
+        ColorTarget::Marker => None,
     }
 }
 
@@ -246,7 +264,11 @@ fn quick_column(dark: bool) -> Vec<Choice> {
 /// Draws one cell. Returns its pick when it was clicked (the command is already pushed by the control).
 fn cell(ui: &mut Ui, cx: &mut Cx<'_>, target: ColorTarget, now: Option<Option<Color>>, c: &Choice) -> Option<Pick> {
     let (id, args) = pick_command(target, &c.pick);
-    let selected = now.is_some() && now == Some(pick_value(target, &c.pick));
+    let selected = if target == ColorTarget::Marker {
+        marker_selected(cx.model, &c.pick)
+    } else {
+        now.is_some() && now == Some(pick_value(target, &c.pick))
+    };
     // "None" greys with the engine's words when the element would show nothing.
     let blocked = if c.pick == Pick::Clear { clear_blocked(cx, target) } else { None };
     let ctl = Ctl::new(id).args(args).label(&c.label).selected(selected).blocked(blocked);
@@ -341,8 +363,9 @@ fn color_popover(ctx: &Context, cx: &mut Cx<'_>, chrome: &ChromeRects, target: C
     let now = current(cx.model, target);
     // The colours of the picture are not mapped for the dark theme: the brush's swatches are what they say.
     let dark = pal.dark && target.is_themed();
-    let mode = PickerMode::of_model(cx.model);
-    let mut quick = quick_column(dark);
+    // The marker has no custom view: a colour that is not a marker would only be mapped to one.
+    let mode = if target == ColorTarget::Marker { PickerMode::Swatches } else { PickerMode::of_model(cx.model) };
+    let mut quick = if target == ColorTarget::Marker { quick_markers(pal.dark) } else { quick_column(dark) };
     if target == ColorTarget::Brush {
         // A brush has a colour; "none" would paint nothing (erasing is the other mode).
         quick.remove(0);
@@ -364,18 +387,35 @@ fn color_popover(ctx: &Context, cx: &mut Cx<'_>, chrome: &ChromeRects, target: C
                 ColorTarget::Fill => "Fill colour",
                 ColorTarget::Background => "Background colour",
                 ColorTarget::Brush => "Brush colour",
+                ColorTarget::Marker => "Highlight colour",
             };
             ui.label(RichText::new(title).font(TextSize::Label.hand()).color(pal.muted));
             ui.add_space(4.0);
-            mode_switch(ui, cx, mode);
-            ui.add_space(6.0);
+            if target != ColorTarget::Marker {
+                mode_switch(ui, cx, mode);
+                ui.add_space(6.0);
+            }
             match mode {
                 PickerMode::Swatches => {
                     ScrollArea::both().max_width(max_w).max_height(max_h).auto_shrink([true, true]).show(ui, |ui| {
-                        // Shade 25 is too close to white to tell apart in a 16 px cell: the grid starts at 50.
-                        let shades: Vec<u16> = SHADES.iter().copied().skip(1).collect();
+                        // Shade 25 is too close to white to tell apart in a 16 px cell: the grid starts at 50. The
+                        // marker has three shades, and each cell shows the ink of the marker that a pick stores.
+                        let marker = target == ColorTarget::Marker;
+                        let shades: Vec<u16> = if marker {
+                            MarkerShade::ALL.into_iter().map(MarkerShade::number).collect()
+                        } else {
+                            SHADES.iter().copied().skip(1).collect()
+                        };
                         let make = |family: &str, shade: u16| {
-                            choice(format!("{} {shade}", capitalised(family)), &format!("{family}-{shade}"), dark)
+                            let wanted = MarkerShade::of_number(shade).and_then(|s| MarkerColor::new(family, s));
+                            match wanted.filter(|_| marker) {
+                                Some(m) => marker_choice(m, pal.dark),
+                                None => choice(
+                                    format!("{} {shade}", capitalised(family)),
+                                    &format!("{family}-{shade}"),
+                                    dark,
+                                ),
+                            }
                         };
                         let drawn =
                             family_grid(ui, cx, &shades, &quick, &make, &mut |ui, cx, c| cell(ui, cx, target, now, c));
@@ -474,80 +514,6 @@ fn marker_choice(marker: MarkerColor, dark: bool) -> Choice {
     }
 }
 
-/// What a click on the cells of the marker popover runs: `command` is the control that puts a marker (`null` is none)
-/// where the popover's button goes (`style.set` for the selection, `tool.set_marker` for the highlighter tool).
-pub(crate) struct MarkerPicker<'a> {
-    /// The highlight of what the popover acts on now.
-    pub current: Option<MarkerState>,
-    /// The control for a value: a marker name, or `null` for none.
-    pub command: &'a dyn Fn(Value) -> Ctl<'static>,
-}
-
-/// Draws the popover of the highlight button, under its button at `anchor`: the quick column (none, yellow and the
-/// families of the stroke swatches in the standard marker shade) and, after "More colours", the palette grid with the
-/// marker shades only. It is the layout of the stroke and fill popover (`family_grid`, `cell`'s swatches), with the
-/// three marker shades for rows. Returns true when it should close: after a pick, or a click outside.
-pub(crate) fn marker_popover(ctx: &Context, cx: &mut Cx<'_>, anchor: Rect, picker: &MarkerPicker<'_>) -> bool {
-    let pal = cx.pal;
-    let dark = pal.dark;
-    let quick = quick_markers(dark);
-    let open_key = Id::unique("marker_grid_open");
-    let mut expanded: bool = ctx.data(|d| d.get_temp(open_key)).unwrap_or(false);
-    let mut picked: Option<Pick> = None;
-    let mut draw = |ui: &mut Ui, cx: &mut Cx<'_>, c: &Choice| -> Option<Pick> {
-        let (value, name, selected) = match &c.pick {
-            Pick::Clear => (Value::Null, "none".to_owned(), matches!(picker.current, Some(MarkerState::Off))),
-            Pick::Color(name) => {
-                let on = matches!(picker.current, Some(MarkerState::On(m)) if m.name() == *name);
-                (json!(name), name.clone(), on)
-            }
-        };
-        let ctl = (picker.command)(value).label(format!("Highlight: {name}")).selected(selected);
-        cx.swatch(ui, &ctl, c.shown, CELL).clicked().then(|| c.pick.clone())
-    };
-    let out = Area::new(Id::unique("marker_popover"))
-        .order(Order::Foreground)
-        .pivot(Align2::LEFT_TOP)
-        .fixed_pos(anchor.left_bottom() + vec2(0.0, GAP))
-        .show(ctx, |ui| {
-            panel_frame(&pal).show(ui, |ui| {
-                ui.label(RichText::new("Highlight colour").font(TextSize::Label.hand()).color(pal.muted));
-                ui.add_space(4.0);
-                ui.horizontal_top(|ui| {
-                    ui.vertical(|ui| {
-                        ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
-                        for c in &quick {
-                            picked = draw(ui, cx, c).or(picked.take());
-                        }
-                    });
-                    if expanded {
-                        ui.add_space(8.0);
-                        ui.vertical(|ui| {
-                            let shades: Vec<u16> = MarkerShade::ALL.into_iter().map(MarkerShade::number).collect();
-                            let make = |family: &str, shade: u16| {
-                                let marker = MarkerColor::new(
-                                    family,
-                                    MarkerShade::of_number(shade).unwrap_or(MarkerShade::Standard),
-                                );
-                                match marker {
-                                    Some(m) => marker_choice(m, dark),
-                                    None => Choice { label: family.to_owned(), pick: Pick::Clear, shown: None },
-                                }
-                            };
-                            picked = family_grid(ui, cx, &shades, &[], &make, &mut draw).or(picked.take());
-                        });
-                    }
-                });
-                ui.add_space(6.0);
-                if cx.choice(ui, "More colours", expanded, None).clicked() {
-                    expanded = !expanded;
-                }
-            });
-        });
-    ctx.data_mut(|d| d.insert_temp(open_key, expanded));
-    picked.is_some() || pressed_outside(ctx, out.response.rect)
-}
-
 // ---- fonts ----
 
 /// The font families of the canvas: setting value, name, and the family that previews it.
@@ -608,13 +574,33 @@ fn paint_tick(p: &egui::Painter, at: Pos2, color: Color32) {
 pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
     match st.color_popover {
         Some(target) => {
+            // The highlighter has no style to set: with it active the stroke and fill popovers (a key opens them) are
+            // the marker's, so that no pick can reach the selection.
+            let target =
+                if cx.model.tool == Tool::Highlighter && matches!(target, ColorTarget::Stroke | ColorTarget::Fill) {
+                    ColorTarget::Marker
+                } else {
+                    target
+                };
             if let Some(Pick::Color(color)) = color_popover(ctx, cx, &st.chrome, target) {
+                // A typed colour is remembered as the marker it became, so that the slot shows what was set.
+                let color = if target == ColorTarget::Marker {
+                    MarkerColor::nearest(&color).map_or(color, |m| m.name())
+                } else {
+                    color
+                };
                 st.last_picked.remember(target, color);
             }
         }
         None => ctx.data_mut(|d| {
             d.remove_temp::<HexDraft>(Id::unique("color_hex_draft"));
-            for target in [ColorTarget::Stroke, ColorTarget::Fill, ColorTarget::Background, ColorTarget::Brush] {
+            for target in [
+                ColorTarget::Stroke,
+                ColorTarget::Fill,
+                ColorTarget::Background,
+                ColorTarget::Brush,
+                ColorTarget::Marker,
+            ] {
                 d.remove_temp::<custom::Working>(Id::unique(("color_custom", target)));
             }
         }),
