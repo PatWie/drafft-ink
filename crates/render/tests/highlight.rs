@@ -111,7 +111,7 @@ fn the_band_is_wider_than_the_stroke_and_follows_the_outline_not_the_inside() {
     thick.style.stroke_width = 8.0;
     assert!(paint(&thick).bounds.width() > thin.bounds.width() + 10.0, "3 x 8 = 24 wide");
     // The band is a stroke of the outline, not a filled box: no fill command for it.
-    assert_eq!(path_segments(&paint(&rect(Some(MarkerColor::Yellow)))) > path_segments(&plain), true);
+    assert!(path_segments(&paint(&rect(Some(MarkerColor::Yellow)))) > path_segments(&plain));
 }
 
 #[test]

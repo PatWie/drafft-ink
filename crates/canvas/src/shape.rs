@@ -170,7 +170,7 @@ pub fn head_band_hit(e: &Element, world: Point, tol: f64) -> bool {
         let (tip, toward) = (to_world(*tip), to_world(*toward));
         let away = tip - toward;
         let len = away.hypot();
-        if !(len > 1e-9) {
+        if !len.is_finite() || len <= 1e-9 {
             return false;
         }
         let back = tip - away / len * size;

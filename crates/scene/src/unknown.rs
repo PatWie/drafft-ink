@@ -113,14 +113,8 @@ fn remove(value: &mut Value, segments: &[Segment], name: &str) -> Option<String>
     let mut at = value;
     for s in segments {
         at = match (s, at) {
-            (Segment::Map { key }, Value::Object(o)) => match o.get_mut(key) {
-                Some(v) => v,
-                None => return None,
-            },
-            (Segment::Seq { index }, Value::Array(a)) => match a.get_mut(*index) {
-                Some(v) => v,
-                None => return None,
-            },
+            (Segment::Map { key }, Value::Object(o)) => o.get_mut(key)?,
+            (Segment::Seq { index }, Value::Array(a)) => a.get_mut(*index)?,
             // Enum variants and unknown steps have no level of their own in the JSON.
             (Segment::Enum { .. } | Segment::Unknown, v) => v,
             _ => return None,
