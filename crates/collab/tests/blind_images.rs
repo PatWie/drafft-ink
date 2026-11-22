@@ -235,6 +235,7 @@ fn render(response: ImageResponse, head: bool) -> BlobReply {
         body: if head { Vec::new() } else { body },
         content_length,
         retry_after_ms: response.retry_after_ms.map(|ms| u64::from(ms).div_ceil(1000).max(1) * 1000),
+        ..BlobReply::default()
     }
 }
 

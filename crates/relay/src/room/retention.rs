@@ -4,7 +4,8 @@ use drafftink_protocol::v2::{ErrorCode, ServerMessage};
 
 use super::{ConnId, Effect, MetaState, Output, Relay, StoreOp};
 use crate::lifecycle::Verdict;
-use crate::store::{BlobStore, RelayStore};
+use crate::quota::ms_until_utc_midnight;
+use crate::store::{BlobStore, RelayStore, StoreError};
 
 impl<S: RelayStore, B: BlobStore> Relay<S, B> {
     /// Asks the retention state machine what to do with the room, and does it. Sets the next retention wake.
@@ -30,19 +31,27 @@ impl<S: RelayStore, B: BlobStore> Relay<S, B> {
                     );
                 }
             }
-            Verdict::Delete => self.delete_room(now_ms, out),
+            Verdict::Delete => {
+                // A failed deletion has set its own retry.
+                let _ = self.delete_room(now_ms, out);
+            }
         }
     }
 
     /// Deletes the room: its records, snapshot and images, and closes every connection. When a store fails, the
-    /// deletion is tried again after the flush retry time.
-    fn delete_room(&mut self, now_ms: u64, out: &mut Output) {
-        let deleted = self.store.delete_all().and_then(|()| self.blobs.delete_all());
-        if deleted.is_err() {
-            let retry = now_ms.saturating_add(self.cfg.flush.retry_ms);
+    /// deletion is tried again after the flush retry time, and after the daily limit resets when that was the failure.
+    fn delete_room(&mut self, now_ms: u64, out: &mut Output) -> Result<(), StoreError> {
+        let deleted =
+            self.quota.watch(self.store.delete_all()).and_then(|()| self.quota.watch(self.blobs.delete_all()));
+        if let Err(error) = deleted {
+            let wait = match error {
+                StoreError::DailyLimit => u64::from(ms_until_utc_midnight(now_ms)),
+                StoreError::Backend(_) | StoreError::Corrupt(_) => self.cfg.flush.retry_ms,
+            };
+            let retry = now_ms.saturating_add(wait);
             self.delete_retry_ms = Some(retry);
             self.retention_wake = Some(retry);
-            return;
+            return Err(error);
         }
         self.delete_retry_ms = None;
         out.store_ops.push(StoreOp::DeleteRoom);
@@ -56,6 +65,7 @@ impl<S: RelayStore, B: BlobStore> Relay<S, B> {
         self.retention_wake = None;
         self.life = crate::lifecycle::Lifecycle::new(self.cfg.retention);
         out.deleted = true;
+        Ok(())
     }
 
     /// A member asked to delete the room. Only a relay that allows it does so.
@@ -65,9 +75,8 @@ impl<S: RelayStore, B: BlobStore> Relay<S, B> {
             self.refuse(conn, now_ms, ServerMessage::error(ErrorCode::Forbidden, text), true, out);
             return;
         }
-        self.delete_room(now_ms, out);
-        if !out.deleted {
-            self.refuse(conn, now_ms, Self::unavailable(), false, out);
+        if let Err(error) = self.delete_room(now_ms, out) {
+            self.refuse_store(conn, now_ms, &error, false, out);
         }
     }
 }

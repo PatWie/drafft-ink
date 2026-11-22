@@ -348,7 +348,14 @@ mod tests {
         use drafftink_engine::ports::PortKind;
         let full = Harness::new();
         let bare = Harness::headless();
-        for kind in [PortKind::Clipboard, PortKind::Storage, PortKind::Files, PortKind::Renderer, PortKind::Net] {
+        for kind in [
+            PortKind::Clipboard,
+            PortKind::Storage,
+            PortKind::Files,
+            PortKind::Renderer,
+            PortKind::Net,
+            PortKind::Secrets,
+        ] {
             assert!(full.session.has_port(kind), "{kind:?}");
             assert!(!bare.session.has_port(kind), "{kind:?}");
         }

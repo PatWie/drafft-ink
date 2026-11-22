@@ -85,6 +85,8 @@ pub const TABLE: &[(&str, Class)] = &[
     ("drafftink", Class::App),
     ("drafftink-headless", Class::App),
     ("drafftink-web", Class::App),
+    // The Cloudflare host of the relay: a Worker and a Durable Object (TypeScript) around a Rust core compiled to wasm.
+    ("drafftink-worker", Class::App),
     ("drafftink-canvas-js", Class::App),
     ("drafftink-e2e", Class::App),
     // tooling
@@ -96,7 +98,7 @@ pub const TABLE: &[(&str, Class)] = &[
 
 /// Apps (and other non-library packages) that also build for wasm32-unknown-unknown, on top of
 /// every crate at L0 to L5.
-pub const WASM_EXTRA: &[&str] = &["drafftink-app", "drafftink-web", "drafftink-canvas-js"];
+pub const WASM_EXTRA: &[&str] = &["drafftink-app", "drafftink-web", "drafftink-canvas-js", "drafftink-worker"];
 
 /// A same-layer edge that is allowed, with the reason. Earlier name may be used by the later one.
 /// Keep this list short: each entry is a hole in the layering.
@@ -215,6 +217,7 @@ pub const ALLOWED_EXTERNAL: &[(&str, &[&str])] = &[
             "wasm-bindgen-futures",
             "web-sys",
             "webpki-roots",
+            "zeroize",
         ],
     ),
     // L5

@@ -12,13 +12,16 @@ use drafftink_geom::kurbo::Point;
 use drafftink_doc::ImportProgress;
 use drafftink_protocol::{MAX_SELECTION_IDS, Viewport};
 
-use super::pictures;
+use super::{connection, pictures};
 use super::state::{CollabNotice, CollabState, Gate, Live, stage_threshold};
 use super::view::{CollabView, ConnectionState, ImagesView, Loading, PeerView};
 use crate::session::Session;
 use crate::spec::Redraw;
 use crate::state::{TabId, clamp_zoom};
 use drafftink_profile::now_ns;
+
+/// What a person reads when the relay deleted the room on request.
+pub(super) const ROOM_DELETED_TEXT: &str = "The room was deleted for everyone. This tab is a local copy now.";
 
 /// How long after a held big message the next poll is asked for, so one frame can show the progress hint.
 const HOLD_FRAME_MS: u64 = 16;
@@ -58,7 +61,12 @@ impl Session {
             // A poll that finds its tab gone drops the client; closing a room tab asks to leave first.
             if let Some(step) = poll_live(self, &mut live, now) {
                 out = step;
-                self.ext.with::<CollabState, _>(|c| c.live = Some(live));
+                if live.deleted {
+                    out.redraw = true;
+                    connection::end_deleted_room(self, live);
+                } else {
+                    self.ext.with::<CollabState, _>(|c| c.live = Some(live));
+                }
             }
         }
         let (was_visible, still_visible) = self.ext.with::<CollabState, _>(|c| {
@@ -79,7 +87,9 @@ impl Session {
     /// The connection, the room, the people and their pointers, for the UI and the overlay.
     pub fn collab_view(&self) -> CollabView {
         let now = self.ports.clock.mono_ms();
-        let Some(state) = self.ext.get::<CollabState>() else { return CollabView::disconnected() };
+        let Some(state) = self.ext.get::<CollabState>() else {
+            return CollabView { access: self.access_view(), ..CollabView::disconnected() };
+        };
         let mut view = match (&state.live, &state.server) {
             (Some(live), _) => {
                 let import = self.tab_by_id(live.tab).and_then(|t| t.doc.replicated().import_progress());
@@ -88,12 +98,15 @@ impl Session {
             (None, Some(server)) => CollabView {
                 state: ConnectionState::Ready,
                 url: Some(server.to_string()),
-                text: "Server chosen. Join a room with `collab.join_room`.".to_owned(),
+                text: if state.room_deleted.is_some() { ROOM_DELETED_TEXT } else { "Server chosen. Join a room with `collab.join_room`." }
+                    .to_owned(),
                 ..CollabView::disconnected()
             },
             (None, None) => CollabView::disconnected(),
         };
         view.laser = state.laser.dots(now).collect();
+        view.access = self.access_view();
+        view.room_deleted = state.room_deleted.is_some();
         view
     }
 
@@ -347,6 +360,10 @@ fn handle(s: &mut Session, live: &mut Live, now: u64, event: CollabEvent, rest: 
             }));
         }
         CollabEvent::Image(event) => pictures::on_event(s, live, event)?,
+        CollabEvent::RoomDeleted => {
+            live.deleted = true;
+            s.collab_notify(CollabNotice::Info(ROOM_DELETED_TEXT.to_owned()));
+        }
         CollabEvent::Status(_) | CollabEvent::Presence | CollabEvent::Retention { .. } => {}
     }
     Some(())

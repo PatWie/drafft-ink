@@ -24,6 +24,7 @@ mod skips;
 mod standards;
 mod tools;
 mod wasm;
+mod worker;
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
@@ -59,6 +60,12 @@ gates:
                   builds the web app (scripts/build-web.sh), measures the wasm module and the fonts the page loads,
                   checks them against the `size` section of perf/budgets.json (xtask/src/size.rs);
                   --native: builds the shipped binaries (profile dist) and checks their sizes instead (not part of ci)
+  worker [--check-tools]
+                  the Cloudflare Worker host of the relay (apps/drafftink-worker): checks that Node 22 or newer, the pinned
+                  wasm-bindgen and the wasm32 target are installed, runs `npm ci`, `npm run typecheck` and `npm test` there,
+                  then the transport parity suite of the server against a local `wrangler dev` (it fails when a parity test
+                  skips itself); --check-tools: only the tool checks. Nothing is deployed. Takes minutes, so CI runs it as
+                  its own job (`worker`)
   ci              all of the above in order, with a summary table
 
 intro [--check]

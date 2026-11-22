@@ -8,6 +8,10 @@
 //! thread), the task stops reading the socket, TCP pushes back on the server, and the server's own slow-consumer
 //! rule applies: it drops its queued relays and sends `ResyncRequired`. Memory use stays bounded on both sides.
 //!
+//! A service token for a private server (`set_access`) goes into the handshake as two headers, under the rules of
+//! [`AccessGrant::headers_for`]. The client never follows a redirect (tungstenite does not), so a `302` to the Access
+//! login is reported as [`TransportEvent::Denied`] and the token goes nowhere else.
+//!
 //! `wss://` uses rustls with the ring provider and the operating system's root certificates (the bundled Mozilla
 //! list when the system has none). A private CA can be added with [`TlsOptions`].
 
@@ -22,9 +26,11 @@ use tokio::net::{TcpSocket, TcpStream};
 use tokio::sync::Notify;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+use tokio_tungstenite::tungstenite::http::{HeaderName, HeaderValue, Request};
 use tokio_tungstenite::tungstenite::protocol::{Message, WebSocketConfig};
 use tokio_tungstenite::{Connector, client_async_tls_with_config};
 
+use crate::access::{AccessDenial, AccessGrant, AccessOrigin};
 use crate::client::CONNECT_TIMEOUT_MS;
 use crate::transport::{Transport, TransportError, TransportEvent, WakeFn, lock};
 use crate::url::ServerUrl;
@@ -90,6 +96,7 @@ pub struct NativeTransport {
     shared: Arc<Shared>,
     generation: u64,
     conn: Option<UnboundedSender<Out>>,
+    access: Option<Arc<AccessGrant>>,
 }
 
 struct TlsCell {
@@ -118,6 +125,7 @@ impl NativeTransport {
             }),
             generation: 0,
             conn: None,
+            access: None,
         }
     }
 
@@ -148,6 +156,10 @@ impl NativeTransport {
 }
 
 impl Transport for NativeTransport {
+    fn set_access(&mut self, access: Option<AccessGrant>) {
+        self.access = access.map(Arc::new);
+    }
+
     fn open(&mut self, url: &ServerUrl) -> Result<(), TransportError> {
         let handle = self.runtime_handle()?;
         self.generation += 1;
@@ -159,6 +171,7 @@ impl Transport for NativeTransport {
             tls: Arc::clone(&self.tls),
             shared: Arc::clone(&self.shared),
             wake: Arc::clone(&self.wake),
+            access: self.access.clone(),
         };
         handle.spawn(task.run(rx));
         Ok(())
@@ -215,6 +228,7 @@ struct Connection {
     tls: Arc<TlsCell>,
     shared: Arc<Shared>,
     wake: WakeFn,
+    access: Option<Arc<AccessGrant>>,
 }
 
 /// Why a connection attempt or a running connection failed. Its text goes to the status line and the log.
@@ -226,6 +240,9 @@ enum ConnectError {
     Io(String),
     #[error("{0}")]
     Handshake(String),
+    /// The server's gate turned the handshake away. Reported as [`TransportEvent::Denied`].
+    #[error("the server's gate refused the connection")]
+    Denied(AccessDenial),
     #[error("a trusted certificate is not valid: {0}")]
     BadCertificate(String),
     #[error("{0}")]
@@ -276,16 +293,36 @@ impl Connection {
         Err(last)
     }
 
+    /// Adds the service token to the handshake when the rules allow it. True when it was added.
+    fn add_access(&self, request: &mut Request<()>) -> Result<bool, ConnectError> {
+        let Some(headers) = self.access.as_deref().and_then(|g| g.headers_for(&AccessOrigin::of(&self.url))) else {
+            return Ok(false);
+        };
+        for (name, value) in headers.pairs() {
+            // The text of these errors holds neither the name nor the value.
+            let name = HeaderName::from_bytes(name.as_bytes())
+                .map_err(|_| ConnectError::Handshake("the access token cannot be sent".to_owned()))?;
+            let mut value = HeaderValue::from_str(value)
+                .map_err(|_| ConnectError::Handshake("the access token cannot be sent".to_owned()))?;
+            value.set_sensitive(true);
+            request.headers_mut().insert(name, value);
+        }
+        Ok(true)
+    }
+
     async fn run(self, mut rx: UnboundedReceiver<Out>) {
         match self.session(&mut rx).await {
             Ok(Ended::ByUs) => {}
             Ok(Ended::ByPeer) => self.push(TransportEvent::Closed { error: None }),
+            Err(ConnectError::Denied(denial)) => self.push(TransportEvent::Denied(denial)),
             Err(e) => self.push(TransportEvent::Closed { error: Some(e.to_string()) }),
         }
     }
 
     async fn session(&self, rx: &mut UnboundedReceiver<Out>) -> Result<Ended, ConnectError> {
-        let request = self.url.to_string().into_client_request().map_err(|e| ConnectError::Handshake(e.to_string()))?;
+        let mut request =
+            self.url.to_string().into_client_request().map_err(|e| ConnectError::Handshake(e.to_string()))?;
+        let sent_access = self.add_access(&mut request)?;
         let connector = if self.url.is_secure() {
             let tls = Arc::clone(&self.tls);
             let config =
@@ -302,7 +339,7 @@ impl Connection {
             let stream = self.tcp().await?;
             client_async_tls_with_config(request, stream, Some(limits), Some(connector))
                 .await
-                .map_err(|e| ConnectError::Handshake(e.to_string()))
+                .map_err(|e| handshake_error(e, sent_access))
         };
         let timeout = Duration::from_millis(CONNECT_TIMEOUT_MS);
         let mut ws = tokio::select! {
@@ -347,6 +384,17 @@ impl Connection {
             }
         }
     }
+}
+
+/// A failed handshake. An answer that is the server's gate (a `401`, a redirect to the Access login) is a denial.
+fn handshake_error(error: tokio_tungstenite::tungstenite::Error, sent_access: bool) -> ConnectError {
+    if let tokio_tungstenite::tungstenite::Error::Http(response) = &error {
+        let body = response.body().as_deref().unwrap_or_default();
+        if let Some(denial) = AccessDenial::of_reply(response.status().as_u16(), body, sent_access) {
+            return ConnectError::Denied(denial);
+        }
+    }
+    ConnectError::Handshake(error.to_string())
 }
 
 fn build_tls(options: &TlsOptions) -> Result<Arc<rustls::ClientConfig>, ConnectError> {

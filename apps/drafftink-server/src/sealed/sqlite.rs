@@ -11,7 +11,7 @@ use drafftink_relay::{
 };
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
-use super::codec::{decode_records, encode_records};
+use drafftink_relay::codec::{decode_records, encode_records};
 
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS sealed_rooms (

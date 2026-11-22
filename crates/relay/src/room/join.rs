@@ -43,7 +43,7 @@ impl<S: RelayStore, B: BlobStore> Relay<S, B> {
         if !rejoining && self.member_count() >= self.cfg.max_peers {
             return Err(ServerMessage::error(ErrorCode::RoomFull, "This room is full. Trying again in a moment."));
         }
-        let stored = self.load_meta().map_err(|_| Self::unavailable())?;
+        let stored = self.load_meta().map_err(|e| Self::store_failure(&e, now_ms))?;
         let (state, meta) = match (stored, mode) {
             (Some(meta), _) => (RoomState::Existing, meta),
             (None, JoinMode::Open) => {
@@ -54,7 +54,7 @@ impl<S: RelayStore, B: BlobStore> Relay<S, B> {
         };
         let visited = RoomMeta { deadline_ms: self.life.deadline_after_visit(now_ms), ..meta };
         if state == RoomState::Created || visited != meta {
-            self.store.save_meta(&visited).map_err(|_| Self::unavailable())?;
+            self.quota.watch(self.store.save_meta(&visited)).map_err(|e| Self::store_failure(&e, now_ms))?;
             out.store_ops.push(StoreOp::SaveMeta);
         }
         self.meta = super::MetaState::Loaded(visited);
@@ -76,12 +76,12 @@ impl<S: RelayStore, B: BlobStore> Relay<S, B> {
             self.refuse(old, now_ms, ServerMessage::error(ErrorCode::Replaced, text), true, out);
         }
         // The answer to the join needs the records on disk, so write what is buffered first.
-        if !self.flush(now_ms, out) {
-            self.refuse(conn, now_ms, Self::unavailable(), true, out);
+        if let Err(failure) = self.flush(now_ms, out) {
+            self.refuse_flush(conn, now_ms, failure, true, out);
             return;
         }
         let Some(meta) = self.meta_now() else { return };
-        self.next_order += 1;
+        self.next_order = self.next_order.saturating_add(1);
         let order = self.next_order;
         let members_after = self.member_count() + 1;
         let rate = self.presence_share(members_after);
@@ -111,8 +111,8 @@ impl<S: RelayStore, B: BlobStore> Relay<S, B> {
         let last_seq = if last_seq > meta.head_seq { 0 } else { last_seq };
         match self.build_catchup(last_seq, true) {
             Ok(catchup) => out.send(conn, &catchup),
-            Err(_) => {
-                self.refuse(conn, now_ms, Self::unavailable(), true, out);
+            Err(e) => {
+                self.refuse_store(conn, now_ms, &e, true, out);
                 return;
             }
         }

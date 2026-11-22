@@ -57,6 +57,8 @@ pub enum ImageStatus {
     RateLimited,
     /// The store failed (503).
     Unavailable,
+    /// The host's daily capacity is used up until 00:00 UTC (503). The response carries `retry_after_ms`.
+    DailyLimit,
 }
 
 impl ImageStatus {
@@ -71,7 +73,7 @@ impl ImageStatus {
             ImageStatus::TooLarge => 413,
             ImageStatus::RoomFull => 507,
             ImageStatus::RateLimited => 429,
-            ImageStatus::Unavailable => 503,
+            ImageStatus::Unavailable | ImageStatus::DailyLimit => 503,
         }
     }
 
@@ -88,6 +90,7 @@ impl ImageStatus {
             ImageStatus::RoomFull => "room_images_full",
             ImageStatus::RateLimited => "rate_limited",
             ImageStatus::Unavailable => "unavailable",
+            ImageStatus::DailyLimit => "daily_limit",
         }
     }
 }
@@ -110,7 +113,7 @@ pub enum ImageBody {
 pub struct ImageResponse {
     /// How the request ended.
     pub status: ImageStatus,
-    /// For [`ImageStatus::RateLimited`]: when to try again.
+    /// For [`ImageStatus::RateLimited`] and [`ImageStatus::DailyLimit`]: when to try again.
     pub retry_after_ms: Option<u32>,
     /// What it carries.
     pub body: ImageBody,

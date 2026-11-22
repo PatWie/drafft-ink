@@ -13,6 +13,7 @@ use drafftink_seal::RoomKeys;
 use super::backoff::Retry;
 use super::wire::{RoomTotals, raw_file_id};
 use super::{ImageEvent, ImageProgress, ImageRefusal};
+use crate::access::AccessDenial;
 use crate::blobs::{BlobAuth, BlobOp, BlobRequest};
 
 /// Most downloads in flight (a Free-plan relay counts each request, and a browser allows 6 per host).
@@ -124,6 +125,9 @@ pub(in crate::sealed) struct Images {
     out: VecDeque<BlobRequest>,
     pub(super) events: Vec<ImageEvent>,
     pub(super) totals: RoomTotals,
+    /// The server's gate turned a request away, and the owner has not been told yet. Once per connection.
+    denial: Option<AccessDenial>,
+    denial_told: bool,
 }
 
 impl Images {
@@ -142,7 +146,22 @@ impl Images {
             out: VecDeque::new(),
             events: Vec::new(),
             totals: RoomTotals::default(),
+            denial: None,
+            denial_told: false,
         }
+    }
+
+    /// Notes that the server's gate turned a request away. Only the first one of a connection is passed on.
+    pub(super) fn note_denial(&mut self, denial: AccessDenial) {
+        if !self.denial_told {
+            self.denial_told = true;
+            self.denial = Some(denial);
+        }
+    }
+
+    /// The gate's refusal the owner has not been told yet.
+    pub(in crate::sealed) fn take_denial(&mut self) -> Option<AccessDenial> {
+        self.denial.take()
     }
 
     // ---- inputs from the owner ----------------------------------------------------------------------------------
@@ -200,6 +219,8 @@ impl Images {
     pub(in crate::sealed) fn reset(&mut self) {
         self.flights.clear();
         self.out.clear();
+        self.denial = None;
+        self.denial_told = false;
         self.list = ListPhase::Unasked;
         self.listed.clear();
         for offer in &mut self.offers {

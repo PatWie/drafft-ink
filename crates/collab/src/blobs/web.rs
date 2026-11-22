@@ -4,6 +4,11 @@
 //! queue and the wake hook is called, like the WebSocket transport. `fetch` is found on the global object, so the
 //! transport works in a page and in a worker. Redirects are an error (the `Authorization` header would go along), the
 //! browser's HTTP cache is bypassed (`no-store`), and a request ends after [`REQUEST_TIMEOUT_MS`].
+//!
+//! A browser behind Cloudflare Access carries its sign-in cookie by itself and never holds a service token
+//! (`set_access` is ignored). Every request says `X-Requested-With: XMLHttpRequest`: Access then answers an ended
+//! session with a `401` the page can read, instead of a redirect to its login that `fetch` can only report as a network
+//! error (`docs/design/collab-e2e.md` section 19.6). That `401` is marked as [`AccessDenial::SignInExpired`].
 
 use std::cell::RefCell;
 use std::collections::VecDeque;
@@ -18,6 +23,7 @@ use super::{
     BlobOp, BlobReply, BlobRequest, BlobResponse, BlobTransport, BlobTransportError, MAX_BLOB_BODY_BYTES,
     retry_after_ms,
 };
+use crate::access::AccessDenial;
 use crate::transport::WakeFn;
 
 /// A request that has not finished after this long fails. The client gives up a little later (120 s).
@@ -71,6 +77,7 @@ fn fetch_function() -> Result<Function, BlobTransportError> {
 fn build_request(request: &BlobRequest) -> Result<Request, JsValue> {
     let headers = Headers::new()?;
     headers.append("authorization", request.auth.header_value())?;
+    headers.append("x-requested-with", "XMLHttpRequest")?;
     let init = RequestInit::new();
     init.set_method(request.op.method());
     init.set_headers(&headers);
@@ -101,7 +108,9 @@ async fn run(fetch: &Function, request: &Request, head: bool) -> Result<BlobRepl
             return Err(JsValue::from_str("the answer is larger than any picture"));
         }
     }
-    Ok(BlobReply { status: response.status(), body, content_length, retry_after_ms })
+    let status = response.status();
+    let denial = AccessDenial::of_reply(status, &body, false).map(AccessDenial::in_browser);
+    Ok(BlobReply { status, body, content_length, retry_after_ms, denial })
 }
 
 /// A short text for a failed fetch. A browser says little ("Failed to fetch") on purpose.

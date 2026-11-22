@@ -7,6 +7,8 @@ use drafftink_collab::{ConnState, Peer};
 use drafftink_geom::kurbo::Point;
 use drafftink_protocol::UserInfo;
 use drafftink_scene::{Color, ElementId};
+
+use super::access::AccessView;
 use schemars::JsonSchema;
 use serde::Serialize;
 
@@ -236,6 +238,12 @@ pub struct CollabView {
     pub expires_at_ms: Option<u64>,
     /// The room is past its time limit and is deleted when the last person leaves.
     pub expiring: bool,
+    /// Whether a service token is stored for the server (a private instance): `service_token`, `none`, or `browser`
+    /// in the web app, where the browser carries the sign-in. Never a value.
+    pub access: AccessView,
+    /// The room this tab was in was deleted on request (`collab.delete_room`). The tab is a local copy now. Cleared by
+    /// the next `collab.connect` or `collab.disconnect`.
+    pub room_deleted: bool,
 }
 
 impl CollabView {
@@ -256,6 +264,8 @@ impl CollabView {
             e2e: false,
             expires_at_ms: None,
             expiring: false,
+            access: AccessView::None,
+            room_deleted: false,
         }
     }
 }

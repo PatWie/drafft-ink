@@ -9,6 +9,8 @@ use drafftink_engine::Session;
 use drafftink_engine::ports::{Clock, FileRef, Files, PortError, Ports, WriteOutcome};
 use drafftink_scene::{RandomIds, Rng64};
 
+use crate::secrets::EnvSecrets;
+
 /// Largest file the server reads or writes.
 const MAX_FILE_BYTES: u64 = 256 << 20;
 
@@ -144,10 +146,22 @@ impl Files for DiskFiles {
     }
 }
 
-/// The ports of a headless session: real clock, random ids, files inside `scope`.
+/// The ports of a headless session: real clock, random ids, files inside `scope`, and the service token of a private
+/// server when the environment has one (`DRAFFTINK_ACCESS_CLIENT_ID`, `DRAFFTINK_ACCESS_CLIENT_SECRET_FILE`, see
+/// [`crate::secrets`]). There is no network port yet, so a collab command still refuses with `port_unavailable`;
+/// the token is ready for the day there is one.
 pub fn headless_ports(scope: FileScope) -> Ports {
-    Ports::new(Box::new(SystemClock { started: Instant::now() }), Box::new(RandomIds(OsRng)))
-        .with_files(Box::new(DiskFiles { scope }))
+    let ports = Ports::new(Box::new(SystemClock { started: Instant::now() }), Box::new(RandomIds(OsRng)))
+        .with_files(Box::new(DiskFiles { scope }));
+    match EnvSecrets::from_env() {
+        Ok(Some(secrets)) => ports.with_secrets(Box::new(secrets)),
+        Ok(None) => ports,
+        Err(e) => {
+            // Without a token the server will say that it is private; the cause is here.
+            log::warn!("no access token is used: {e}");
+            ports
+        }
+    }
 }
 
 /// A headless session: the real text engine and [`headless_ports`].

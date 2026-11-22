@@ -9,9 +9,9 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use drafftink_collab::{
-    BlobAuth, BlobOp, BlobRequest, BlobResponse, BlobTransport, BlobTransportError, CollabEvent, CollabSession,
-    ImageEvent, NativeBlobTransport, NativeTransport, Resume, SealedClient, SealedConfig, ServerUrl, Transport,
-    TransportError, TransportEvent, UrlPolicy,
+    AccessGrant, BlobAuth, BlobOp, BlobRequest, BlobResponse, BlobTransport, BlobTransportError, CollabEvent,
+    CollabSession, ImageEvent, NativeBlobTransport, NativeTransport, Resume, SealedClient, SealedConfig, ServerUrl,
+    Transport, TransportError, TransportEvent, UrlPolicy,
 };
 use drafftink_doc::{FilePolicy, LoroConfig, LoroStore};
 use drafftink_protocol::v2::JoinMode;
@@ -53,11 +53,18 @@ impl Exchange {
     }
 }
 
-/// What crossed the wire, shared by every client of a test.
+/// What crossed the wire, shared by every client of a test. It also holds the two switches a test turns on a client's
+/// connection: the network cable and the count of keepalive answers.
 #[derive(Clone, Default)]
 pub struct Taps {
     frames: Arc<Mutex<Vec<Vec<u8>>>>,
     http: Arc<Mutex<Vec<Exchange>>>,
+    /// The clients whose network is cut.
+    cut: Arc<Mutex<HashSet<u8>>>,
+    /// One entry per `pong` a client received, holding the client's number.
+    pongs: Arc<Mutex<Vec<u8>>>,
+    /// The service token the clients of this test hand to their transports, for a server behind Cloudflare Access.
+    access: Option<AccessGrant>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -84,32 +91,93 @@ impl Taps {
     pub fn push_frame(&self, bytes: Vec<u8>) {
         lock(&self.frames).push(bytes);
     }
+
+    /// The same taps, with clients that carry `access` (or none). What was recorded so far and what is recorded from
+    /// now on is shared with the original.
+    pub fn with_access(&self, access: Option<AccessGrant>) -> Taps {
+        Taps { access, ..self.clone() }
+    }
+
+    /// The service token of the clients, as the headers a hand-made request needs.
+    pub fn access_headers(&self) -> Vec<(&'static str, String)> {
+        access_headers(self.access.as_ref())
+    }
+
+    /// Cuts client `n` off the network: its open connection drops, and every new attempt fails until
+    /// [`restore`](Self::restore). The client sees what a lost network looks like (a closed socket, a failed open).
+    pub fn cut(&self, n: u8) {
+        lock(&self.cut).insert(n);
+    }
+
+    /// Plugs client `n` back in. It reconnects by itself, after its backoff.
+    pub fn restore(&self, n: u8) {
+        lock(&self.cut).remove(&n);
+    }
+
+    fn is_cut(&self, n: u8) -> bool {
+        lock(&self.cut).contains(&n)
+    }
+
+    /// How many keepalive answers (`pong`) client `n` has received.
+    pub fn pongs(&self, n: u8) -> usize {
+        lock(&self.pongs).iter().filter(|&&who| who == n).count()
+    }
+}
+
+/// The headers of a service token for a request to the origin it was stored for.
+pub fn access_headers(grant: Option<&AccessGrant>) -> Vec<(&'static str, String)> {
+    grant
+        .and_then(|g| g.headers_for(g.origin()))
+        .map(|headers| headers.pairs().into_iter().map(|(name, value)| (name, value.to_owned())).collect())
+        .unwrap_or_default()
 }
 
 /// A websocket transport that keeps every frame that crosses it, in both directions.
 pub struct Recording {
+    who: u8,
     inner: NativeTransport,
-    frames: Arc<Mutex<Vec<Vec<u8>>>>,
+    taps: Taps,
+    /// A connection is open that the cable cut has not been reported for yet.
+    connected: bool,
 }
 
 impl Transport for Recording {
+    fn set_access(&mut self, access: Option<AccessGrant>) {
+        self.inner.set_access(access);
+    }
     fn open(&mut self, url: &ServerUrl) -> Result<(), TransportError> {
+        if self.taps.is_cut(self.who) {
+            return Err(TransportError::Failed("the network is cut".to_owned()));
+        }
+        self.connected = true;
         self.inner.open(url)
     }
     fn send(&mut self, frame: Vec<u8>) -> Result<(), TransportError> {
-        lock(&self.frames).push(frame.clone());
+        lock(&self.taps.frames).push(frame.clone());
         self.inner.send(frame)
     }
     fn send_text(&mut self, text: &str) -> Result<(), TransportError> {
         self.inner.send_text(text)
     }
     fn close(&mut self) {
+        self.connected = false;
         self.inner.close();
     }
     fn poll(&mut self) -> Option<TransportEvent> {
+        if self.connected && self.taps.is_cut(self.who) {
+            // The cable is pulled: the socket dies without a goodbye, and nothing it had queued arrives any more.
+            self.connected = false;
+            self.inner.close();
+            return Some(TransportEvent::Closed { error: Some("the network is cut".to_owned()) });
+        }
         let event = self.inner.poll()?;
-        if let TransportEvent::Message(bytes) = &event {
-            lock(&self.frames).push(bytes.clone());
+        match &event {
+            TransportEvent::Message(bytes) => lock(&self.taps.frames).push(bytes.clone()),
+            TransportEvent::Text(text) if text == drafftink_protocol::KEEPALIVE_PONG => {
+                lock(&self.taps.pongs).push(self.who);
+            }
+            TransportEvent::Closed { .. } => self.connected = false,
+            _ => {}
         }
         Some(event)
     }
@@ -136,6 +204,10 @@ pub struct RecordingBlobs {
 }
 
 impl BlobTransport for RecordingBlobs {
+    fn set_access(&mut self, access: Option<AccessGrant>) {
+        self.inner.set_access(access);
+    }
+
     fn send(&mut self, mut request: BlobRequest) -> Result<(), BlobTransportError> {
         if let Some(auth) = &self.options.auth_override {
             request.auth = auth.clone();
@@ -276,14 +348,16 @@ pub fn peer(n: u8, key: &RoomKey, url: &str, mode: JoinMode, taps: &Taps, option
         jitter_seed: u64::from(n),
         replace_when_trimmed: false,
     };
-    let transport = Recording { inner: NativeTransport::new(Arc::new(|| {})), frames: Arc::clone(&taps.frames) };
+    let mut transport =
+        Recording { who: n, inner: NativeTransport::new(Arc::new(|| {})), taps: taps.clone(), connected: false };
+    transport.set_access(taps.access.clone());
     let mut client = SealedClient::new(cfg).unwrap();
     client.start(0);
     let mut store =
         LoroStore::with_config(LoroConfig { peer_id: Some(u64::from(n) + 1000), ..Default::default() }).unwrap();
     store.set_file_policy(FilePolicy::External);
     let mut session = CollabSession::new(client, transport);
-    session.set_blobs(Box::new(RecordingBlobs {
+    let mut blobs = RecordingBlobs {
         who: n,
         inner: NativeBlobTransport::new(Arc::new(|| {})),
         http: Arc::clone(&taps.http),
@@ -291,7 +365,9 @@ pub fn peer(n: u8, key: &RoomKey, url: &str, mode: JoinMode, taps: &Taps, option
         lose: HashSet::new(),
         options,
         puts: 0,
-    }));
+    };
+    blobs.set_access(taps.access.clone());
+    session.set_blobs(Box::new(blobs));
     Peer { n, session, store, images: Vec::new() }
 }
 

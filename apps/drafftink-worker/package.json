@@ -1,0 +1,29 @@
+{
+  "name": "drafftink-worker",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Cloudflare Worker and Durable Object around the Rust relay core (docs/design/collab-e2e.md, sections 14 and 19).",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build:wasm": "bash scripts/build-wasm.sh",
+    "pretest": "test -f pkg/drafftink_worker_bg.wasm && test -f pkg-node/drafftink_worker.js || npm run build:wasm",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
+    "test": "vitest run",
+    "test:access": "vitest run --project access",
+    "dev": "bash scripts/dev.sh",
+    "smoke:private": "node scripts/private-smoke.mjs",
+    "pretypecheck": "test -f pkg/drafftink_worker_bg.wasm && test -f pkg-node/drafftink_worker.js || npm run build:wasm"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "1.9.0",
+    "@cloudflare/workers-types": "5.20261121.1",
+    "@types/node": "22.15.17",
+    "typescript": "5.9.3",
+    "vitest": "5.1.1",
+    "wrangler": "4.166.0",
+    "ws": "8.21.0"
+  }
+}

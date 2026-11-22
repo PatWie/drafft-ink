@@ -1636,6 +1636,7 @@ dependencies = [
  "wasm-bindgen-futures",
  "web-sys",
  "webpki-roots",
+ "zeroize",
 ]
 
 [[package]]
@@ -1933,6 +1934,7 @@ dependencies = [
  "clap",
  "drafftink-collab",
  "drafftink-doc",
+ "drafftink-profile",
  "drafftink-protocol",
  "drafftink-relay",
  "drafftink-scene",
@@ -1940,6 +1942,7 @@ dependencies = [
  "futures-util",
  "loro",
  "object_store",
+ "ring",
  "rusqlite",
  "serde_json",
  "sha2 0.10.9",
@@ -1952,6 +1955,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "tungstenite 0.29.0",
+ "ureq",
 ]
 
 [[package]]
@@ -2049,6 +2053,26 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
+]
+
+[[package]]
+name = "drafftink-worker"
+version = "0.2.0"
+dependencies = [
+ "base64 0.22.1",
+ "base64ct",
+ "drafftink-protocol",
+ "drafftink-relay",
+ "drafftink-seal",
+ "js-sys",
+ "proptest",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "thiserror 2.0.21",
+ "tungstenite 0.29.0",
+ "ureq",
+ "wasm-bindgen",
 ]
 
 [[package]]

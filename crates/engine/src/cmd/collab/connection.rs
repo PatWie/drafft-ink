@@ -14,6 +14,7 @@ use drafftink_seal::RoomKey;
 use drafftink_scene::{Color, SceneRead};
 use serde_json::Value;
 
+use super::access::grant_for;
 use super::address::RoomName;
 use super::join_check::check_local_pictures;
 use super::pictures::Pictures;
@@ -161,6 +162,7 @@ pub(super) fn start(
         announced_hold: false,
         follow_view: None,
         pictures: Pictures::new(sealed),
+        deleted: false,
     };
     s.tab_mut().ext.set(RoomBinding(Some(room.to_string())));
     let sealed = binding.map(|(key, resume)| SealedRoom { key, server: server.to_string(), resume, joined_ms: s.now_ms() });
@@ -170,6 +172,7 @@ pub(super) fn start(
     s.ext.with::<CollabState, _>(|c| {
         c.server = None;
         c.token = token;
+        c.room_deleted = None;
         c.live = Some(live);
     });
     s.collab_poll();
@@ -208,10 +211,17 @@ fn prepare(
     on_local: OnLocal,
     user: UserInfo,
 ) -> Result<Prepared, StartError> {
+    // The service token of a private server, bound to its origin. The transports send it to that origin only.
+    let access = grant_for(s, server).unwrap_or_else(|e| {
+        // The token is not sent, and the server will say it is private. The person learns why.
+        s.collab_notify(CollabNotice::Info(format!("The stored access token could not be read, so none is sent: {e}.")));
+        None
+    });
     let Some(net) = s.ports.net.as_mut() else {
         return Err(PortError::Unsupported("no network port".to_owned()).into());
     };
-    let transport = net.open_transport()?;
+    let mut transport = net.open_transport()?;
+    transport.set_access(access.clone());
     let client_bits = net.random();
     let jitter_bits = net.random();
     let client_id = ClientId::from_bytes(client_bits.to_be_bytes());
@@ -244,7 +254,10 @@ fn prepare(
                 replace_when_trimmed,
             };
             // A shell without HTTP still runs the room; the pictures are then missing, and `start` says so once.
-            let blobs = net.open_blob_transport().ok();
+            let blobs = net.open_blob_transport().ok().map(|mut b| {
+                b.set_access(access);
+                b
+            });
             Prepared { transport, blobs, client: SealedClient::new(cfg)?.into(), room: RoomRef::Sealed(id), binding: Some(kept) }
         }
     })
@@ -266,6 +279,7 @@ pub(super) fn leave(s: &mut Session, forget_server: bool) -> Option<(String, Tab
         if forget_server {
             c.server = None;
             c.token = None;
+            c.room_deleted = None;
         }
         c.live.take()
     });
@@ -279,11 +293,8 @@ pub(super) fn leave(s: &mut Session, forget_server: bool) -> Option<(String, Tab
         live.session.client_mut().leave(now, t.doc.replicated_mut());
         // The goodbye and the close are outputs of the client; the pump hands them to the transport.
         live.session.pump(now, t.doc.replicated_mut());
-        t.ext.set(RoomBinding(None));
-        // Leaving forgets the key of the tab. The document stays as a local copy, and its pictures are embedded again.
-        t.ext.set(SealedBinding(None));
-        t.doc.replicated_mut().set_file_policy(FilePolicy::Embedded);
     }
+    unbind_tab(s, tab);
     if !forget_server {
         // The server stays chosen, so the next `collab.join_room` needs no `collab.connect`.
         let url = live.session.client().url().clone();
@@ -294,6 +305,36 @@ pub(super) fn leave(s: &mut Session, forget_server: bool) -> Option<(String, Tab
         });
     }
     Some((room, tab))
+}
+
+/// The tab stops being the copy of its room: the key is forgotten (so the saved workspace has no link any more), the
+/// document stays as a local copy, and its pictures are embedded again.
+fn unbind_tab(s: &mut Session, tab: TabId) {
+    let Some(t) = s.tab_by_id_mut(tab) else { return };
+    t.ext.set(RoomBinding(None));
+    t.ext.set(SealedBinding(None));
+    t.doc.replicated_mut().set_file_policy(FilePolicy::Embedded);
+}
+
+/// The relay deleted the room of `live` on request and closed the connection. The tab becomes a local copy the way
+/// `collab.leave_room` makes one, minus the goodbye (the connection is gone): the document stays, the room's key and
+/// the saved link are dropped, the chosen server stays, and the state remembers that the room was deleted.
+pub(super) fn end_deleted_room(s: &mut Session, live: Live) {
+    let tab = live.tab;
+    finish_import(s, tab);
+    keep_pictures(s, tab);
+    if let Some(t) = s.tab_by_id_mut(tab) {
+        t.doc.replicated_mut().set_stage_import_bytes(usize::MAX);
+    }
+    unbind_tab(s, tab);
+    let url = live.session.client().url().clone();
+    let token = live.session.client().auth_token().cloned();
+    let room = live.room.to_string();
+    s.ext.with::<CollabState, _>(|c| {
+        c.server = Some(url);
+        c.token = token;
+        c.room_deleted = Some(room);
+    });
 }
 
 /// Before a tab stops being a room's copy: takes every picture of the room that the blob cache has into the tab, so

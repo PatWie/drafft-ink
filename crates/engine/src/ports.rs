@@ -5,6 +5,7 @@
 //! commands that need it refuse with `port_unavailable`. Nothing here awaits: the shell resolves anything
 //! asynchronous before it calls a command.
 
+pub use drafftink_collab::{AccessCredentials, AccessError, AccessOrigin};
 use drafftink_collab::{BlobTransport, Transport};
 use drafftink_scene::{Color, Document, ElementId, IdSource};
 use schemars::JsonSchema;
@@ -264,6 +265,26 @@ pub trait Net {
     }
 }
 
+/// Where the service tokens of private servers are kept (`docs/design/collab-e2e.md` section 19.6). One token per
+/// server origin. The native app keeps them in a file only its user can read, the headless programs read them from
+/// the environment, and the web build has no such port: a browser holds the sign-in cookie itself.
+///
+/// A secret is never part of a setting, a command output or the ring. This port is the only place that holds one.
+pub trait Secrets {
+    /// The token stored for `origin`, if any.
+    fn get(&self, origin: &AccessOrigin) -> Result<Option<AccessCredentials>, PortError>;
+    /// Stores the token for `origin`, replacing an earlier one.
+    fn put(&mut self, origin: &AccessOrigin, credentials: AccessCredentials) -> Result<(), PortError>;
+    /// Removes the token of `origin`. True when there was one. Removing a missing token is not an error.
+    fn delete(&mut self, origin: &AccessOrigin) -> Result<bool, PortError>;
+    /// A token that is not stored for any origin: one the program was started with (a headless program reads it from
+    /// the environment). The session uses it only for the server of the setting `collab.server_url`, never for another
+    /// one. The default is none.
+    fn ambient(&self) -> Option<AccessCredentials> {
+        None
+    }
+}
+
 /// Names a port, for `CommandSpec::ports` and refusal text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PortKind {
@@ -279,12 +300,14 @@ pub enum PortKind {
     Net,
     /// [`Clock`].
     Clock,
+    /// [`Secrets`].
+    Secrets,
 }
 
 impl PortKind {
     /// Every kind.
-    pub const ALL: [PortKind; 6] =
-        [Self::Clipboard, Self::Storage, Self::Files, Self::Renderer, Self::Net, Self::Clock];
+    pub const ALL: [PortKind; 7] =
+        [Self::Clipboard, Self::Storage, Self::Files, Self::Renderer, Self::Net, Self::Clock, Self::Secrets];
 
     /// Lower-case name.
     pub const fn name(self) -> &'static str {
@@ -295,6 +318,7 @@ impl PortKind {
             Self::Renderer => "renderer",
             Self::Net => "net",
             Self::Clock => "clock",
+            Self::Secrets => "secrets",
         }
     }
 }
@@ -315,12 +339,14 @@ pub struct Ports {
     pub renderer: Option<Box<dyn Renderer>>,
     /// The collab transport.
     pub net: Option<Box<dyn Net>>,
+    /// The service tokens of private servers.
+    pub secrets: Option<Box<dyn Secrets>>,
 }
 
 impl Ports {
     /// Ports with only the mandatory ones. Add the others with the `with_*` methods.
     pub fn new(clock: Box<dyn Clock>, ids: Box<dyn IdSource>) -> Self {
-        Self { clock, ids, clipboard: None, storage: None, files: None, renderer: None, net: None }
+        Self { clock, ids, clipboard: None, storage: None, files: None, renderer: None, net: None, secrets: None }
     }
 
     /// Adds a clipboard.
@@ -358,6 +384,13 @@ impl Ports {
         self
     }
 
+    /// Adds the store of service tokens.
+    #[must_use]
+    pub fn with_secrets(mut self, p: Box<dyn Secrets>) -> Self {
+        self.secrets = Some(p);
+        self
+    }
+
     /// True when the session has this port.
     pub fn has(&self, kind: PortKind) -> bool {
         match kind {
@@ -367,6 +400,7 @@ impl Ports {
             PortKind::Renderer => self.renderer.is_some(),
             PortKind::Net => self.net.is_some(),
             PortKind::Clock => true,
+            PortKind::Secrets => self.secrets.is_some(),
         }
     }
 }
@@ -519,8 +553,8 @@ pub mod fake {
     use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
     use super::{
-        ClipKind, ClipPayload, Clipboard, Clock, FileRef, Files, Net, Ns, PortError, Ports, RenderRequest, Renderer,
-        SceneView, Storage, StoredInfo, WriteOutcome,
+        AccessCredentials, AccessOrigin, ClipKind, ClipPayload, Clipboard, Clock, FileRef, Files, Net, Ns, PortError,
+        Ports, RenderRequest, Renderer, SceneView, Secrets, Storage, StoredInfo, WriteOutcome,
     };
     use drafftink_collab::{BlobTransport, LoopbackBlobServer, LoopbackServer, Transport, loopback, loopback_blobs};
     use drafftink_scene::{Rng64, SeqIds, SplitMix64};
@@ -846,6 +880,73 @@ pub mod fake {
         }
     }
 
+    /// Service tokens in memory.
+    #[derive(Debug, Clone, Default)]
+    pub struct FakeSecrets {
+        data: Arc<Mutex<BTreeMap<AccessOrigin, AccessCredentials>>>,
+        ambient: Arc<Mutex<Option<AccessCredentials>>>,
+        fail: Arc<AtomicBool>,
+    }
+
+    impl FakeSecrets {
+        /// No tokens.
+        pub fn new() -> Self {
+            Self::default()
+        }
+
+        /// The token stored for `origin`, for assertions.
+        pub fn stored(&self, origin: &AccessOrigin) -> Option<AccessCredentials> {
+            lock(&self.data).get(origin).cloned()
+        }
+
+        /// How many tokens are stored.
+        pub fn len(&self) -> usize {
+            lock(&self.data).len()
+        }
+
+        /// True when none is stored.
+        pub fn is_empty(&self) -> bool {
+            self.len() == 0
+        }
+
+        /// Gives the store an ambient token, as a headless program started with one has.
+        pub fn set_ambient(&self, credentials: Option<AccessCredentials>) {
+            *lock(&self.ambient) = credentials;
+        }
+
+        /// Makes every later call fail (`true`) or work again (`false`), as a locked file would.
+        pub fn fail_calls(&self, on: bool) {
+            self.fail.store(on, Ordering::SeqCst);
+        }
+
+        fn check(&self) -> Result<(), PortError> {
+            if self.fail.load(Ordering::SeqCst) {
+                Err(PortError::Failed("the store of access tokens cannot be used".to_owned()))
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    impl Secrets for FakeSecrets {
+        fn get(&self, origin: &AccessOrigin) -> Result<Option<AccessCredentials>, PortError> {
+            self.check()?;
+            Ok(self.stored(origin))
+        }
+        fn put(&mut self, origin: &AccessOrigin, credentials: AccessCredentials) -> Result<(), PortError> {
+            self.check()?;
+            lock(&self.data).insert(origin.clone(), credentials);
+            Ok(())
+        }
+        fn delete(&mut self, origin: &AccessOrigin) -> Result<bool, PortError> {
+            self.check()?;
+            Ok(lock(&self.data).remove(origin).is_some())
+        }
+        fn ambient(&self) -> Option<AccessCredentials> {
+            lock(&self.ambient).clone()
+        }
+    }
+
     /// Handles onto one fake of every port. [`Fakes::ports`] builds the [`Ports`] for a session; the
     /// fields stay usable for assertions.
     #[derive(Debug, Clone)]
@@ -862,6 +963,8 @@ pub mod fake {
         pub renderer: FakeRenderer,
         /// The transport.
         pub net: FakeNet,
+        /// The service tokens.
+        pub secrets: FakeSecrets,
     }
 
     impl Default for Fakes {
@@ -881,6 +984,7 @@ pub mod fake {
                 files: FakeFiles::new(),
                 renderer: FakeRenderer::new(),
                 net: FakeNet::new(),
+                secrets: FakeSecrets::new(),
             }
         }
 
@@ -892,6 +996,7 @@ pub mod fake {
                 .with_files(Box::new(self.files.clone()))
                 .with_renderer(Box::new(self.renderer.clone()))
                 .with_net(Box::new(self.net.clone()))
+                .with_secrets(Box::new(self.secrets.clone()))
         }
 
         /// Ports with only the clock and ids, as a headless session without a GPU or a browser has.

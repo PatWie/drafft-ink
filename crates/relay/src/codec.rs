@@ -1,9 +1,10 @@
-//! How the stores of this crate write records and the room meta. Plain fixed-width little-endian fields; every
-//! reader is bounds-checked, because a file on disk is input too.
+//! The byte layout that the durable stores of a relay use for the room meta, a segment of records and a snapshot.
+//! Plain fixed-width little-endian fields; every reader is bounds-checked, because a file on disk is input too.
+//! The tokio server (files and SQLite) and the Durable Object host share these functions, so a room has one format.
 
+use crate::store::{RoomMeta, StoreError, StoredSnapshot};
 use drafftink_protocol::ClientId;
 use drafftink_protocol::v2::StoredRecord;
-use drafftink_relay::{RoomMeta, StoreError};
 
 /// The format version of a meta file.
 const META_VERSION: u8 = 1;
@@ -42,7 +43,8 @@ impl<'a> Reader<'a> {
     }
 }
 
-pub(super) fn encode_meta(meta: &RoomMeta) -> Vec<u8> {
+/// The bytes of a room meta, with a format version in front.
+pub fn encode_meta(meta: &RoomMeta) -> Vec<u8> {
     let mut out = Vec::with_capacity(META_BYTES);
     out.push(META_VERSION);
     out.extend_from_slice(&meta.head_seq.to_le_bytes());
@@ -55,7 +57,9 @@ pub(super) fn encode_meta(meta: &RoomMeta) -> Vec<u8> {
     out
 }
 
-pub(super) fn decode_meta(bytes: &[u8]) -> Result<RoomMeta, StoreError> {
+/// Reads a room meta written by [`encode_meta`]. A short, long or foreign-version input is
+/// [`StoreError::Corrupt`].
+pub fn decode_meta(bytes: &[u8]) -> Result<RoomMeta, StoreError> {
     let mut r = Reader(bytes);
     let [version] = r.array()?;
     if version != META_VERSION {
@@ -73,7 +77,9 @@ pub(super) fn decode_meta(bytes: &[u8]) -> Result<RoomMeta, StoreError> {
     if r.is_empty() { Ok(meta) } else { Err(corrupt("the room meta has trailing bytes")) }
 }
 
-pub(super) fn encode_records(records: &[StoredRecord]) -> Vec<u8> {
+/// The bytes of a segment: its records one after the other, each with its sequence number, sender, counter and
+/// sealed bytes.
+pub fn encode_records(records: &[StoredRecord]) -> Vec<u8> {
     let size = records.iter().map(|r| RECORD_HEAD + r.record.len()).sum();
     let mut out = Vec::with_capacity(size);
     for record in records {
@@ -86,7 +92,9 @@ pub(super) fn encode_records(records: &[StoredRecord]) -> Vec<u8> {
     out
 }
 
-pub(super) fn decode_records(bytes: &[u8]) -> Result<Vec<StoredRecord>, StoreError> {
+/// Reads the records of a segment written by [`encode_records`]. Any cut or hostile length is
+/// [`StoreError::Corrupt`].
+pub fn decode_records(bytes: &[u8]) -> Result<Vec<StoredRecord>, StoreError> {
     let mut r = Reader(bytes);
     let mut out = Vec::new();
     while !r.is_empty() {
@@ -99,18 +107,19 @@ pub(super) fn decode_records(bytes: &[u8]) -> Result<Vec<StoredRecord>, StoreErr
     Ok(out)
 }
 
-/// A snapshot file or row: the cover, then the sealed record.
-pub(super) fn encode_snapshot(covers_seq: u64, record: &[u8]) -> Vec<u8> {
+/// The bytes of a snapshot file or row: the sequence number it covers, then the sealed record.
+pub fn encode_snapshot(covers_seq: u64, record: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(8 + record.len());
     out.extend_from_slice(&covers_seq.to_le_bytes());
     out.extend_from_slice(record);
     out
 }
 
-pub(super) fn decode_snapshot(bytes: &[u8]) -> Result<drafftink_relay::StoredSnapshot, StoreError> {
+/// Reads a snapshot written by [`encode_snapshot`].
+pub fn decode_snapshot(bytes: &[u8]) -> Result<StoredSnapshot, StoreError> {
     let mut r = Reader(bytes);
     let covers_seq = r.u64()?;
-    Ok(drafftink_relay::StoredSnapshot { covers_seq, record: r.0.to_vec() })
+    Ok(StoredSnapshot { covers_seq, record: r.0.to_vec() })
 }
 
 #[cfg(test)]

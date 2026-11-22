@@ -48,6 +48,14 @@ drafftink-collab = { path = "../../crates/collab", version = "0.2.0" }
 drafftink-scene = { path = "../../crates/scene", version = "0.2.0" }
 # Only to check that SERVED_SCHEMA is the schema of the document crate.
 drafftink-doc = { path = "../../crates/doc" }
+# The transport parity suite (tests/parity): a blocking HTTP client for the picture routes, a blocking WebSocket for the
+# hand-made joins, and the `SKIPPED:` line of a gated target.
+drafftink-profile = { path = "../../crates/profile", version = "0.2.0" }
+ureq.workspace = true
+tungstenite = { workspace = true, features = ["handshake"] }
+# The stand-in for Cloudflare Access (tests/parity/stand_in.rs) signs RS256 tokens with a committed test key; ring is
+# already in the tree through rustls.
+ring = "0.17"
 tokio-tungstenite.workspace = true
 tempfile.workspace = true
 sha2.workspace = true

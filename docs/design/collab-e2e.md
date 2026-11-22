@@ -763,6 +763,73 @@ Pictures of an encrypted room are files now. Differences and gaps, with the reas
 - **Commands.** One gate (`cmd/image_room.rs`) covers `image.insert`, `clipboard.paste`, `library.insert` and `doc.open` with merge: `image_too_large` (with the real size, and an offer to run again with the new argument `shrink: true`, which uses `fit_into`) and `room_images_full`, before the first change. `doc.export` has `missing_images: refuse | placeholder`, reads the cache first, and refuses `images_pending` (online; the shells re-run it through `Refusal::is_pending`, and after 30 s it becomes `images_unavailable`) or `images_unavailable`. `doc.save` embeds what the tab holds and reports `images_missing`. Join with embedded pictures refuses `local_too_large_for_room` before anything is sent. Leaving a room puts the policy back to `Embedded` and pulls the cached pictures into the tab. Named versions keep the file ids; `version.open` takes bytes from the tab or the cache and warns about the rest.
 - `clipboard.copy_as` is not gated. A batch step refused with `images_pending` fails the batch; only `render_pending` is waited for.
 
+### 14.5 What phase 3 built (demo), and where it differs from the text above (2026-11-22)
+
+`apps/drafftink-worker` (`drafftink-worker`, L7) exists: a TypeScript Worker and Durable Object (`Room`) around the Rust core,
+which is `drafftink-relay` compiled to wasm with a thin layer of adapters. `apps/drafftink-worker/README.md` has the commands,
+the variables and the test list. What was built:
+
+- **Relay core additions** (`crates/relay`): `Relay::restore_member`, `restore_waiting`, `heard`, `member_of` for a core that is
+  rebuilt after a hibernation (a restored member's first frame loads the room lazily), `StoreError::DailyLimit` with
+  `Output::quota_hit`, `ImageStatus::DailyLimit` and `ms_until_utc_midnight` (a failed flush on the daily limit sheds every
+  connection with `Error{DailyLimit}` instead of retrying every second), and the store codec as the public module
+  `drafftink_relay::codec`, which the server and the Worker share.
+- **The Worker** (`src/index.ts`): `/r/<id>/ws`, `/r/<id>/f`, `/r/<id>/f/<name>`, `/api/status`; the room id and the picture
+  name are checked, picture requests are membership-checked from the `Authorization` header and size-checked
+  (`Content-Length`) before any object is called, a WebSocket upgrade passes the `Origin` check against `ALLOWED_ORIGINS`,
+  and a used-up daily limit that an object reported is remembered per isolate until 00:00 UTC.
+- **The room** (`src/room.ts`): SQLite-backed, hibernation API, `ping`/`pong` as a runtime auto-response, one attachment
+  per socket, the core rebuilt on every wake, timers (`setTimeout` within a minute) and alarms (farther wakes, only when
+  they change), deletion by `deleteAlarm()` then `deleteAll()`, every storage exception mapped, a `BlobBackend` seam for R2.
+- **Configuration**: one template, `deploy/cloudflare/wrangler.toml.in`, rendered by
+  `apps/drafftink-worker/scripts/render-config.sh <demo|private>`; the Worker reads only the variables of 19.8.
+- **Tests**: Rust tests of the adapters and of the core over an in-memory host; 62 vitest tests on miniflare (routing,
+  hibernation, retention with `runDurableObjectAlarm`, quota, the canary); fixtures made by a native Rust test with a known
+  nonce source; an ignored smoke test against `wrangler dev`, which also showed a real alarm deleting a room with
+  `--var ROOM_TTL_SECS:3`.
+
+Differences and gaps, with the reason:
+
+- **The Worker cannot check membership before a WebSocket upgrade.** The proof is in the first frame, and a socket cannot be
+  handed to an object after the Worker has accepted it. A stranger's upgrade therefore costs one object request, and the
+  core refuses him at `Join` (`Unauthorized`). Section 15's "the Worker rejects a non-member without calling the object"
+  holds for the picture routes, which carry the proof in a header. The `Origin` check and the room id check do run before
+  the object.
+- **A hibernated object does not run its timers.** The core's `wake_at` is mapped to `setTimeout` within 60 seconds (this keeps
+  a room with people awake, as designed) and to an alarm beyond that. A socket that connected and never sent `Join` keeps the
+  room awake for its 10 second join timeout; `evictDurableObject` in the tests waits for it.
+- **`Joined.limits` and the picture limits come from the variables only**, validated by the core against the protocol
+  ceilings. The private table in 19.8 asks for 500 MiB and 2,000 pictures per room, which the protocol ceilings (50 MiB, 200)
+  refuse. The ceilings must be raised in `drafftink-protocol` before the private environment can announce more.
+- **The daily-limit error texts are a guess.** Cloudflare does not document them (collab-spike section 7), so `src/host-error.ts`
+  treats an exception as a used-up limit when its message contains words like "daily", "quota", "free tier" or "spending
+  cap". Anything else is `Unavailable`. The first real-account run must replace the guess with the exact text.
+- **Not built (other phases):** the Access JWT check (a hook in `src/access-hook.ts` refuses every request while
+  `ACCESS_REQUIRED` is true, so an environment cannot go live unprotected by mistake), R2 (`BLOB_STORE=r2` answers a
+  `500 bad_config`; the seam and the steps are in `src/blobs.ts`), `DeleteRoom` beyond what the core does (an R2 purge),
+  the `Registry` object, Turnstile, and the Makefile (`make cf-config` fills placeholders that the new template no longer
+  has; the exact change is in the README of the Worker).
+- **No `wasm-opt`.** The module is 360 KiB unoptimised (`release-wasm`); the spike's 47 KiB core had no relay in it. Far under
+  the 64 MiB limit, but the startup time of the module under the real 1 second limit is part of the open checks.
+
+Real-account checks still open (the list of `collab-spike.md`, with what phase 3 adds):
+
+1. Free-plan CPU of a 4 MiB picture `PUT` through the Worker and the object, and of a 15 MiB frame (10 ms against 30 s; error 1102).
+2. The exact exception text, HTTP status and WebSocket close code at each Free daily limit (requests, rows written, duration),
+   as seen from `stub.fetch`, `webSocketMessage` and `sql.exec`: replaces the word match of `host-error.ts`.
+3. Spending caps on Free; on Paid the text `Exceeded the account's spending cap for Durable Objects.` (the match covers it).
+4. A 48 hour alarm on the real service (`getAlarm()` after a day), and `deleteAll()` without `deleteAlarm()` with the final compatibility date.
+5. Whether `ping` auto-responses count as requests, and whether an idle object that only gets pings has zero duration.
+6. The real SQLite row ceiling (8 MB against 8 MiB): a 4 MiB picture is far below, but the 413 limit assumes it.
+7. `CF-Connecting-IP` inside the object (not used yet).
+8. The Access checks of 19.12 (cookie on an upgrade, service token on an upgrade, session expiry with an open socket).
+9. `workers_dev` and preview URLs actually off after the first deploy of each environment.
+10. Static assets: the Worker request counter does not move for static hits.
+11. The bundle upload on Free with the real core, and its startup time.
+12. New in phase 3: that the runtime's `getWebSocketAutoResponseTimestamp` is current for a socket that only pings across a
+    hibernation on the real service (the spike saw it locally; the tests here cover a restored member only through `restore_member`, not through a real wake that follows a ping),
+    and that `ctx.getWebSockets()` after a wake lists exactly the sockets with their attachments.
+
 ---
 
 ## 15. Testing plan
@@ -1176,3 +1243,94 @@ Repository: `docs/protocol.md`, `docs/collab.md`, `docs/server.md`, `docs/crdt.m
 A sealed joiner stayed empty when the room held one record of 256 KiB or more (about 3,000 rectangles in one commit) after a small first snapshot. The relay, the frames and the seal were not the cause: the same room was joined whole by `SealedClient` over the loopback and over the `serve` process at 1,000, 3,000 and 10,000 elements as a seeded snapshot, a log tail of 450 records and a compacted room. The cause was `LoroStore::apply_remote` in `crates/doc` with `stage_import_bytes` set (the engine sets it to 256 KiB for every tab): it staged a big message into a fresh CRDT document that had thrown away the history the replica already held (the room's first snapshot, with the schema operations). The big update then waited for operations that were gone, `import` reported them pending, and the client said "Connected. All changes are shared." over an empty drawing.
 
 Fixed in `begin_staged` (the fresh document takes over the old history first). The sealed client now also checks `LoroStore::has_pending_remote` when the catch-up ends and says "Part of this room could not be loaded because some of its saved history is missing" with the action `SaveCopy`, so a room whose log really lacks history is never a silent empty joiner. Protocol v1 rooms had the same document bug; their client recovered by asking the server for the room again (`sync_requests` 1), which the new test in `crates/collab/tests/server.rs` now requires to be 0. A drawing over the room limit is refused in plain words (`RoomFull`, "This room holds as much as a room may ... Save a copy") and stays on the device; that was already so and is tested at the limit and one byte over.
+
+### 14.6 What phase 3P built in the native client (2026-11-22)
+
+The client half of the private instance (section 19): the `Secrets` port, the Access service token on the native transports, and the commands `collab.set_access`, `collab.clear_access` and `collab.delete_room`. The Worker half is section 14.5. The rules and their tests are in `docs/collab.md`, "Access service token"; the command rows are in `docs/commands.md` section 2.16.
+
+**What exists**
+
+- **`AccessCredentials`, `AccessOrigin`, `AccessGrant`, `AccessDenial`** (`drafftink-collab`, `access.rs`). The credentials have no `Display`, print `AccessCredentials(<hidden>)` and keep both values in `zeroize::Zeroizing` buffers. A grant binds them to one origin, and `AccessGrant::headers_for` is the only way out. `AccessDenial::of_reply(status, body, sent)` decides whether an answer is the gate's.
+- **The plumbing.** `Transport::set_access` and `BlobTransport::set_access` (default: ignored, which is right for the browser), `TransportEvent::Denied(AccessDenial)`, `BlobReply::denial`, `StopReason::AccessDenied`, `explain_access` (the three texts of 19.6). `NativeTransport` adds the two headers to the handshake and `NativeBlobTransport` to every request, `LoopbackTransport` and `loopback_blobs` record the client id they would have sent so that the engine tests can see where the token goes.
+- **The `Secrets` port** (`drafftink-engine`, `PortKind::Secrets`, `PortSet::SECRETS`, `Ports::with_secrets`, `FakeSecrets`). Native: `NativeSecrets` (`drafftink-app`), a `0600` file in a `0700` folder of the data folder. Headless: `EnvSecrets` (`drafftink-mcp`), read from `DRAFFTINK_ACCESS_CLIENT_ID` and `DRAFFTINK_ACCESS_CLIENT_SECRET_FILE`. Web: none.
+- **Commands.** `collab.set_access`, `collab.clear_access` (NoUndo, never in a batch, both values `secret_args`, not in the palette, not for agents), `collab.delete_room {confirm}`, and `collab.status` with `access` and `room_deleted`. `SealedClient::delete_room` sends tag `0x15`; `CollabEvent::RoomDeleted` and `StopReason::RoomDeleted` end it; the engine's `end_deleted_room` unbinds the tab with the code `collab.leave_room` uses.
+- **Tests.** `access::tests`, `tests/access.rs` (mock WebSocket and HTTP servers that record headers), `tests/logging.rs` (extended), `tests/images.rs`, `tests/state_machine.rs`, `tests/sealed.rs` (the Forbidden path also against the real server process), `cmd/collab_access_tests.rs` (the commands through the real relay core), `native/secrets.rs` and `mcp/secrets.rs` (modes, damaged files, no secret in `Debug`).
+
+**Where it differs from sections 13 and 19**
+
+- **Plain `ws://` never gets the token, even with insecure connections allowed.** 19.6 says "the existing `UrlPolicy`". `UrlPolicy::allow_insecure` lets a drawing travel in clear text on a trusted network; letting a password travel the same way would be a different decision, so the grant checks `https`/`wss` or a loopback host itself.
+- **`collab.delete_room` has no `not_allowed` refusal.** A command never waits for the network, and the relay's `Forbidden` comes after it returned. It is a non-fatal notice "This server does not allow deleting rooms." (action `AskAdmin`), and the client joins again. Two refusals were added: `room_offline` (not joined now) and `not_e2e` (a plaintext room). The command returns `{requested: true}`; the result is `room_deleted` in `collab.status`.
+- **Deletion is read from a clean close.** The relay answers a deleted room with nothing but a close, and the protocol has no confirmation message. A host that restarts in the same second would be misread, and the tab would lose its link although the room lives on (the drawing stays). A `Deleted` server message in a later protocol version removes the guess. A broken connection is not taken for a deletion.
+- **The headless token is an ambient token.** 19.6 says "a file or environment variable". The environment cannot say which server the token is for, and sending it to whatever server a session joins would break "only to the stored origin". `Secrets::ambient` gives the engine a token that it applies to the origin of the setting `collab.server_url` and to no other.
+- **`collab.status.access`** also has `"browser"` (13.2 lists it; the task text only the two others): the web build has no store and says so.
+- **The commands are not for agents and not in the palette.** A token passed as a tool argument would end up in a transcript, and a palette entry would need a dialog. The Preferences panel (below) is the place for them.
+- **`BlobReply` has a new field** (`denial`), set by the transport, because only the transport knows whether it sent a token or is a browser. Test code that built a `BlobReply` by hand needed `..BlobReply::default()`.
+
+**Gaps and open points**
+
+- **The Preferences panel is not built** (`ui` and `gpu` were out of scope). The first problem text says "Open Preferences, Collaboration, and enter the access token", which names a place that does not exist yet. Until it does, a desktop user can write `access.json` by hand (the format is in `docs/collab.md`) or run the command through the bridge client.
+- **The browser's expired sign-in is half built.** The web blob transport sends `X-Requested-With: XMLHttpRequest` and marks a `401` as `SignInExpired`. The `/api/status` probe for a failed WebSocket upgrade does not exist (nothing in `collab` or the web app calls it); `web.rs` says where it would go. Covered by compilation only, like the rest of the web transports.
+- **Not verified against a real Access application:** what Access answers to a token that is wrong, revoked or not on a Service Auth policy. The client treats a `401`, any redirect, and the Worker's JSON on a `401` or `403` as the gate, and a `403` without that JSON as an ordinary refusal. If Access answers a bad token with a plain `403`, it will show as a generic failure and retry; a spike against the private instance settles it (19.12).
+- **The wire tests use plain `ws://` and `http://` to loopback.** The rule "only over TLS to another machine" is unit-tested on the grant and on the blob transport's refusal of plain `http://`, not through a TLS server. `wss://` itself is covered by `tests/tls.rs`.
+- **A new token takes effect at the next join.** The running connection keeps the transports it was started with.
+- **tungstenite and `ureq` log the handshake, with the service token's headers, at `trace`.** Nothing caps it (a cap in the shells would also have raised the level for someone who asked for less). Documented in `docs/collab.md`.
+- **The OS credential store** (`keyring`) is not used: it pulls in D-Bus on Linux and is heavy for one small secret. On Windows the file relies on the user's own application folder. Both are later options.
+- **Headless programs have no network port**, so `drafftink-headless mcp` cannot connect to a room at all yet. Its token store is ready.
+- **Phase 3P of the Worker** (R2, `ALLOW_DELETE_ROOM` in the Worker, the JWT check) is 14.5.
+
+### 14.7 What phase 3P built in the Worker (private environment), and where it differs from the text above (2026-11-22)
+
+The private environment (section 19) runs from the same Worker as the demo. `apps/drafftink-worker/README.md` has the commands and
+the variables; `ACCESS.md` has the Access check.
+
+- **The Access guard is wired in** (19.5). `src/index.ts` runs it before routing, for every request: a missing or invalid
+  assertion is a `401` JSON that never reaches an object or R2, and the request that goes on has no `cf-access-*` header and
+  no Access cookie. `ACCESS_REQUIRED` fails closed: only empty, `false` and `0` switch it off, and with it on an empty team
+  domain or AUD tag refuses everything. A request on a host other than `ACCESS_APP_HOSTNAME` (`workers.dev`) without an
+  assertion is refused. `ACCESS_CERTS_URL` replaces the key set URL for tests and local runs and is empty in a deployment.
+  Rebuilding the request without the Access headers keeps a WebSocket upgrade working in workerd (miniflare and a real
+  `wrangler dev`). Two faults of the first version of the module (`redirect: "error"`, and the global `fetch` called as a
+  method) made every valid token fail in workerd and were found only by running it there; both are fixed.
+- **R2 holds the pictures** (`BLOB_STORE=r2`, binding `BLOBS`, key `r/<room id hex>/<name hex>`, 19.8). The room's database
+  holds the manifest (name and size, no bytes) and does the quota checks through the core. An upload writes the manifest row
+  first and then the bytes; a failed R2 write rolls the row back (`503`, or `429 rate_limited` with `Retry-After` for R2's
+  one write a second per key). The body is buffered once (at most 4 MiB plus the seal) because the core reads the header
+  of the picture; R2 sees bytes, not a stream. List, `HEAD` and the quotas call no R2 operation. A download is the Worker's
+  own R2 read after its membership check and wakes no object.
+- **Deletion cleans R2 first.** `DeleteRoom` (`ALLOW_DELETE_ROOM`, true in the private environment) and the retention deadline
+  list the prefix `r/<room hex>/` in pages, delete each page, and then run `deleteAlarm()` and `deleteAll()`. When R2 fails,
+  the rows and a tombstone stay and an alarm 30 seconds later retries; until it succeeds the room answers `503`, so nothing
+  is orphaned and nothing is served from a half-deleted room. The objects of another room are never touched (tested).
+- **No expiry** (`ROOM_TTL_SECS` empty): no deadline, no alarm, `Joined.expires_at_ms = 0`; a room opens after 400 simulated
+  days and a restart of the object.
+- **Limits per environment.** `Joined.limits` carries the numbers of the environment (tested with 2 MiB pictures and 7 pictures
+  per room in the private tests, and the protocol's numbers in the demo tests).
+- **Tests.** vitest projects `private` and `private-misconfigured` run the Worker with R2, the Access key set served by the test
+  config, and the private variables; the canary also covers R2 (keys, bodies, metadata) and the manifest row. `npm test` runs
+  everything including the Access tests in Node. `scripts/private-smoke.mjs` runs the private environment in the real local
+  runtime: no token is 401, a person's token and a service token open a WebSocket and store and read a picture, bad tokens are
+  refused, the object receives no Access header or cookie, and `DeleteRoom` removes the picture from R2.
+
+Differences and gaps:
+
+- **Private limits stay at the protocol ceilings.** 19.8 asks for 500 MiB and 2,000 pictures per room, but `drafftink-protocol`
+  caps a room at 50 MiB and 200 pictures (`MAX_ROOM_IMAGE_BYTES`, `MAX_ROOM_IMAGES`) and the core refuses more. Raising them is
+  a protocol decision (clients validate `Joined.limits` against the same ceilings) and was not done here.
+- **A crash between the manifest row and the R2 write** leaves a row for a picture R2 lacks. A download answers `404` and the
+  client uploads the picture again; `HEAD` (which answers from the manifest) says it exists, so a client that asks `HEAD` first
+  would skip the upload. The window is one `await`; closing it needs a second state in the manifest (pending/stored).
+- **An upload in flight during a purge** can write an object after the listing. The manifest is wiped, so nothing refers to
+  it; a later purge of the prefix (none is scheduled for a deleted room) would be needed to remove it.
+- **R2's 429 is matched by its text** (`10058`, "reduce your concurrent request rate"), from the R2 error documentation, not from
+  a real response.
+- **Retention deletion with R2** uses the same path as `DeleteRoom` but has no test with a deadline in the private project
+  (the private environment sets no deadline); the shared path is covered by the `DeleteRoom` tests.
+
+Real-account checks added by this phase:
+
+1. The key set of a real Access team (`/cdn-cgi/access/certs`): the shape of `keys`, and that `Cf-Access-Jwt-Assertion` is present on
+   a WebSocket upgrade of a signed-in browser and of a service token (collab-spike section 6, items 1 to 5).
+2. The names of the Access cookies (`CF_Authorization`, `CF_AppSession`, `CF_Binding`).
+3. R2: the text and status of a second write to one key within a second; `list` and `delete` (up to 1000 keys) on a real bucket;
+   whether a deleted prefix is empty at once; the CPU of the Worker streaming a 4 MiB object.
+4. CPU time of the Access check (one `crypto.subtle.verify` and a parse of at most 8 KiB) in a Worker on the Free plan.

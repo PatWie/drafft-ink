@@ -12,8 +12,8 @@ use std::time::{Duration, Instant};
 use common::live::{PATIENCE, Server, Waker};
 use common::{ids, rect};
 use drafftink_collab::{
-    CollabEvent, CollabSession, ConnState, LoopbackServer, NativeTransport, Resume, SealedClient, SealedConfig,
-    ServerUrl, StopReason, Transport, TransportEvent, UrlPolicy, loopback,
+    AccessDenial, CollabEvent, CollabSession, ConnState, LoopbackServer, NativeTransport, Resume, SealedClient,
+    SealedConfig, ServerUrl, StopReason, Transport, TransportEvent, UrlPolicy, loopback,
 };
 use drafftink_doc::LoroStore;
 use drafftink_protocol::ClientId;
@@ -447,6 +447,88 @@ fn expired_room_is_restored_by_one_copy_only(rig: &mut dyn Rig) {
     rig.drive(&mut [&mut b, &mut c, &mut d], "d to see the restored room", &|p| p[2].ids() == ["a1"]);
 }
 
+/// A host that does not delete rooms answers `Forbidden`: the person is told in plain words, nothing is lost, and
+/// the client joins again.
+fn a_host_that_refuses_to_delete_rooms_says_so_and_keeps_the_room(rig: &mut dyn Rig) {
+    let mut a = peer(rig, 1, JoinMode::Create, None, Resume::default());
+    rig.drive(&mut [&mut a], "a online", &|p| p[0].online());
+    let now = rig.now();
+    a.add("a1", now);
+    rig.drive(&mut [&mut a], "a1 stored", &|p| p[0].settled());
+    assert_eq!(a.session.client_mut().delete_room(), Ok(()));
+    rig.drive(&mut [&mut a], "the refusal", &|p| {
+        p[0].events.iter().any(|e| matches!(e, CollabEvent::Problem(p) if p.text.contains("does not allow deleting")))
+    });
+    let told: Vec<_> = a
+        .events
+        .iter()
+        .filter_map(|e| match e {
+            CollabEvent::Problem(p) => Some((p.text.as_str(), p.action, p.fatal)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        told,
+        [("This server does not allow deleting rooms.", drafftink_collab::ProblemAction::AskAdmin, false)]
+    );
+    // The room is as it was: this client joins it again, a newcomer finds the drawing, and nobody stopped.
+    rig.drive(&mut [&mut a], "a back online", &|p| p[0].settled());
+    let mut b = peer(rig, 2, JoinMode::Open, None, Resume::default());
+    rig.drive(&mut [&mut a, &mut b], "b to see the drawing", &|p| p[1].ids() == ["a1"]);
+    assert_eq!((a.stopped(), b.stopped()), (None, None));
+    assert!(!a.events.iter().any(|e| matches!(e, CollabEvent::RoomDeleted)));
+}
+
+#[test]
+fn a_host_that_refuses_to_delete_rooms_says_so_on_the_loopback() {
+    a_host_that_refuses_to_delete_rooms_says_so_and_keeps_the_room(&mut Loop::new(RelayConfig::self_host()));
+}
+
+#[test]
+fn a_host_that_refuses_to_delete_rooms_says_so_against_the_server_process() {
+    a_host_that_refuses_to_delete_rooms_says_so_and_keeps_the_room(&mut Process::new());
+}
+
+#[test]
+fn a_relay_that_deletes_rooms_ends_the_request_with_one_event_and_forgets_everything() {
+    let mut rig = Loop::new(RelayConfig { allow_delete_room: true, ..RelayConfig::self_host() });
+    let mut a = peer(&mut rig, 1, JoinMode::Create, None, Resume::default());
+    rig.drive(&mut [&mut a], "a online", &|p| p[0].online());
+    let now = rig.now();
+    a.add("a1", now);
+    rig.drive(&mut [&mut a], "a1 stored", &|p| p[0].settled());
+    let mut b = peer(&mut rig, 2, JoinMode::Open, None, Resume::default());
+    rig.drive(&mut [&mut a, &mut b], "b to see a1", &|p| p[1].ids() == ["a1"]);
+    assert!(!rig.store.dump().is_empty());
+    assert_eq!(a.session.client_mut().delete_room(), Ok(()));
+    rig.drive(&mut [&mut a, &mut b], "a to hear that the room is gone", &|p| p[0].stopped().is_some());
+    assert_eq!(a.stopped(), Some(StopReason::RoomDeleted));
+    assert_eq!(a.events.iter().filter(|e| matches!(e, CollabEvent::RoomDeleted)).count(), 1);
+    assert!(a.client().status().text.contains("deleted for everyone"), "{}", a.client().status().text);
+    assert_eq!(a.ids(), ["a1"], "the drawing stays in this copy");
+    assert!(rig.store.dump().is_empty(), "the relay holds nothing of the room");
+    // The other member did not ask: it finds the room gone when it comes back.
+    rig.drive(&mut [&mut a, &mut b], "b to find the room gone", &|p| p[1].stopped().is_some());
+    assert_eq!(b.stopped(), Some(StopReason::RoomMissing));
+    assert!(!b.events.iter().any(|e| matches!(e, CollabEvent::RoomDeleted)));
+    // Time passes: the stopped client does not try again.
+    rig.pass(&mut [&mut a], 60_000);
+    assert_eq!(a.stopped(), Some(StopReason::RoomDeleted));
+}
+
+#[test]
+fn a_room_cannot_be_deleted_while_offline_or_from_a_plaintext_room() {
+    let mut rig = Loop::new(RelayConfig { allow_delete_room: true, ..RelayConfig::self_host() });
+    let mut a = peer(&mut rig, 1, JoinMode::Create, None, Resume::default());
+    assert_eq!(a.session.client_mut().delete_room(), Err(drafftink_collab::DeleteRoomError::NotOnline));
+    rig.drive(&mut [&mut a], "a online", &|p| p[0].online());
+    let mut plain = drafftink_collab::RoomClient::from(
+        drafftink_collab::CollabClient::new(common::config("ws://127.0.0.1:3030")).unwrap(),
+    );
+    assert_eq!(plain.delete_room(), Err(drafftink_collab::DeleteRoomError::NotEncrypted));
+    assert_eq!(a.stopped(), None);
+}
+
 #[test]
 fn join_and_edit_on_the_loopback() {
     join_and_edit(&mut Loop::new(RelayConfig::self_host()));
@@ -556,6 +638,45 @@ fn the_wrong_key_is_unauthorized_and_stops_the_client() {
     rig.drive(&mut [&mut p], "the refusal", &|p| p[0].stopped().is_some());
     assert_eq!(p.stopped(), Some(StopReason::Unauthorized));
     assert!(p.client().status().text.contains("does not open this room"), "{}", p.client().status().text);
+}
+
+#[test]
+fn a_private_server_that_turns_the_connection_away_stops_the_client_and_says_what_to_do() {
+    for (denial, words) in [
+        (
+            AccessDenial::Required,
+            "This server is private. Open Preferences, Collaboration, and enter the access token for",
+        ),
+        (AccessDenial::Rejected, "The server did not accept the access token."),
+    ] {
+        let (transport, server) = loopback();
+        server.set_auto_accept(true);
+        let cfg = SealedConfig {
+            url: ServerUrl::parse("ws://127.0.0.1:3030", UrlPolicy::default()).unwrap(),
+            key: key(),
+            client_id: ClientId::from_bytes([1; 16]),
+            user: None,
+            mode: JoinMode::Create,
+            resume: Resume::default(),
+            jitter_seed: 1,
+            replace_when_trimmed: false,
+        };
+        let mut session = CollabSession::new(SealedClient::new(cfg).unwrap(), transport);
+        let mut store = LoroStore::new();
+        session.client_mut().start(1_000);
+        session.pump(1_000, &mut store);
+        server.deny(denial);
+        let out = session.pump(1_040, &mut store);
+        let client = session.client().sealed().unwrap();
+        assert_eq!(client.status().stopped, Some(StopReason::AccessDenied), "{denial:?}");
+        assert!(client.status().text.starts_with(words), "{}", client.status().text);
+        let told: Vec<_> = out.events.iter().filter(|e| matches!(e, CollabEvent::Problem(p) if p.fatal)).collect();
+        assert_eq!(told.len(), 1, "{:?}", out.events);
+        // Time passes: no new connection is tried.
+        let opens = server.opens();
+        session.pump(120_000, &mut store);
+        assert_eq!(server.opens(), opens);
+    }
 }
 
 #[test]

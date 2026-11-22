@@ -1,6 +1,6 @@
 # Collaboration: plan and to-do (later)
 
-Status: **phases 1a and 1b are built** (1a: the `seal` crate and protocol v2, `docs/protocol.md` section 11; 1b: the relay core `crates/relay`, relay mode in `drafftink-headless serve`, the sealed client in `crates/collab`, the `collab.*` changes and the workspace schema 2: `docs/design/collab-e2e.md` section 14.2); the rest is planned. Named versions come first. The full design is [docs/design/collab-e2e.md](../design/collab-e2e.md); this page is the short plan and checklist.
+Status: **phases 1a, 1b, 2, 3 and 3P are built and tested locally; nothing is deployed.** 1a: the `seal` crate and protocol v2 (`docs/protocol.md` section 11). 1b: the relay core `crates/relay`, relay mode in `drafftink-headless serve`, the sealed client in `crates/collab`, the `collab.*` changes and the workspace schema 2 (`docs/design/collab-e2e.md` section 14.2). 2: pictures as encrypted files (14.3). 3: the Worker and Durable Object of the demo, `apps/drafftink-worker` (14.5). 3P: the private environment, the Access check, R2 pictures, `DeleteRoom` and the service token in the native client (14.6, 14.7). Left: phase 4 (the deploy of drafft.ink, Turnstile, the `Registry` object, spending caps) and the steps by hand below. Named versions come first. The full design is [docs/design/collab-e2e.md](../design/collab-e2e.md); this page is the short plan and checklist.
 
 ## What we build
 
@@ -33,7 +33,7 @@ About 73 days in total. Named versions must keep working in encrypted rooms (the
 - [x] Payment card on the Cloudflare account (needed for Zero Trust and R2).
 - [x] Wrangler deploys already work on that account from another machine.
 
-## To do by hand when phase 3P starts
+## To do by hand (phase 3P, before the first private deploy)
 
 - [ ] `patwie.com` zone on Cloudflare (if not already).
 - [ ] R2 bucket `drafftink-private-blobs`, lifecycle rule off.
@@ -42,6 +42,8 @@ About 73 days in total. Named versions must keep working in encrypted rooms (the
 - [ ] Access application for the whole subdomain `canvas.patwie.com`: Emails allow policy, Service Auth policy, session length; copy the AUD tag into the Worker config.
 - [ ] Service tokens for the desktop app and agents.
 - [ ] Spending limits on Workers and Durable Objects; usage alerts for R2 (R2 and Access cannot be capped).
+- [ ] Fill in `.env` (`.env.example` lists every value, per environment) and run `make cf-check-private`, then the first `make cf-deploy-private` yourself (`make cf-login` once). Afterwards request the `workers.dev` URL (it must be dead) and run the smoke checklist of `docs/design/collab-e2e.md` 19.10.
+- [ ] Run the real-account checks of `apps/drafftink-worker/README.md` and `docs/design/collab-e2e.md` 14.5 and 14.7 (Access cookie and service token on a WebSocket upgrade, session expiry with an open socket, Free-plan CPU and quota error texts).
 
 ## Open questions (answer before phase 1)
 

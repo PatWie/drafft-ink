@@ -9,4 +9,6 @@ __pycache__/
 
 # Cloudflare deploy settings (copy .env.example)
 /.env
-/.wrangler/
+.wrangler/
+/apps/drafftink-worker/pkg/
+/apps/drafftink-worker/pkg-node/

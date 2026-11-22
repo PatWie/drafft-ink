@@ -456,6 +456,15 @@ impl SealedClient {
         let joining = !matches!(self.phase, Phase::Online);
         let problem = explain(code, joining);
         let retry = retry_after_ms.map(u64::from);
+        if code == ErrorCode::Forbidden && std::mem::take(&mut self.delete_sent) {
+            // Not a refused join: this host does not delete rooms. The relay closes the connection after this; the
+            // room stays as it was, so the client joins again instead of stopping.
+            let refused = Problem::local(DELETE_FORBIDDEN, ProblemAction::AskAdmin, false);
+            self.events.push(CollabEvent::Problem(refused));
+            self.fail_connection(now_ms, DELETE_FORBIDDEN);
+            self.refresh_status();
+            return;
+        }
         match code {
             ErrorCode::RateLimited => {
                 let wait = retry.unwrap_or(1000).clamp(50, crate::client::RESYNC_MAX_GAP_MS);
@@ -490,6 +499,9 @@ impl SealedClient {
         self.refresh_status();
     }
 }
+
+/// What a person reads when the host refuses `DeleteRoom`.
+const DELETE_FORBIDDEN: &str = "This server does not allow deleting rooms.";
 
 /// The fields of `Joined` that the client uses.
 struct Joined {

@@ -22,14 +22,14 @@ A crate may depend on workspace crates of strictly lower layers. It may not depe
 | L4 | `edit` | domain rules with typed errors: binding solver, elbow routing, groups, frames, align/distribute, z-order, snapping, flowchart helpers, bound text |
 | L4 | `io` | native JSON (versioned, migration), `.excalidraw` and `.excalidrawlib` import/export, Mermaid import, SVG export |
 | L4 | `collab` | sync client over a `Transport` trait, presence. Depends on `doc` and `protocol`; `engine` owns it and routes remote edits into the session |
-| L5 | `engine` | command registry, `Session`, `execute` / `execute_batch`, refusals, editor state, gesture protocol, ports (clipboard, storage, files, clock) as traits |
+| L5 | `engine` | command registry, `Session`, `execute` / `execute_batch`, refusals, editor state, gesture protocol, ports (clipboard, storage, files, clock, secrets) as traits |
 | L6 | `gpu` | wgpu device and surface, offscreen render, compositing Vello and egui |
 | L6 | `ui` | egui UI. Reads the registry, calls `execute`, shows refusals. No document logic |
 | L6 | `bridge` | agent bridge: loopback JSON-RPC over WebSocket, the tools generated from the registry (builds for wasm), MCP over HTTP for the desktop app |
 | L7 | `testkit` | headless harness, scenario runner, deterministic scene generator, probes |
 | L7 | `app` | the application glue shared by the desktop and web apps: `App` (the shell's `ShellApp`), platform ports, input translation, overlay and scene upkeep. Uses any library below L7 and may use `testkit` only as a dev-dependency; only the apps use it |
 | L7 | `server`, `cli`, `mcp` | the libraries of the programs: `drafftink-server` (the collaboration server), `drafftink-cli` (the tools for documents) and `drafftink-mcp` (the MCP server). They have no binary. `drafftink-headless` puts all three under one name (`serve`, `mcp`, `convert` and the rest), and `drafftink mcp` uses `mcp` for its bridge modes. They use any library below L7, and only the apps use them. `drafftink-headless` as a whole must not reach `gpu`, `ui` or `app` (rule 11) |
-| L8 | apps | `drafftink`, `drafftink-web`, `drafftink-canvas-js` (the npm package, `docs/canvas-api.md` section 9), `drafftink-headless` (the program without a screen: the collaboration server, the MCP server and the document tools), `drafftink-e2e` (the native end-to-end suite, `docs/testing.md`) |
+| L8 | apps | `drafftink`, `drafftink-web`, `drafftink-canvas-js` (the npm package, `docs/canvas-api.md` section 9), `drafftink-headless` (the program without a screen: the collaboration server, the MCP server and the document tools), `drafftink-worker` (the Cloudflare host of the relay: a TypeScript Worker and Durable Object around a Rust core compiled to wasm, `docs/design/collab-e2e.md` section 14), `drafftink-e2e` (the native end-to-end suite, `docs/testing.md`) |
 | none | `xtask` | build tooling. Standalone |
 | vendored | `third_party/rex`, `third_party/unicode-math` | copies of upstream crates that `typeset` uses, published as `drafftink-rex` and `drafftink-unicode-math` (crates.io takes no Git dependency, `typeset.md`). Leaves: they use only each other. Not held to the allowlist, not linted |
 
@@ -67,7 +67,7 @@ Package names are `drafftink-<crate>`; the desktop app is `drafftink`.
 | Wasm size | `cargo xtask size`: builds the web app, measures the module and the fonts, checks `perf/budgets.json` (`size` section) |
 | Not yet written | none now. A gate that is named but not written passes only while `xtask/pending-gates.txt` lists it. The list only shrinks |
 
-`cargo xtask ci` runs every gate and prints a table. CI (`.github/workflows/ci.yml`) runs one job per gate plus native builds on three operating systems and the `size` job (the release wasm build and its size). The `ci` job at the end is the single required check. The `quarantine` job refuses locked crates.io versions younger than seven days (`utils/quarantine_check.py`, exceptions in `utils/quarantine_allow.txt`).
+`cargo xtask ci` runs every gate and prints a table. CI (`.github/workflows/ci.yml`) runs one job per gate plus native builds on three operating systems, the `size` job (the release wasm build and its size) and the `worker` job (the Cloudflare Worker and the transport parity tests; it needs Node). The `ci` job at the end is the single required check. The `quarantine` job refuses locked crates.io versions younger than seven days (`utils/quarantine_check.py`, exceptions in `utils/quarantine_allow.txt`).
 
 ## Changing the layering
 

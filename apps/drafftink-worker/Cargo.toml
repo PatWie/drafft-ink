@@ -1,0 +1,39 @@
+[package]
+name = "drafftink-worker"
+description = "The Cloudflare Worker host of the relay: the Rust core of the Durable Object, compiled to wasm for the TypeScript shell in this directory (docs/design/collab-e2e.md, sections 14 and 19)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+name = "drafftink_worker"
+path = "src/lib.rs"
+# cdylib for wasm-bindgen; rlib so that `cargo check --workspace` and the native tests work.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+drafftink-protocol = { path = "../../crates/protocol", version = "0.2.0" }
+drafftink-relay = { path = "../../crates/relay", version = "0.2.0" }
+base64.workspace = true
+base64ct = { version = "1.8", features = ["alloc"] }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen.workspace = true
+js-sys.workspace = true
+
+[dev-dependencies]
+# The fixtures of the TypeScript tests are sealed with the real library and a known nonce (tests/fixtures.rs).
+drafftink-seal = { path = "../../crates/seal", version = "0.2.0" }
+sha2 = "0.11"
+proptest.workspace = true
+# The smoke test (tests/smoke.rs) talks to a running `wrangler dev` with plain blocking clients.
+tungstenite = { workspace = true, features = ["handshake"] }
+ureq.workspace = true
+
+[lints]
+workspace = true

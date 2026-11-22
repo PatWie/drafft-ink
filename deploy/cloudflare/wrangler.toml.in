@@ -1,20 +1,145 @@
-# Template for the Cloudflare Worker that serves the web app. `make cf-config` fills in the @...@ values from .env
-# and writes target/cloudflare/wrangler.toml; do not edit that generated file.
+# The one template of the Cloudflare Worker (docs/design/collab-e2e.md, sections 14 and 19.8). It serves the web app
+# as static assets and hosts the end-to-end encrypted relay: `/r/<room>/ws` and `/r/<room>/f/...` go to one
+# Durable Object per room, `/api/status` is answered by the Worker.
 #
-# Today the Worker serves static files only (dist/). The collaboration relay will be added to this same Worker,
-# so the app and the relay share one origin (docs/design/collab-e2e.md, section 14).
+# `apps/drafftink-worker/scripts/render-config.sh <demo|private> <out-file>` fills in the values between two @ signs from the
+# environment (with safe local defaults, so tests and `wrangler dev` need no .env) and writes the file wrangler reads.
+# Do not edit the generated file.
+#
+# Layout: the top level is what `wrangler dev` and the tests use without `--env`. It mirrors the environment named
+# on the command line of the script (the TOP_ values) and has no route, so it cannot be deployed onto a
+# domain by mistake. Deploy with `wrangler deploy --env demo` or `--env private`. Bindings and `vars` are not
+# inherited by an environment, so each repeats them. `workers_dev` and `preview_urls` are set at the top and in
+# every environment, because an environment with a custom domain would otherwise leave the preview addresses on
+# (they would bypass a Cloudflare Access login).
 
-name = "@CF_WORKER_NAME@"
+name = "@TOP_WORKER_NAME@"
+main = "@MAIN@"
 compatibility_date = "2026-11-01"
-
-# Only the custom domain below serves the app. The automatic *.workers.dev address and preview addresses
-# would bypass a Cloudflare Access login on the custom domain, so they are turned off.
 workers_dev = false
 preview_urls = false
 
-routes = [
-  { pattern = "@CF_DOMAIN@", custom_domain = true },
-]
-
 [assets]
 directory = "@ASSETS_DIR@"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+# The app still loads when the Worker quota is spent: only these paths wake the Worker.
+run_worker_first = ["/r/*", "/api/*"]
+
+[[durable_objects.bindings]]
+name = "ROOM"
+class_name = "Room"
+
+# Only the private environment uses R2. The top level has the binding too, so that `wrangler dev` and the tests can
+# run the private settings; with BLOB_STORE=do it is never touched.
+[[r2_buckets]]
+binding = "BLOBS"
+bucket_name = "@PRIVATE_R2_BUCKET@"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]
+
+[vars]
+ENVIRONMENT = "@TOP_ENVIRONMENT@"
+ROOM_TTL_SECS = "@TOP_ROOM_TTL_SECS@"
+ROOM_LEAVE_GRACE_SECS = "@TOP_ROOM_LEAVE_GRACE_SECS@"
+BLOB_STORE = "@TOP_BLOB_STORE@"
+ACCESS_REQUIRED = "@TOP_ACCESS_REQUIRED@"
+ACCESS_TEAM_DOMAIN = "@TOP_ACCESS_TEAM_DOMAIN@"
+ACCESS_AUD = "@TOP_ACCESS_AUD@"
+ACCESS_APP_HOSTNAME = "@TOP_ACCESS_APP_HOSTNAME@"
+ACCESS_CERTS_URL = "@TOP_ACCESS_CERTS_URL@"
+ALLOWED_ORIGINS = "@TOP_ALLOWED_ORIGINS@"
+MAX_ROOM_STATE_BYTES = "@TOP_MAX_ROOM_STATE_BYTES@"
+MAX_IMAGE_BYTES = "@TOP_MAX_IMAGE_BYTES@"
+MAX_ROOM_IMAGE_BYTES = "@TOP_MAX_ROOM_IMAGE_BYTES@"
+MAX_ROOM_IMAGES = "@TOP_MAX_ROOM_IMAGES@"
+ALLOW_DELETE_ROOM = "@TOP_ALLOW_DELETE_ROOM@"
+
+# ---- demo: drafft.ink -----------------------------------------------------------------------------------------------
+# Rooms live 48 hours after the last visit, pictures are rows of the room's own database, no Access login.
+
+[env.demo]
+name = "@DEMO_WORKER_NAME@"
+main = "@MAIN@"
+workers_dev = false
+preview_urls = false
+routes = [{ pattern = "@DEMO_DOMAIN@", custom_domain = true }]
+
+[env.demo.assets]
+directory = "@ASSETS_DIR@"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/r/*", "/api/*"]
+
+[[env.demo.durable_objects.bindings]]
+name = "ROOM"
+class_name = "Room"
+
+[[env.demo.migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]
+
+[env.demo.vars]
+ENVIRONMENT = "demo"
+ROOM_TTL_SECS = "@DEMO_ROOM_TTL_SECS@"
+ROOM_LEAVE_GRACE_SECS = "@DEMO_ROOM_LEAVE_GRACE_SECS@"
+BLOB_STORE = "@DEMO_BLOB_STORE@"
+ACCESS_REQUIRED = "@DEMO_ACCESS_REQUIRED@"
+ACCESS_TEAM_DOMAIN = "@DEMO_ACCESS_TEAM_DOMAIN@"
+ACCESS_AUD = "@DEMO_ACCESS_AUD@"
+ACCESS_APP_HOSTNAME = "@DEMO_ACCESS_APP_HOSTNAME@"
+ACCESS_CERTS_URL = "@DEMO_ACCESS_CERTS_URL@"
+ALLOWED_ORIGINS = "@DEMO_ALLOWED_ORIGINS@"
+MAX_ROOM_STATE_BYTES = "@DEMO_MAX_ROOM_STATE_BYTES@"
+MAX_IMAGE_BYTES = "@DEMO_MAX_IMAGE_BYTES@"
+MAX_ROOM_IMAGE_BYTES = "@DEMO_MAX_ROOM_IMAGE_BYTES@"
+MAX_ROOM_IMAGES = "@DEMO_MAX_ROOM_IMAGES@"
+ALLOW_DELETE_ROOM = "@DEMO_ALLOW_DELETE_ROOM@"
+
+# ---- private: canvas.patwie.com -----------------------------------------------------------------------------------------
+# Rooms never expire (an empty ROOM_TTL_SECS means no deadline and no alarm), pictures go to R2 (phase 3P), and
+# Cloudflare Access gates every request. Only a member can delete a room.
+
+[env.private]
+name = "@PRIVATE_WORKER_NAME@"
+main = "@MAIN@"
+workers_dev = false
+preview_urls = false
+routes = [{ pattern = "@PRIVATE_DOMAIN@", custom_domain = true }]
+
+[env.private.assets]
+directory = "@ASSETS_DIR@"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/r/*", "/api/*"]
+
+[[env.private.durable_objects.bindings]]
+name = "ROOM"
+class_name = "Room"
+
+[[env.private.r2_buckets]]
+binding = "BLOBS"
+bucket_name = "@PRIVATE_R2_BUCKET@"
+
+[[env.private.migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]
+
+[env.private.vars]
+ENVIRONMENT = "private"
+ROOM_TTL_SECS = "@PRIVATE_ROOM_TTL_SECS@"
+ROOM_LEAVE_GRACE_SECS = "@PRIVATE_ROOM_LEAVE_GRACE_SECS@"
+BLOB_STORE = "@PRIVATE_BLOB_STORE@"
+ACCESS_REQUIRED = "@PRIVATE_ACCESS_REQUIRED@"
+ACCESS_TEAM_DOMAIN = "@PRIVATE_ACCESS_TEAM_DOMAIN@"
+ACCESS_AUD = "@PRIVATE_ACCESS_AUD@"
+ACCESS_APP_HOSTNAME = "@PRIVATE_ACCESS_APP_HOSTNAME@"
+ACCESS_CERTS_URL = "@PRIVATE_ACCESS_CERTS_URL@"
+ALLOWED_ORIGINS = "@PRIVATE_ALLOWED_ORIGINS@"
+MAX_ROOM_STATE_BYTES = "@PRIVATE_MAX_ROOM_STATE_BYTES@"
+MAX_IMAGE_BYTES = "@PRIVATE_MAX_IMAGE_BYTES@"
+MAX_ROOM_IMAGE_BYTES = "@PRIVATE_MAX_ROOM_IMAGE_BYTES@"
+MAX_ROOM_IMAGES = "@PRIVATE_MAX_ROOM_IMAGES@"
+ALLOW_DELETE_ROOM = "@PRIVATE_ALLOW_DELETE_ROOM@"
