@@ -50,7 +50,7 @@ drafftink-scene = { path = "../../crates/scene", version = "0.2.0" }
 drafftink-doc = { path = "../../crates/doc" }
 # The transport parity suite (tests/parity): a blocking HTTP client for the picture routes, a blocking WebSocket for the
 # hand-made joins, and the `SKIPPED:` line of a gated target.
-drafftink-profile = { path = "../../crates/profile", version = "0.2.0", default-features = false }
+drafftink-profile = { path = "../../crates/profile", version = "0.2.0" }
 ureq.workspace = true
 tungstenite = { workspace = true, features = ["handshake"] }
 tokio-tungstenite.workspace = true

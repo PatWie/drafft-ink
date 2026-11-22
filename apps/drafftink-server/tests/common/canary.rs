@@ -266,3 +266,21 @@ pub fn assert_blind_relay(session: &Session, stored_under: &Path) {
     assert_names(&evidence.storage, &session.pictures);
     evidence.assert_token_only_where_it_belongs(&keys);
 }
+
+/// The search can fail on this target's files: a forbidden thing that is written into a file deep under `stored_under`
+/// is found, and the folder is clean again afterwards.
+pub fn assert_search_can_fail(session: &Session, stored_under: &Path) {
+    let key = canary_key();
+    let needles = forbidden(&key, &session.pictures);
+    let deep = stored_under.join("proof").join("of").join("search");
+    std::fs::create_dir_all(&deep).unwrap();
+    for (what, needle) in &needles {
+        let file = deep.join("leak.bin");
+        std::fs::write(&file, [b"xx".as_slice(), needle, b"yy"].concat()).unwrap();
+        let evidence = Evidence::new(files_under(stored_under), &Taps::default());
+        let found = std::panic::catch_unwind(|| evidence.assert_blind(&[(what.clone(), needle.clone())]));
+        assert!(found.is_err(), "{what} is found in a file under {}", stored_under.display());
+    }
+    std::fs::remove_dir_all(stored_under.join("proof")).unwrap();
+    assert_blind_relay(session, stored_under);
+}
