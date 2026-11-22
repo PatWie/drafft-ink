@@ -570,3 +570,116 @@ fn baked_png_refuses_what_is_not_a_picture_and_survives_hostile_strokes() {
     // A zero stored size must not divide by zero.
     assert!(picture::baked_png(&original, (0, 0), &paint).is_ok());
 }
+
+// ---- fit_into ----
+
+const MIB: usize = 1024 * 1024;
+
+/// A picture of pixel noise, which does not compress. `alpha` makes it half transparent.
+fn noisy(width: u32, height: u32, alpha: u8) -> RgbaImage {
+    RgbaImage::from_fn(width, height, |x, y| {
+        let v = (x.wrapping_mul(2_654_435_761) ^ y.wrapping_mul(40_503)).wrapping_mul(2_246_822_519);
+        Rgba([(v >> 8) as u8, (v >> 16) as u8, (v >> 24) as u8, alpha])
+    })
+}
+
+fn jpeg_of(img: &RgbaImage) -> Vec<u8> {
+    let mut out = Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgba8(img.clone()).to_rgb8().write_to(&mut out, ImageFormat::Jpeg).unwrap();
+    out.into_inner()
+}
+
+fn prepared(bytes: Vec<u8>) -> picture::Prepared {
+    picture::prepare(bytes, false).unwrap()
+}
+
+#[test]
+fn fit_into_leaves_a_picture_that_fits_unchanged() {
+    let ready = prepared(png_of(&noisy(32, 32, 255)));
+    let fitted = picture::fit_into(ready.clone(), ready.bytes.len()).unwrap();
+    assert_eq!(fitted, ready);
+    assert!(!fitted.shrunk);
+}
+
+#[test]
+fn fit_into_makes_a_big_noisy_png_a_jpeg_within_the_limit() {
+    let ready = prepared(png_of(&noisy(1500, 1500, 255)));
+    assert!(ready.bytes.len() > 2 * MIB, "{}", ready.bytes.len());
+    let fitted = picture::fit_into(ready, MIB).unwrap();
+    assert!(fitted.bytes.len() <= MIB, "{}", fitted.bytes.len());
+    assert_eq!(fitted.mime, "image/jpeg");
+    assert!(fitted.shrunk);
+    assert_eq!(fitted.given, (1500, 1500));
+    let probed = picture::probe(&fitted.bytes).unwrap();
+    assert_eq!(probed.kind, Kind::Jpeg);
+    assert_eq!((probed.width, probed.height), fitted.natural);
+    assert!(fitted.natural.0 <= 1500 && fitted.natural.0 >= 256, "{:?}", fitted.natural);
+}
+
+#[test]
+fn fit_into_keeps_transparency_by_staying_a_png() {
+    let ready = prepared(png_of(&noisy(1600, 1000, 128)));
+    assert!(ready.bytes.len() > 2 * MIB, "{}", ready.bytes.len());
+    let fitted = picture::fit_into(ready, MIB).unwrap();
+    assert!(fitted.bytes.len() <= MIB, "{}", fitted.bytes.len());
+    assert_eq!(fitted.mime, "image/png");
+    assert!(fitted.shrunk);
+    assert_eq!(fitted.given, (1600, 1000));
+    assert!(fitted.natural.0 < 1600, "{:?}", fitted.natural);
+    let back = image::load_from_memory_with_format(&fitted.bytes, ImageFormat::Png).unwrap().to_rgba8();
+    assert_eq!((back.width(), back.height()), fitted.natural);
+    assert!(back.pixels().all(|p| p.0[3] == 128), "the alpha channel is kept");
+}
+
+#[test]
+fn fit_into_starts_the_ladder_at_2048_for_a_bigger_picture() {
+    // Flat colour compresses to almost nothing, so the first rung fits and its size is the one promised.
+    let wide = RgbaImage::from_pixel(4000, 100, Rgba([10, 20, 30, 40]));
+    let ready = prepared(png_of(&wide));
+    let limit = ready.bytes.len() - 1;
+    let fitted = picture::fit_into(ready, limit).unwrap();
+    assert_eq!(fitted.mime, "image/png");
+    assert_eq!(fitted.natural, (2048, 51));
+    assert_eq!(fitted.given, (4000, 100));
+}
+
+#[test]
+fn fit_into_keeps_a_jpeg_a_jpeg() {
+    let ready = prepared(jpeg_of(&noisy(1200, 1200, 255)));
+    assert_eq!(ready.mime, "image/jpeg");
+    let limit = ready.bytes.len() / 3;
+    let fitted = picture::fit_into(ready, limit).unwrap();
+    assert!(fitted.bytes.len() <= limit);
+    assert_eq!(fitted.mime, "image/jpeg");
+    assert!(fitted.shrunk);
+    assert_eq!(picture::probe(&fitted.bytes).unwrap().kind, Kind::Jpeg);
+}
+
+#[test]
+fn fit_into_an_impossible_limit_is_too_large_with_the_original_size() {
+    let ready = prepared(png_of(&noisy(300, 300, 255)));
+    let size = ready.bytes.len();
+    assert_eq!(picture::fit_into(ready, 100), Err(PictureError::TooLarge { size }));
+}
+
+#[test]
+fn fit_into_refuses_hostile_bytes_without_panicking() {
+    let good = png_of(&noisy(64, 64, 255));
+    for i in (0..good.len()).step_by(7) {
+        let mut flipped = good.clone();
+        flipped[i] ^= 0xff;
+        let mut cut = good.clone();
+        cut.truncate(i);
+        for bytes in [flipped, cut] {
+            let ready = picture::Prepared {
+                bytes,
+                mime: "image/png",
+                natural: (64, 64),
+                given: (64, 64),
+                shrunk: false,
+                warnings: Vec::new(),
+            };
+            let _ = picture::fit_into(ready, 10);
+        }
+    }
+}

@@ -287,7 +287,7 @@ pub trait Clipboard {
     fn read(&self, want: &[ClipKind]) -> Result<Option<ClipPayload>, PortError>; // Elements, Text, Image, Svg
     fn write(&mut self, payload: ClipPayload) -> Result<(), PortError>;
 }
-pub trait Storage {   // namespaces: Documents, Autosave, Settings, Library
+pub trait Storage {   // namespaces: Documents, Autosave, Settings, Library, Blobs
     fn get(&self, ns: Ns, key: &str) -> Result<Option<Vec<u8>>, PortError>;
     fn put(&mut self, ns: Ns, key: &str, bytes: &[u8]) -> Result<(), PortError>;
     fn put_later(&mut self, ns: Ns, key: &str, bytes: Vec<u8>) -> Result<(), PortError>;  // a write the caller does not wait for (default: put)

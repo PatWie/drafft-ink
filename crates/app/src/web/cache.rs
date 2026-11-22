@@ -1,4 +1,4 @@
-//! The in-memory half of the web storage: every entry of the four namespaces, plus the writes that
+//! The in-memory half of the web storage: every entry of the namespaces, plus the writes that
 //! IndexedDB has not confirmed yet. Pure data, no browser types, so the rules are unit-tested natively.
 
 use std::collections::BTreeMap;
