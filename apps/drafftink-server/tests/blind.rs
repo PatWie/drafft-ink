@@ -28,7 +28,7 @@ async fn canary(config: Config, stored_under: &Path) {
     let server = drafftink_server::start(config).await.expect("starts");
     let addr = server.local_addr();
     let url = format!("ws://{addr}/ws");
-    let session = tokio::task::spawn_blocking(move || run_session(&url, addr)).await.unwrap();
+    let session = tokio::task::spawn_blocking(move || run_session(&url, addr, Taps::default())).await.unwrap();
     server.shutdown().await;
     assert_blind_relay(&session, stored_under);
 }

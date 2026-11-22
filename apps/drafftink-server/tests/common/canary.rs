@@ -44,6 +44,21 @@ pub fn files_under(dir: &Path) -> Vec<Vec<u8>> {
     out
 }
 
+/// The paths of the files under `dir`, for a look at what was searched.
+fn list_files(dir: &Path) -> Vec<std::path::PathBuf> {
+    let mut out = Vec::new();
+    for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            out.extend(list_files(&path));
+        } else {
+            out.push(path);
+        }
+    }
+    out.sort();
+    out
+}
+
 /// A picture the relay was given.
 pub struct Shared {
     pub bytes: Vec<u8>,
@@ -184,16 +199,19 @@ pub struct Session {
     pub pictures: [Shared; 2],
     /// Everything that crossed the wire.
     pub taps: Taps,
+    /// More things the relay must never hold: the service token of a private server (it belongs to the gate in front
+    /// of the relay, which keeps it to itself).
+    pub extra: Vec<(String, Vec<u8>)>,
 }
 
 /// Two real clients draw text that holds the marker, name themselves, move a cursor and share a picture through the
 /// real picture path; then a hand-made `PUT` stores a second picture as any client could. `url` is the address of the
 /// relay's socket (`ws://host:port/ws`) and `addr` its host and port. The relay must be running and must have a
-/// room for [`canary_key`] free to create.
-pub fn run_session(url: &str, addr: SocketAddr) -> Session {
+/// room for [`canary_key`] free to create. `taps` records the session and carries the service token, if the relay has
+/// a gate.
+pub fn run_session(url: &str, addr: SocketAddr, taps: Taps) -> Session {
     let key = canary_key();
     let keys = RoomKeys::new(&key);
-    let taps = Taps::default();
     let real = Shared::new(&keys, picture(MARKER, 1, 4_000));
     let bytes = real.bytes.clone();
 
@@ -230,17 +248,18 @@ pub fn run_session(url: &str, addr: SocketAddr) -> Session {
     let hand = Shared::new(&keys, picture(MARKER, 2, 700));
     let sealed = keys.seal_image(&hand.name, &hand.bytes).unwrap().into_bytes();
     let token = Base64UrlUnpadded::encode_string(keys.membership_token().expose_bytes());
-    let reply = super::http::request(
-        addr,
-        "PUT",
-        &format!("/r/{}/f/{}", keys.room_id(), hand.name),
-        &[("Authorization", format!("Drafft-Member {token}"))],
-        &sealed,
-    );
+    let mut headers = vec![("Authorization", format!("Drafft-Member {token}"))];
+    headers.extend(taps.access_headers());
+    let reply = super::http::request(addr, "PUT", &format!("/r/{}/f/{}", keys.room_id(), hand.name), &headers, &sealed);
     assert_eq!(reply.status, 201, "{}", String::from_utf8_lossy(&reply.body));
     taps.push_frame(sealed);
     taps.push_frame(reply.body);
-    Session { pictures: [real, hand], taps }
+    let extra = taps
+        .access_headers()
+        .into_iter()
+        .flat_map(|(name, value)| spellings(&format!("the value of {name}"), value.as_bytes()))
+        .collect();
+    Session { pictures: [real, hand], taps, extra }
 }
 
 /// What a finished canary session leaves to check, once the relay has stopped: everything under `stored_under`
@@ -257,13 +276,20 @@ pub fn assert_blind_relay(session: &Session, stored_under: &Path) {
         stored_under.display()
     );
     eprintln!("canary: searched {} items, {size} bytes, under {}", stored.len(), stored_under.display());
+    if std::env::var_os("DRAFFTINK_PARITY_LIST").is_some() {
+        for path in list_files(stored_under) {
+            eprintln!("canary:   {}", path.strip_prefix(stored_under).unwrap_or(&path).display());
+        }
+    }
     let evidence = Evidence::new(stored, &session.taps);
     assert!(evidence.wire.len() > 10, "frames were recorded: {}", evidence.wire.len());
     assert!(
         session.taps.count("PUT", Some(1)) >= 1 && session.taps.count("GET", Some(2)) >= 1,
         "the pictures went over HTTP"
     );
-    evidence.assert_blind(&forbidden(&key, &session.pictures));
+    let mut needles = forbidden(&key, &session.pictures);
+    needles.extend(session.extra.iter().cloned());
+    evidence.assert_blind(&needles);
     assert_names(&evidence.storage, &session.pictures);
     evidence.assert_token_only_where_it_belongs(&keys);
 }
@@ -272,7 +298,8 @@ pub fn assert_blind_relay(session: &Session, stored_under: &Path) {
 /// is found, and the folder is clean again afterwards.
 pub fn assert_search_can_fail(session: &Session, stored_under: &Path) {
     let key = canary_key();
-    let needles = forbidden(&key, &session.pictures);
+    let mut needles = forbidden(&key, &session.pictures);
+    needles.extend(session.extra.iter().cloned());
     let deep = stored_under.join("proof").join("of").join("search");
     std::fs::create_dir_all(&deep).unwrap();
     for (what, needle) in &needles {

@@ -9,9 +9,9 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use drafftink_collab::{
-    BlobAuth, BlobOp, BlobRequest, BlobResponse, BlobTransport, BlobTransportError, CollabEvent, CollabSession,
-    ImageEvent, NativeBlobTransport, NativeTransport, Resume, SealedClient, SealedConfig, ServerUrl, Transport,
-    TransportError, TransportEvent, UrlPolicy,
+    AccessGrant, BlobAuth, BlobOp, BlobRequest, BlobResponse, BlobTransport, BlobTransportError, CollabEvent,
+    CollabSession, ImageEvent, NativeBlobTransport, NativeTransport, Resume, SealedClient, SealedConfig, ServerUrl,
+    Transport, TransportError, TransportEvent, UrlPolicy,
 };
 use drafftink_doc::{FilePolicy, LoroConfig, LoroStore};
 use drafftink_protocol::v2::JoinMode;
@@ -63,6 +63,8 @@ pub struct Taps {
     cut: Arc<Mutex<HashSet<u8>>>,
     /// One entry per `pong` a client received, holding the client's number.
     pongs: Arc<Mutex<Vec<u8>>>,
+    /// The service token the clients of this test hand to their transports, for a server behind Cloudflare Access.
+    access: Option<AccessGrant>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -90,6 +92,17 @@ impl Taps {
         lock(&self.frames).push(bytes);
     }
 
+    /// The same taps, with clients that carry `access` (or none). What was recorded so far and what is recorded from
+    /// now on is shared with the original.
+    pub fn with_access(&self, access: Option<AccessGrant>) -> Taps {
+        Taps { access, ..self.clone() }
+    }
+
+    /// The service token of the clients, as the headers a hand-made request needs.
+    pub fn access_headers(&self) -> Vec<(&'static str, String)> {
+        access_headers(self.access.as_ref())
+    }
+
     /// Cuts client `n` off the network: its open connection drops, and every new attempt fails until
     /// [`restore`](Self::restore). The client sees what a lost network looks like (a closed socket, a failed open).
     pub fn cut(&self, n: u8) {
@@ -111,6 +124,14 @@ impl Taps {
     }
 }
 
+/// The headers of a service token for a request to the origin it was stored for.
+pub fn access_headers(grant: Option<&AccessGrant>) -> Vec<(&'static str, String)> {
+    grant
+        .and_then(|g| g.headers_for(g.origin()))
+        .map(|headers| headers.pairs().into_iter().map(|(name, value)| (name, value.to_owned())).collect())
+        .unwrap_or_default()
+}
+
 /// A websocket transport that keeps every frame that crosses it, in both directions.
 pub struct Recording {
     who: u8,
@@ -121,6 +142,9 @@ pub struct Recording {
 }
 
 impl Transport for Recording {
+    fn set_access(&mut self, access: Option<AccessGrant>) {
+        self.inner.set_access(access);
+    }
     fn open(&mut self, url: &ServerUrl) -> Result<(), TransportError> {
         if self.taps.is_cut(self.who) {
             return Err(TransportError::Failed("the network is cut".to_owned()));
@@ -180,6 +204,10 @@ pub struct RecordingBlobs {
 }
 
 impl BlobTransport for RecordingBlobs {
+    fn set_access(&mut self, access: Option<AccessGrant>) {
+        self.inner.set_access(access);
+    }
+
     fn send(&mut self, mut request: BlobRequest) -> Result<(), BlobTransportError> {
         if let Some(auth) = &self.options.auth_override {
             request.auth = auth.clone();
@@ -320,15 +348,16 @@ pub fn peer(n: u8, key: &RoomKey, url: &str, mode: JoinMode, taps: &Taps, option
         jitter_seed: u64::from(n),
         replace_when_trimmed: false,
     };
-    let transport =
+    let mut transport =
         Recording { who: n, inner: NativeTransport::new(Arc::new(|| {})), taps: taps.clone(), connected: false };
+    transport.set_access(taps.access.clone());
     let mut client = SealedClient::new(cfg).unwrap();
     client.start(0);
     let mut store =
         LoroStore::with_config(LoroConfig { peer_id: Some(u64::from(n) + 1000), ..Default::default() }).unwrap();
     store.set_file_policy(FilePolicy::External);
     let mut session = CollabSession::new(client, transport);
-    session.set_blobs(Box::new(RecordingBlobs {
+    let mut blobs = RecordingBlobs {
         who: n,
         inner: NativeBlobTransport::new(Arc::new(|| {})),
         http: Arc::clone(&taps.http),
@@ -336,7 +365,9 @@ pub fn peer(n: u8, key: &RoomKey, url: &str, mode: JoinMode, taps: &Taps, option
         lose: HashSet::new(),
         options,
         puts: 0,
-    }));
+    };
+    blobs.set_access(taps.access.clone());
+    session.set_blobs(Box::new(blobs));
     Peer { n, session, store, images: Vec::new() }
 }
 

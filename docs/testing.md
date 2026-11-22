@@ -15,7 +15,7 @@ Everything a user can do is a command, so almost everything can be tested end to
 | **Browser e2e** | `e2e/web`: Playwright and TypeScript against `window.drafftink`, headed Chromium on Xvfb with WebGPU | the web shell: input, canvas, drop and paste, storage, service worker, rooms, idle | `cargo xtask e2e`, CI workflow `e2e.yml` (not in `ci`) |
 | **Native e2e** | `e2e/native`: Rust tests that start `drafftink --bridge` and drive it with the bridge client | the native shell and the bridge | `cargo xtask e2e` |
 | Perf | `cargo xtask perf` and the criterion benches | frame time, idle redraw, scale | `docs/performance.md` |
-| **Transport parity** | `apps/drafftink-server/tests/parity/` | one list of scenarios, run by the real sealed client against the in-process server, the `drafftink-headless serve` child process and the Worker under `wrangler dev` | `cargo xtask test` (first two), `cargo xtask worker` (all three) |
+| **Transport parity** | `apps/drafftink-server/tests/parity/` | one list of scenarios, run by the real sealed client against the in-process server, the `drafftink-headless serve` child process, and the demo and private Workers under `wrangler dev` | `cargo xtask test` (first two), `cargo xtask worker` (all three) |
 
 A new test goes to the lowest level that can see the bug. A command that refuses wrongly is a unit test of its family. A story that crosses families ("move a shape, the arrow follows, undo puts both back") is a scenario. Pixels are a scenario with a probe, because only they need the GPU.
 
@@ -255,7 +255,7 @@ What the suites cannot cover is listed in `docs/review/e2e-findings.md` with the
 
 ## Transport parity
 
-The end-to-end encrypted rooms run on three relays: the library inside the tests, the `drafftink-headless serve` program, and the Cloudflare Worker (`apps/drafftink-worker`). `apps/drafftink-server/tests/parity/` runs **one list of scenarios** through the real native clients (`SealedClient` over `NativeTransport`, and `NativeBlobTransport` for pictures) against each of them, so a rule that holds on one holds on all. The tests are named `parity::<target>::<scenario>`.
+The end-to-end encrypted rooms run on four relays: the library inside the tests, the `drafftink-headless serve` program, and the Cloudflare Worker (`apps/drafftink-worker`) in its two environments, demo and private. `apps/drafftink-server/tests/parity/` runs **one list of scenarios** through the real native clients (`SealedClient` over `NativeTransport`, and `NativeBlobTransport` for pictures) against each of them, so a rule that holds on one holds on all. The tests are named `parity::<target>::<scenario>`.
 
 | Scenario | What it proves |
 |---|---|
@@ -266,13 +266,17 @@ The end-to-end encrypted rooms run on three relays: the library inside the tests
 | `expire` | with a short lifetime (3 s, grace 1 s) a room nobody visits is gone: still there before the deadline, then `RoomMissing` for `open`, 404 on the picture route, and a `create` join gives a new empty room |
 | `membership` | a wrong token is `Unauthorized` (open and create); a stranger's or a missing token on a picture `PUT`, `GET` or list is 401; an `open` join of a room nobody made is `RoomMissing` and makes none |
 | `hibernate` | clients sit still for over 16 s: the keepalive of a lone client is answered, no connection is lost, and an edit still reaches the other client after each nap (two present clients send presence heartbeats every 10 s, so only a lone client shows the keepalive) |
+| `persist`, `delete`, `access` | the private target only, where rooms never expire and Access is required. `persist`: a room outlives everybody leaving and a restart of the `wrangler dev` process on the same `--persist-to` folder, with its picture (from R2) and no deadline. `delete`: `collab.delete_room` ends the asking client with `RoomDeleted`, the other with `RoomMissing`, an `open` join is `RoomMissing`, the picture routes answer 404, and a `create` join starts an empty room. `access`: no token and a wrong secret end a client with `AccessDenied` and the plain words ("This server is private...", "did not accept..."), on the socket and on the picture routes; the right token passes; the gate keeps the token to itself |
 | `canary` | the session of `blind.rs` (marker, user name, picture, cursor) against the target, then a search of every file the relay stored (for the Worker: the Durable Object SQLite files and their WAL under `--persist-to`, and R2 objects when present) and of the wire: zero hits, names present, token only in joins and `Authorization`. The search is shown to be able to fail: a forbidden value planted in a file deep under the folder is found |
+
+The private target puts a **stand-in for Cloudflare Access** (`tests/parity/stand_in.rs`) in front of `wrangler dev --env private` (`ACCESS_REQUIRED=true`, `BLOB_STORE=r2`, `ROOM_TTL_SECS` empty). It is a small proxy on loopback: a request without the right `CF-Access-Client-Id` and `CF-Access-Client-Secret` gets a `302` to a `*.cloudflareaccess.com` login address, and a valid one is passed on without those headers and with a `Cf-Access-Jwt-Assertion` (RS256, `common_name` = the client id, no email) that the Worker checks against a key set the stand-in serves (`ACCESS_CERTS_URL`). The assertions are signed with `tests/fixtures/access-stand-in-test-key.der`, a throw-away RSA key made for these tests that signs nothing else (`ring` signs, `openssl genpkey` made it). The clients get their token through `Transport::set_access` and `BlobTransport::set_access` (`AccessGrant`), the code path of the app, so the tests prove the headers go to the stored origin. The canary of the private target searches the Durable Object SQLite files and the R2 objects and metadata under `--persist-to`, and the token's id and secret are among the forbidden values.
 
 What differs between targets is data (`Relay::traits`, `Lifetime`), never a branch inside a scenario. The canary session and the search are in `tests/common/canary.rs`, shared with `tests/blind.rs`.
 
 ```sh
 cargo nextest run -p drafftink-server parity                               # in_process and child; the wrangler tests print SKIPPED: and pass
-DRAFFTINK_PARITY_WRANGLER=1 cargo nextest run -p drafftink-server parity   # all three targets
+DRAFFTINK_PARITY_WRANGLER=1 cargo nextest run -p drafftink-server parity   # all four targets
+DRAFFTINK_PARITY_WRANGLER=1 cargo nextest run -p drafftink-server parity::private   # the private Worker only
 DRAFFTINK_PARITY_WRANGLER=1 cargo nextest run -p drafftink-server parity::wrangler::expire   # one scenario on one target
 ```
 
@@ -306,7 +310,8 @@ The wrangler target needs Node 22 and the Worker's wasm once: `cd apps/drafftink
 | `DRAFFTINK_REQUIRE_GPU=1` | a missing GPU adapter (GPU tests, scenarios, browser and native e2e) fails instead of skipping. One rule in every crate and tool: set, not empty and not `0` |
 | `DRAFFTINK_OLD_REPO=<dir>` | where the old app is checked out, for `cargo xtask fixtures` and `regen.sh`. Without it xtask looks next to the checkout and next to the main worktree |
 | `DRAFFTINK_REQUIRE_OLD=1` | `cargo xtask fixtures` fails when it cannot find the old app, instead of printing `SKIPPED:` and skipping the regeneration check |
-| `DRAFFTINK_PARITY_WRANGLER=1` | turns on the `wrangler` target of the transport parity suite (needs Node 22 and the built wasm of the Worker); off, its tests print `SKIPPED:` and pass. `cargo xtask worker` sets it |
+| `DRAFFTINK_PARITY_LIST=1` | the canary of the transport parity suite lists every file it searched (use with `--no-capture`) |
+| `DRAFFTINK_PARITY_WRANGLER=1` | turns on the `wrangler` and `private` targets of the transport parity suite (needs Node 22 and the built wasm of the Worker); off, its tests print `SKIPPED:` and pass. `cargo xtask worker` sets it |
 | `DRAFFTINK_E2E=1` | set by `cargo xtask e2e`; the native e2e tests skip without it |
 | `DRAFFTINK_E2E_ADAPTER=swiftshader` | the browser suite uses Chromium's CPU adapter |
 | `DRAFFTINK_E2E_FILTER=<title>` | run only the browser tests whose title matches |

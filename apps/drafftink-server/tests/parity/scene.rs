@@ -3,6 +3,7 @@
 use std::collections::BTreeSet;
 use std::time::Duration;
 
+use drafftink_collab::AccessGrant;
 use drafftink_protocol::v2::JoinMode;
 use drafftink_scene::{Element, ElementId, ElementKind, SceneRead, SceneStore, SceneTx, Transform};
 use drafftink_seal::{RoomKey, RoomKeys};
@@ -10,30 +11,42 @@ use drafftink_seal::{RoomKey, RoomKeys};
 use super::common::room_client::{BlobOptions, Clock, Peer, Taps, peer, pump_for, pump_until};
 use super::relay::Relay;
 
+/// Recordings for the clients of a relay, with its service token when it has a gate.
+pub fn taps_for(relay: &Relay) -> Taps {
+    Taps::default().with_access(relay.grant())
+}
+
 /// One room on one relay, with the clients that take part.
-pub struct Room<'a> {
-    pub relay: &'a Relay,
+pub struct Room {
+    /// The address the clients are given (`ws://host:port/ws`).
+    pub url: String,
     pub key: RoomKey,
     pub keys: RoomKeys,
     pub taps: Taps,
     pub clock: Clock,
 }
 
-impl<'a> Room<'a> {
+impl Room {
     /// A room under a new random key, so that no two tests meet in a room.
-    pub fn new(relay: &'a Relay) -> Self {
+    pub fn new(relay: &Relay) -> Self {
         let key = RoomKey::generate().expect("a random key");
         Room::with_key(relay, key)
     }
 
-    pub fn with_key(relay: &'a Relay, key: RoomKey) -> Self {
+    pub fn with_key(relay: &Relay, key: RoomKey) -> Self {
         let keys = RoomKeys::new(&key);
-        Room { relay, key, keys, taps: Taps::default(), clock: Clock::new() }
+        Room { url: relay.url.clone(), key, keys, taps: taps_for(relay), clock: Clock::new() }
     }
 
     /// Client number `n`, joining as `mode`. It has started: pump it.
     pub fn client(&self, n: u8, mode: JoinMode) -> Peer {
-        peer(n, &self.key, &self.relay.url, mode, &self.taps, BlobOptions::default())
+        peer(n, &self.key, &self.url, mode, &self.taps, BlobOptions::default())
+    }
+
+    /// Client number `n` that presents `access` instead of the relay's own token (none, or a wrong one). What it sends
+    /// and receives is recorded with the others.
+    pub fn client_with(&self, n: u8, mode: JoinMode, access: Option<AccessGrant>) -> Peer {
+        peer(n, &self.key, &self.url, mode, &self.taps.with_access(access), BlobOptions::default())
     }
 
     /// Pumps `peers` until `done` holds.

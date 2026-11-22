@@ -102,11 +102,16 @@ example `PRIVATE_ROOM_TTL_SECS=`) stays empty.
 
 `PRIVATE_ACCESS_APP_HOSTNAME` defaults to the private domain; `PRIVATE_ACCESS_TEAM_DOMAIN` and `PRIVATE_ACCESS_AUD` have no default, so a private config rendered without them refuses every request until they are set.
 
-**The Makefile.** `make cf-config` still fills only `@CF_WORKER_NAME@`, `@CF_DOMAIN@` and `@ASSETS_DIR@`, which are not
-the placeholders of the new template, so it writes an unusable file. It must call
-`apps/drafftink-worker/scripts/render-config.sh private target/cloudflare/wrangler.toml` instead (the same `CF_*` values
-are the defaults), and `cf-dev`, `cf-check` and `cf-deploy` must add `--env private`, run `npm run build:wasm` first, and
-`cf-check` must keep the `dist/index.html` test. The template has no route at the top level on purpose.
+**The Makefile.** `make cf-config-<env>`, `cf-check-<env>` and `cf-deploy-<env>` (`<env>` is `demo` or `private`) render
+this template with `scripts/render-config.sh <env> target/cloudflare/<env>/wrangler.toml` from the values of `.env`, build
+the web app and `pkg/` when needed, and run `wrangler deploy --env <env>` (the checks with `--dry-run`). `make cf-dev`
+runs `scripts/dev.sh` with the same `WRANGLER` command. See `docs/deploy-cloudflare.md`.
+
+**Local dev without Access (never for a deploy).** `CF_ENV=private make cf-dev` passes `--var ACCESS_REQUIRED:false` to
+`wrangler dev`, because a local run has no Cloudflare Access in front and the Worker would refuse every request. It is for
+`cf-dev` only: no check or deploy recipe contains it (a test in `xtask` reads the Makefile), and a deployed Worker without
+the check would be open to everyone who finds its address. The parity suite does the opposite and keeps Access required:
+it puts a stand-in for Access in front of wrangler.
 
 ## How a request is handled
 
@@ -235,7 +240,8 @@ The same scenarios run against this Worker and against the other relays through 
 `--persist-to` folder) and stops its process group when it ends. It needs `npm ci` and `npm run build:wasm` here once.
 
 ```bash
-DRAFFTINK_PARITY_WRANGLER=1 cargo nextest run -p drafftink-server parity                     # all targets, about a minute
+DRAFFTINK_PARITY_WRANGLER=1 cargo nextest run -p drafftink-server parity                     # all targets (demo and private Worker), about a minute
+DRAFFTINK_PARITY_WRANGLER=1 cargo nextest run -p drafftink-server parity::private            # the private environment: R2, no expiry, a stand-in for Access in front
 DRAFFTINK_PARITY_WRANGLER=1 cargo nextest run -p drafftink-server parity::wrangler::expire   # one scenario on this Worker
 cargo xtask worker                                                                           # the TypeScript tests, then the parity suite
 ```

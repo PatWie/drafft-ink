@@ -38,5 +38,12 @@ pub fn start(life: Lifetime) -> Relay {
     let addr = server.local_addr();
     let stored = dir.path().to_path_buf();
     let host = InProcess { runtime, server: Some(server), _dir: dir };
-    Relay::new("in_process", addr, Traits { deletion_slack: Duration::from_secs(1) }, life, &stored, Box::new(host))
+    Relay::new(
+        "in_process",
+        addr,
+        Traits { deletion_slack: Duration::from_secs(1), room_deadline: true },
+        life,
+        &stored,
+        Box::new(host),
+    )
 }

@@ -212,6 +212,34 @@ fn skip_verdict(skipped: &[skips::SkipGroup]) -> Result<(), String> {
     }
 }
 
+// ---- the Makefile must not relax Access in a deploy ----
+
+/// The targets whose recipe lines contain `needle`. A target starts at a line `name:` (not an assignment) at the
+/// beginning of a line; its recipe is the tab-indented lines after it.
+#[cfg(test)]
+fn recipes_containing(makefile: &str, needle: &str) -> std::collections::BTreeSet<String> {
+    let mut found = std::collections::BTreeSet::new();
+    let mut target: Option<&str> = None;
+    for line in makefile.lines() {
+        if let Some(recipe) = line.strip_prefix('\t') {
+            if let Some(name) = target
+                && recipe.contains(needle)
+            {
+                found.insert(name.to_owned());
+            }
+        } else if !line.starts_with('#') && !line.trim().is_empty() {
+            let head = line.split(':').next().unwrap_or_default();
+            let is_rule = line.contains(':')
+                && !line.contains(":=")
+                && !line.contains("?=")
+                && !head.contains(['=', ' ', '$'])
+                && !head.is_empty();
+            target = is_rule.then_some(head);
+        }
+    }
+    found
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -332,5 +360,30 @@ mod tests {
         let skipped = [skips::SkipGroup { kind: "other", count: 2 }];
         let message = skip_verdict(&skipped).unwrap_err();
         assert!(message.contains("skipped 2") && message.contains("DRAFFTINK_PARITY_WRANGLER"), "{message}");
+    }
+    #[test]
+    fn the_recipe_finder_reads_targets_and_recipes() {
+        let makefile =
+            "VAR = x\n\na: ## text\n\t@echo one\n\techo two\nb: export Y = 1\nb:\n\techo two\n# c:\n\techo more\n";
+        assert_eq!(recipes_containing(makefile, "two").into_iter().collect::<Vec<_>>(), ["a", "b"]);
+        assert_eq!(recipes_containing(makefile, "one").into_iter().collect::<Vec<_>>(), ["a"]);
+        assert!(recipes_containing(makefile, "VAR").is_empty(), "an assignment is no recipe");
+    }
+
+    /// `make cf-dev` runs the private environment without Access, for local use. No other recipe may do it: a deployed
+    /// Worker without the check is open to everyone who finds its address.
+    #[test]
+    fn only_cf_dev_can_switch_access_off() {
+        let path = crate::root().join("Makefile");
+        let makefile = std::fs::read_to_string(&path).unwrap_or_default();
+        assert!(makefile.contains("ACCESS_REQUIRED:false"), "{} has no cf-dev switch to guard", path.display());
+        for needle in ["ACCESS_REQUIRED:false", "CF_DEV_VARS", "ACCESS_REQUIRED=false"] {
+            let owners: Vec<String> = recipes_containing(&makefile, needle).into_iter().collect();
+            assert!(
+                owners.iter().all(|t| t == "cf-dev"),
+                "`{needle}` is in the recipe of {owners:?}; only cf-dev may have it"
+            );
+        }
+        assert_eq!(recipes_containing(&makefile, "CF_DEV_VARS").len(), 1, "cf-dev uses the switch");
     }
 }
