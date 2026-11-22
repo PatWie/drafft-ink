@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 use common::live::{PATIENCE, Server, Waker};
 use common::{ids, rect};
 use drafftink_collab::{
-    CollabEvent, CollabSession, ConnState, LoopbackServer, NativeTransport, Resume, SealedClient, SealedConfig,
+    AccessDenial, CollabEvent, CollabSession, ConnState, LoopbackServer, NativeTransport, Resume, SealedClient, SealedConfig,
     ServerUrl, StopReason, Transport, TransportEvent, UrlPolicy, loopback,
 };
 use drafftink_doc::LoroStore;
@@ -556,6 +556,42 @@ fn the_wrong_key_is_unauthorized_and_stops_the_client() {
     rig.drive(&mut [&mut p], "the refusal", &|p| p[0].stopped().is_some());
     assert_eq!(p.stopped(), Some(StopReason::Unauthorized));
     assert!(p.client().status().text.contains("does not open this room"), "{}", p.client().status().text);
+}
+
+#[test]
+fn a_private_server_that_turns_the_connection_away_stops_the_client_and_says_what_to_do() {
+    for (denial, words) in [
+        (AccessDenial::Required, "This server is private. Open Preferences, Collaboration, and enter the access token for"),
+        (AccessDenial::Rejected, "The server did not accept the access token."),
+    ] {
+        let (transport, server) = loopback();
+        server.set_auto_accept(true);
+        let cfg = SealedConfig {
+            url: ServerUrl::parse("ws://127.0.0.1:3030", UrlPolicy::default()).unwrap(),
+            key: key(),
+            client_id: ClientId::from_bytes([1; 16]),
+            user: None,
+            mode: JoinMode::Create,
+            resume: Resume::default(),
+            jitter_seed: 1,
+            replace_when_trimmed: false,
+        };
+        let mut session = CollabSession::new(SealedClient::new(cfg).unwrap(), transport);
+        let mut store = LoroStore::new();
+        session.client_mut().start(1_000);
+        session.pump(1_000, &mut store);
+        server.deny(denial);
+        let out = session.pump(1_040, &mut store);
+        let client = session.client().sealed().unwrap();
+        assert_eq!(client.status().stopped, Some(StopReason::AccessDenied), "{denial:?}");
+        assert!(client.status().text.starts_with(words), "{}", client.status().text);
+        let told: Vec<_> = out.events.iter().filter(|e| matches!(e, CollabEvent::Problem(p) if p.fatal)).collect();
+        assert_eq!(told.len(), 1, "{:?}", out.events);
+        // Time passes: no new connection is tried.
+        let opens = server.opens();
+        session.pump(120_000, &mut store);
+        assert_eq!(server.opens(), opens);
+    }
 }
 
 #[test]

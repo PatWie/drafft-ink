@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use drafftink_protocol::{ClientMessage, ServerMessage};
 
+use crate::access::{AccessDenial, AccessGrant, AccessOrigin};
 use crate::url::ServerUrl;
 
 /// Called by a transport, possibly from another thread, when it has queued an event for [`Transport::poll`]. The
@@ -23,6 +24,10 @@ pub enum TransportEvent {
     Message(Vec<u8>),
     /// One text frame arrived. Only the keepalive answer of a sealed room (`pong`) is one.
     Text(String),
+    /// The server turned the connection away at its door (an access token missing or refused, a sign-in that
+    /// ended). It ends the connection like `Closed`, with a reason the client can act on: retrying with the same
+    /// token would only be refused again. After this event the transport emits nothing for that connection.
+    Denied(AccessDenial),
     /// The connection is gone, or never opened. `error` says why when it was not a clean close. After this event
     /// the transport emits nothing for that connection.
     Closed {
@@ -44,6 +49,12 @@ pub enum TransportError {
 
 /// A bidirectional frame pipe to the server.
 pub trait Transport {
+    /// Gives the transport the service token of a private server (`None`: no token). The transport sends it in the
+    /// handshake of a connection, under the rules of [`AccessGrant::headers_for`] and nowhere else, and never follows
+    /// a redirect while it does. A transport that has no way to send headers (the browser's `WebSocket`, which
+    /// carries the sign-in cookie instead) ignores it, which is why this has a default.
+    fn set_access(&mut self, _access: Option<AccessGrant>) {}
+
     /// Starts connecting. The result arrives as [`TransportEvent::Opened`] or [`TransportEvent::Closed`]. Opening
     /// while a connection exists closes that one first; its late events are dropped.
     fn open(&mut self, url: &ServerUrl) -> Result<(), TransportError>;
@@ -75,6 +86,9 @@ struct Link {
     from_client: VecDeque<Vec<u8>>,
     texts_from_client: VecDeque<String>,
     opens: Vec<String>,
+    /// For each open: the client id of the token the transport would have sent, if any.
+    access_at_open: Vec<Option<String>>,
+    access: Option<AccessGrant>,
     open: bool,
     auto_accept: bool,
     closes: usize,
@@ -95,12 +109,21 @@ impl LoopbackTransport {
 }
 
 impl Transport for LoopbackTransport {
+    fn set_access(&mut self, access: Option<AccessGrant>) {
+        lock(&self.link).access = access;
+    }
+
     fn open(&mut self, url: &ServerUrl) -> Result<(), TransportError> {
         let mut l = lock(&self.link);
         l.to_client.clear();
         l.from_client.clear();
         l.texts_from_client.clear();
         l.opens.push(url.to_string());
+        let sent = l
+            .access
+            .as_ref()
+            .and_then(|g| g.headers_for(&AccessOrigin::of(url)).map(|h| h.pairs()[0].1.to_owned()));
+        l.access_at_open.push(sent);
         l.open = false;
         if l.auto_accept {
             l.open = true;
@@ -168,6 +191,18 @@ impl LoopbackServer {
     /// The address of the latest open.
     pub fn last_url(&self) -> Option<String> {
         lock(&self.link).opens.last().cloned()
+    }
+
+    /// For each open, the client id of the service token the transport sent with it, or `None` when it sent none.
+    /// Only the client id is kept: the secret never leaves the grant.
+    pub fn access_client_ids(&self) -> Vec<Option<String>> {
+        lock(&self.link).access_at_open.clone()
+    }
+
+    /// Turns the connection away at the door, as a private server does: it ends like a close, with the reason.
+    pub fn deny(&self, denial: AccessDenial) {
+        lock(&self.link).open = false;
+        self.queue(TransportEvent::Denied(denial));
     }
 
     /// How many times the client closed the connection.

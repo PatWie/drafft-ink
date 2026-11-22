@@ -5,6 +5,8 @@
 
 use drafftink_protocol::ErrorCode;
 
+use crate::access::AccessDenial;
+
 /// Where the connection is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ConnState {
@@ -46,6 +48,11 @@ pub enum StopReason {
     /// An end-to-end encrypted room that the server does not have: it was deleted after a period without visitors,
     /// or the link is incomplete.
     RoomMissing,
+    /// The server is private and turned the connection away: no access token, or one it did not accept
+    /// ([`AccessDenial`]). Retrying with the same token would be refused again.
+    AccessDenied,
+    /// The room was deleted on request (`collab.delete_room`). The relay closed the connection and holds nothing of it.
+    RoomDeleted,
 }
 
 /// What the UI can offer next to a [`Problem`].
@@ -157,6 +164,33 @@ pub fn explain(code: ErrorCode, joining: bool) -> Problem {
     Problem { code: Some(code), text: text.to_owned(), action, fatal }
 }
 
+/// The plain-words form of a server's gate ([`AccessDenial`]): what happened and what to do. `host` is the server's
+/// name as the person knows it. `fatal` is true when the client stops because of it (the connection); a picture request
+/// that meets the gate leaves the rest of the room running.
+pub fn explain_access(denial: AccessDenial, host: &str, fatal: bool) -> Problem {
+    let (text, action) = match denial {
+        AccessDenial::Required => (
+            format!(
+                "This server is private. Open Preferences, Collaboration, and enter the access token for {host}. The \
+                 server's owner can create one."
+            ),
+            ProblemAction::AskAdmin,
+        ),
+        AccessDenial::Rejected => (
+            "The server did not accept the access token. It may have expired or been revoked. Ask the server's owner \
+             for a new one."
+                .to_owned(),
+            ProblemAction::AskAdmin,
+        ),
+        AccessDenial::SignInExpired => (
+            "Your sign-in has expired. Reload the page to sign in again. Your drawing is saved on this device."
+                .to_owned(),
+            ProblemAction::Reload,
+        ),
+    };
+    Problem { code: None, text, action, fatal }
+}
+
 /// The stop reason a fatal server error maps to.
 pub(crate) fn stop_reason(code: ErrorCode) -> Option<StopReason> {
     match code {
@@ -232,6 +266,31 @@ mod tests {
                 assert!(!p.text.contains("Error") && !p.text.contains("code"), "{code:?}: {}", p.text);
             }
         }
+    }
+
+    #[test]
+    fn the_gate_has_three_texts_with_the_way_forward() {
+        let required = explain_access(AccessDenial::Required, "canvas.example.com", true);
+        assert_eq!(
+            required.text,
+            "This server is private. Open Preferences, Collaboration, and enter the access token for \
+             canvas.example.com. The server's owner can create one."
+        );
+        assert_eq!((required.action, required.fatal), (ProblemAction::AskAdmin, true));
+        let rejected = explain_access(AccessDenial::Rejected, "canvas.example.com", false);
+        assert_eq!(
+            rejected.text,
+            "The server did not accept the access token. It may have expired or been revoked. Ask the server's owner \
+             for a new one."
+        );
+        assert_eq!((rejected.action, rejected.fatal), (ProblemAction::AskAdmin, false));
+        let expired = explain_access(AccessDenial::SignInExpired, "canvas.example.com", false);
+        assert_eq!(
+            expired.text,
+            "Your sign-in has expired. Reload the page to sign in again. Your drawing is saved on this device."
+        );
+        assert_eq!(expired.action, ProblemAction::Reload);
+        assert!(!rejected.text.contains("canvas.example.com"));
     }
 
     #[test]

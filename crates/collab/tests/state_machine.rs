@@ -485,6 +485,26 @@ fn rate_limited_pauses_updates_then_repairs_by_reconciling() {
 }
 
 #[test]
+fn a_server_that_turns_the_connection_away_stops_the_client_and_names_the_server() {
+    for (denial, words) in [
+        (AccessDenial::Required, "This server is private. Open Preferences, Collaboration, and enter the access token for 127.0.0.1."),
+        (AccessDenial::Rejected, "The server did not accept the access token."),
+    ] {
+        let mut h = Harness::new();
+        h.start();
+        h.event(TransportEvent::Denied(denial));
+        let st = h.client.status().clone();
+        assert_eq!((st.state, st.stopped), (ConnState::Stopped, Some(StopReason::AccessDenied)), "{denial:?}");
+        assert!(st.text.starts_with(words), "{}", st.text);
+        assert_eq!(st.problem.as_ref().map(|p| (p.action, p.fatal)), Some((ProblemAction::AskAdmin, true)));
+        assert_eq!(Harness::problems(&h.events).len(), 1);
+        let connects = h.connects;
+        h.run_for(120_000, 10_000);
+        assert_eq!(h.connects, connects, "{denial:?}: the same token would be refused again, so no retry");
+    }
+}
+
+#[test]
 fn fatal_errors_stop_the_client_and_say_what_to_do() {
     let cases = [
         (ErrorCode::Unauthorized, StopReason::Unauthorized, ProblemAction::NewToken),

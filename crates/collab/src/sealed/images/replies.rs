@@ -14,6 +14,9 @@
 //! | `HEAD` | `200` with the length of this picture | stored |
 //! | `HEAD` | `404`, or `200` with another length | `PUT` again (a name holding something else is overwritten) |
 //! | list | `200` | offers the relay has are stored, the others are due |
+//!
+//! An answer that is the server's gate and not the relay's (`BlobReply::denial`: a `401` from Access, a redirect to
+//! its login) is final for its request, whatever the method, and is told to the owner once per connection.
 
 use drafftink_scene::FileId;
 
@@ -31,10 +34,12 @@ enum Failure {
     Again { retry_after_ms: Option<u64> },
 }
 
-fn failure(status: u16, retry_after_ms: Option<u64>) -> Failure {
-    match status {
+fn failure(reply: &BlobReply) -> Failure {
+    // The server's gate (a `401`, a redirect to the Access login) does not change by asking again.
+    match reply.status {
         401 | 403 => Failure::Final,
-        _ => Failure::Again { retry_after_ms },
+        _ if reply.denial.is_some() => Failure::Final,
+        _ => Failure::Again { retry_after_ms: reply.retry_after_ms },
     }
 }
 
@@ -43,6 +48,9 @@ impl Images {
     /// timeout) is ignored.
     pub(super) fn on_response(&mut self, now: u64, env: Env<'_>, response: BlobResponse) {
         let Some(flight) = self.flights.remove(&response.id) else { return };
+        if let Ok(BlobReply { denial: Some(denial), .. }) = &response.result {
+            self.note_denial(*denial);
+        }
         match flight.target {
             Target::List => self.on_list(now, response.result),
             Target::Put(id) => self.on_put(now, &id, response.result),
@@ -66,7 +74,7 @@ impl Images {
                 }
                 None => again(self, None),
             },
-            Ok(reply) => match failure(reply.status, reply.retry_after_ms) {
+            Ok(reply) => match failure(&reply) {
                 Failure::Final => {
                     self.list = ListPhase::Denied;
                     self.refuse_waiting_offers();
@@ -124,7 +132,7 @@ impl Images {
                 offer.bytes = None;
                 OfferPhase::Refused
             }
-            Ok(reply) => match failure(reply.status, reply.retry_after_ms) {
+            Ok(reply) => match failure(&reply) {
                 Failure::Final => {
                     offer.bytes = None;
                     OfferPhase::Refused
@@ -152,7 +160,7 @@ impl Images {
             Ok(reply) if matches!(reply.status, 200 | 404) => {
                 OfferPhase::Due { step: Step::Put, retry: Retry { attempt, not_before: now } }
             }
-            Ok(reply) => match failure(reply.status, reply.retry_after_ms) {
+            Ok(reply) => match failure(&reply) {
                 Failure::Final => {
                     offer.bytes = None;
                     OfferPhase::Refused
@@ -182,7 +190,7 @@ impl Images {
                 }
             },
             Ok(reply) => {
-                want.phase = match failure(reply.status, reply.retry_after_ms) {
+                want.phase = match failure(&reply) {
                     Failure::Final => WantPhase::Failed,
                     Failure::Again { retry_after_ms } => WantPhase::Due(Retry::failed(attempt, now, retry_after_ms)),
                 };

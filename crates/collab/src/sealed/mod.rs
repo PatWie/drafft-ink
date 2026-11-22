@@ -34,13 +34,14 @@ use drafftink_protocol::{
 use drafftink_seal::{RoomKey, RoomKeys};
 use loro::VersionVector;
 
+use crate::access::AccessDenial;
 use crate::awareness::{LocalPresence, PeerTable};
 use crate::blobs::BlobAuth;
 use crate::client::{
     CONNECT_TIMEOUT_MS, CollabEvent, FollowEnd, JOIN_TIMEOUT_MS, MAX_INFLIGHT, Output, SEND_DEBOUNCE_MS, STABLE_MS,
     Stats, TrimmedChoice,
 };
-use crate::status::{ConnState, Problem, ProblemAction, Status, StopReason};
+use crate::status::{ConnState, Problem, ProblemAction, Status, StopReason, explain_access};
 use crate::transport::TransportEvent;
 use crate::url::ServerUrl;
 
@@ -630,6 +631,7 @@ impl SealedClient {
             TransportEvent::Opened => self.on_opened(now_ms),
             TransportEvent::Message(bytes) => self.on_frame(now_ms, &bytes, store),
             TransportEvent::Text(_) => self.on_text(now_ms),
+            TransportEvent::Denied(denial) => self.on_denied(denial),
             TransportEvent::Closed { error } => self.on_closed(now_ms, error),
         }
         self.flush_events();
@@ -640,6 +642,16 @@ impl SealedClient {
             // The only text a relay sends is `pong`: the connection is alive.
             self.last_rx_ms = now_ms;
         }
+    }
+
+    /// The server turned the connection away at its door. The same token would be refused again, so the client stops
+    /// and says what to do.
+    fn on_denied(&mut self, denial: AccessDenial) {
+        if matches!(self.phase, Phase::Idle | Phase::Stopped(_) | Phase::Backoff { .. }) {
+            return;
+        }
+        let problem = explain_access(denial, self.endpoint.host(), true);
+        self.enter_stopped(StopReason::AccessDenied, Some(problem));
     }
 
     fn on_closed(&mut self, now_ms: u64, error: Option<String>) {

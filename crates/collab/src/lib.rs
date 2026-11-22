@@ -22,6 +22,7 @@
 #![warn(missing_docs)]
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
+mod access;
 mod awareness;
 mod blobs;
 mod client;
@@ -36,6 +37,10 @@ mod url;
 #[cfg(target_arch = "wasm32")]
 mod web;
 
+pub use access::{
+    AccessCredentials, AccessDenial, AccessError, AccessField, AccessGrant, AccessHeaders, AccessOrigin,
+    CLIENT_ID_HEADER, CLIENT_SECRET_HEADER, MAX_ACCESS_VALUE_BYTES,
+};
 pub use awareness::{LocalPresence, Peer, PeerTable, TRAIL_MAX_POINTS, TRAIL_TTL_MS, Trail};
 #[cfg(target_arch = "wasm32")]
 pub use blobs::WebBlobTransport;
@@ -59,7 +64,7 @@ pub use sealed::{
     SealedConfigError,
 };
 pub use session::{CollabSession, Pump};
-pub use status::{ConnState, Problem, ProblemAction, Status, StopReason, explain};
+pub use status::{ConnState, Problem, ProblemAction, Status, StopReason, explain, explain_access};
 pub use transport::{LoopbackServer, LoopbackTransport, Transport, TransportError, TransportEvent, WakeFn, loopback};
 pub use url::{ServerUrl, UrlError, UrlPolicy};
 #[cfg(target_arch = "wasm32")]

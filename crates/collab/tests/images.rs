@@ -9,7 +9,7 @@ mod common;
 use std::sync::Arc;
 
 use drafftink_collab::{
-    BlobAuth, BlobOp, BlobReply, BlobRequest, CollabClient, CollabEvent, CollabSession, ConnState, ImageEvent,
+    AccessDenial, BlobAuth, BlobOp, BlobReply, BlobRequest, CollabClient, CollabEvent, CollabSession, ConnState, ImageEvent,
     ImageRefusal, LoopbackBlobServer, LoopbackServer, LoopbackTransport, MAX_DOWNLOADS, MAX_UPLOADS, Resume,
     RoomClient, SealedClient, SealedConfig, ServerUrl, StopReason, UrlPolicy, loopback, loopback_blobs,
 };
@@ -103,6 +103,8 @@ enum Fault {
         status: u16,
         retry_after_s: Option<u64>,
     },
+    /// Answer as the server's gate does (a `401` from Access, a redirect to its login), without asking the relay.
+    Gate(u16, AccessDenial),
     /// The relay serves the request and the answer never arrives.
     Lose,
     /// The request never reaches the relay.
@@ -282,8 +284,13 @@ impl Room {
                         body: Vec::new(),
                         content_length: Some(0),
                         retry_after_ms: retry_after_s.map(|s| s * 1000),
+                        ..BlobReply::default()
                     }),
                 );
+            }
+            Fault::Gate(status, denial) => {
+                self.log[seen].status = Some(status);
+                server.respond(id, Ok(BlobReply { status, denial: Some(denial), ..BlobReply::default() }));
             }
             Fault::Serve | Fault::Lose => {
                 let reply = self.apply(request);
@@ -403,6 +410,7 @@ fn render(response: ImageResponse, head: bool) -> BlobReply {
         body: if head { Vec::new() } else { body },
         content_length,
         retry_after_ms,
+        ..BlobReply::default()
     }
 }
 
@@ -617,6 +625,52 @@ fn a_401_on_a_download_is_final_and_counts_as_failed() {
     assert!(b.arrived(&id).is_none());
     assert_eq!(room.requests_for(Kind::Get, &id).len(), 1);
     assert_eq!(b.client().images().failed, 1);
+}
+
+/// The problems a peer was told about, in order.
+fn problems(p: &Peer) -> Vec<drafftink_collab::Problem> {
+    p.events
+        .iter()
+        .filter_map(|e| match e {
+            CollabEvent::Problem(problem) => Some(problem.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn the_gate_of_a_private_server_stops_the_picture_requests_and_is_told_once_in_plain_words() {
+    for (status, denial, text) in [
+        (
+            302,
+            AccessDenial::Required,
+            "This server is private. Open Preferences, Collaboration, and enter the access token for 127.0.0.1. The \
+             server's owner can create one.",
+        ),
+        (
+            401,
+            AccessDenial::Rejected,
+            "The server did not accept the access token. It may have expired or been revoked. Ask the server's owner \
+             for a new one.",
+        ),
+    ] {
+        let mut room = Room::new(RelayConfig::self_host());
+        let mut a = room.online_peer(1);
+        room.fault = Some(Box::new(move |_| Fault::Gate(status, denial)));
+        let (id, _) = picture(1, 800);
+        room.want(&mut a, &id);
+        room.run(&mut [&mut a], 60_000);
+        let told = problems(&a);
+        assert_eq!(told.len(), 1, "{told:?}");
+        assert_eq!(told[0].text, text);
+        assert_eq!((told[0].action, told[0].fatal), (drafftink_collab::ProblemAction::AskAdmin, false));
+        assert_eq!(a.client().status().state, ConnState::Online, "the room itself keeps working");
+        assert!(a.arrived(&id).is_none());
+        let asked = room.log.len();
+        room.run(&mut [&mut a], 120_000);
+        assert_eq!(room.log.len(), asked, "a request the gate refused is not asked again");
+        assert!(a.client().images().failed >= 1);
+    }
 }
 
 // ---- damaged downloads ----

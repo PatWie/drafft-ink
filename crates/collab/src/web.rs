@@ -2,6 +2,13 @@
 //!
 //! Browser callbacks run on the page's single thread, so events go into a plain queue and the wake hook is called
 //! from the callback. The page then runs `CollabSession::pump` from its own callback, never from a timer.
+//!
+//! A browser behind Cloudflare Access sends its sign-in cookie with the upgrade, and a `WebSocket` cannot carry other
+//! headers, so `set_access` is ignored and a service token is never used here. The page cannot see the status of a
+//! failed upgrade either: it is a `Closed` event. Telling an ended sign-in from a server that is down needs the probe of
+//! `docs/design/collab-e2e.md` section 19.6 (`GET /api/status` with `X-Requested-With: XMLHttpRequest`), which is not
+//! built yet. This is the seam: the owner of the transport would answer a `Closed` before any `Opened` by calling the
+//! probe and, on a `401`, ending the connection as [`TransportEvent::Denied`] with `AccessDenial::SignInExpired`.
 
 use std::cell::RefCell;
 use std::collections::VecDeque;

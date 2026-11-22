@@ -9,6 +9,10 @@
 //! unless [`NativeBlobOptions::allow_insecure`] is set. Redirects are never followed (the `Authorization` header
 //! would go along), proxies from the environment are not used (the WebSocket does not use them either), and a
 //! response body over [`MAX_BLOB_BODY_BYTES`] is a failure.
+//!
+//! A service token for a private server (`set_access`) goes into the headers of each request, under the rules of
+//! [`AccessGrant::headers_for`]. A `401` or a redirect (Access answers an unknown token with a redirect to its login)
+//! is marked on the reply as a [`BlobReply::denial`]; the redirect is not followed, so the token goes nowhere else.
 
 use std::collections::VecDeque;
 use std::io::Read as _;
@@ -23,6 +27,7 @@ use super::{
     BlobOp, BlobReply, BlobRequest, BlobResponse, BlobTransport, BlobTransportError, MAX_BLOB_BODY_BYTES,
     retry_after_ms,
 };
+use crate::access::{AccessDenial, AccessGrant, AccessOrigin};
 use crate::transport::{WakeFn, lock};
 use crate::url::is_loopback_host;
 
@@ -44,6 +49,7 @@ pub struct NativeBlobOptions {
 /// What a worker is asked to do.
 struct Job {
     request: BlobRequest,
+    access: Option<Arc<AccessGrant>>,
 }
 
 /// The state workers share with the transport.
@@ -62,6 +68,7 @@ pub struct NativeBlobTransport {
     shared: Arc<Shared>,
     jobs: Sender<Job>,
     threads: usize,
+    access: Option<Arc<AccessGrant>>,
 }
 
 impl NativeBlobTransport {
@@ -83,7 +90,7 @@ impl NativeBlobTransport {
         let (jobs, receiver) = channel();
         let shared =
             Arc::new(Shared { jobs: Mutex::new(receiver), answers: Mutex::default(), in_flight: AtomicUsize::new(0) });
-        NativeBlobTransport { wake, options, agent: config.into(), shared, jobs, threads: 0 }
+        NativeBlobTransport { wake, options, agent: config.into(), shared, jobs, threads: 0, access: None }
     }
 
     /// Checks that the address may be used before a thread is spent on it.
@@ -128,12 +135,16 @@ impl NativeBlobTransport {
 }
 
 impl BlobTransport for NativeBlobTransport {
+    fn set_access(&mut self, access: Option<AccessGrant>) {
+        self.access = access.map(Arc::new);
+    }
+
     fn send(&mut self, request: BlobRequest) -> Result<(), BlobTransportError> {
         self.check(&request.url)?;
         self.shared.in_flight.fetch_add(1, Ordering::AcqRel);
         let started = self.ensure_worker().and_then(|()| {
             self.jobs
-                .send(Job { request })
+                .send(Job { request, access: self.access.clone() })
                 .map_err(|_| BlobTransportError::Failed("the network threads stopped".into()))
         });
         if started.is_err() {
@@ -159,7 +170,7 @@ impl Worker {
         loop {
             // The lock is held while waiting, so exactly one idle worker waits on the channel at a time.
             let Ok(job) = lock(&self.shared.jobs).recv() else { return };
-            let result = execute(&self.agent, &job.request);
+            let result = execute(&self.agent, &job.request, job.access.as_deref());
             lock(&self.shared.answers).push_back(BlobResponse { id: job.request.id, result });
             self.shared.in_flight.fetch_sub(1, Ordering::AcqRel);
             (self.wake)();
@@ -167,13 +178,16 @@ impl Worker {
     }
 }
 
-/// Runs one request. A status of 400 or more is a reply, not an error; the text of an `Err` never holds the header.
-fn execute(agent: &ureq::Agent, request: &BlobRequest) -> Result<BlobReply, String> {
+/// Runs one request. A status of 400 or more is a reply, not an error; the text of an `Err` never holds a header.
+fn execute(agent: &ureq::Agent, request: &BlobRequest, access: Option<&AccessGrant>) -> Result<BlobReply, String> {
     let auth = request.auth.header_value();
+    let token = access.and_then(|grant| grant_headers(grant, &request.url));
+    let sent_access = token.is_some();
     let response = match &request.op {
-        BlobOp::Put(body) => agent.put(&request.url).header(header::AUTHORIZATION, auth).send(body.as_slice()),
-        BlobOp::Get | BlobOp::List => agent.get(&request.url).header(header::AUTHORIZATION, auth).call(),
-        BlobOp::Head => agent.head(&request.url).header(header::AUTHORIZATION, auth).call(),
+        BlobOp::Put(body) => with_access(agent.put(&request.url).header(header::AUTHORIZATION, auth), token)
+            .send(body.as_slice()),
+        BlobOp::Get | BlobOp::List => with_access(agent.get(&request.url).header(header::AUTHORIZATION, auth), token).call(),
+        BlobOp::Head => with_access(agent.head(&request.url).header(header::AUTHORIZATION, auth), token).call(),
     }
     .map_err(|e| e.to_string())?;
     let status = response.status().as_u16();
@@ -186,7 +200,21 @@ fn execute(agent: &ureq::Agent, request: &BlobRequest) -> Result<BlobReply, Stri
             return Err("the answer is larger than any picture".to_owned());
         }
     }
-    Ok(BlobReply { status, body, content_length, retry_after_ms })
+    let denial = AccessDenial::of_reply(status, &body, sent_access);
+    Ok(BlobReply { status, body, content_length, retry_after_ms, denial })
+}
+
+/// The service token's header values for a request to `url`, when the rules of the grant allow them.
+fn grant_headers<'a>(grant: &'a AccessGrant, url: &str) -> Option<[(&'static str, &'a str); 2]> {
+    grant.headers_for(&AccessOrigin::of_http_url(url)?).map(|h| h.pairs())
+}
+
+/// Adds the service token headers to a request builder.
+fn with_access<B>(mut request: ureq::RequestBuilder<B>, token: Option<[(&'static str, &str); 2]>) -> ureq::RequestBuilder<B> {
+    for (name, value) in token.into_iter().flatten() {
+        request = request.header(name, value);
+    }
+    request
 }
 
 fn headers_of(headers: &HeaderMap) -> (Option<u64>, Option<u64>) {

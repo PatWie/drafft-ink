@@ -34,6 +34,7 @@ pub use state::{BLOB_TIMEOUT_MS, MAX_DOWNLOADS, MAX_UPLOADS};
 use super::{Phase, SealedClient};
 use crate::blobs::{BlobRequest, BlobResponse};
 use crate::client::CollabEvent;
+use crate::status::explain_access;
 
 /// Why an upload was refused for good.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -139,6 +140,10 @@ impl SealedClient {
             self.images.drive(now_ms, env);
         }
         self.events.extend(self.images.take_events().into_iter().map(CollabEvent::Image));
+        if let Some(denial) = self.images.take_denial() {
+            // The room itself works (this client is online), so only the pictures are held back: not fatal.
+            self.problem_event(explain_access(denial, self.endpoint.host(), false));
+        }
         self.refresh_status();
     }
 }

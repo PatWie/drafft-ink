@@ -4,6 +4,7 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 use super::{BlobReply, BlobRequest, BlobResponse, BlobTransport, BlobTransportError};
+use crate::access::{AccessGrant, AccessOrigin};
 use crate::transport::{WakeFn, lock};
 
 #[derive(Default)]
@@ -12,6 +13,9 @@ struct Link {
     to_client: VecDeque<BlobResponse>,
     sent: usize,
     wake: Option<WakeFn>,
+    access: Option<AccessGrant>,
+    /// For each request: the client id of the service token the transport would have sent, if any.
+    access_at_send: Vec<Option<String>>,
 }
 
 /// An in-memory pair for tests: the client end is a [`BlobTransport`], the server end takes requests and answers.
@@ -34,9 +38,18 @@ impl LoopbackBlobs {
 }
 
 impl BlobTransport for LoopbackBlobs {
+    fn set_access(&mut self, access: Option<AccessGrant>) {
+        lock(&self.link).access = access;
+    }
+
     fn send(&mut self, request: BlobRequest) -> Result<(), BlobTransportError> {
         let mut l = lock(&self.link);
         l.sent += 1;
+        let sent = l.access.as_ref().and_then(|g| {
+            let origin = AccessOrigin::of_http_url(&request.url)?;
+            g.headers_for(&origin).map(|h| h.pairs()[0].1.to_owned())
+        });
+        l.access_at_send.push(sent);
         l.to_server.push_back(request);
         Ok(())
     }
@@ -55,6 +68,12 @@ impl LoopbackBlobServer {
     /// How many requests the client has sent so far.
     pub fn sent(&self) -> usize {
         lock(&self.link).sent
+    }
+
+    /// For each request, the client id of the service token the transport sent with it, or `None` when it sent none.
+    /// Only the client id is kept: the secret never leaves the grant.
+    pub fn access_client_ids(&self) -> Vec<Option<String>> {
+        lock(&self.link).access_at_send.clone()
     }
 
     /// The next request, oldest first.
@@ -82,7 +101,7 @@ impl LoopbackBlobServer {
     /// Answers request `id` with a status and a body.
     pub fn reply(&self, id: u64, status: u16, body: Vec<u8>) {
         let content_length = u64::try_from(body.len()).ok();
-        self.respond(id, Ok(BlobReply { status, body, content_length, retry_after_ms: None }));
+        self.respond(id, Ok(BlobReply { status, body, content_length, ..BlobReply::default() }));
     }
 
     /// Answers request `id` with a failure of the network.
