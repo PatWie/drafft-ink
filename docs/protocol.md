@@ -223,7 +223,7 @@ Local edits leave in the reverse direction: each commit of the doc layer yields 
 
 The design is `docs/design/collab-e2e.md` (sections 4 to 11). In short: the room key lives in the link after `#`, so no server sees it. Every update, snapshot, presence message and image is a *sealed record* made by `crates/seal` (`drafftink-seal`, L1: XChaCha20-Poly1305, random 24-byte nonces, HKDF-SHA256 subkeys). The relay checks membership, numbers records, stores them, and fans them out. It never reads a payload and never imports a Loro blob. Code: `crates/protocol/src/v2/`. Version 2 has no JSON debug form: a payload is not readable, and a `Join` carries a secret.
 
-Routes: `wss://host/r/<room_id>/ws` and `https://host/r/<room_id>/f/<name>` (images, phase 2). The room id is in the path so that a Worker can pick the room before it reads a frame. The v1 route `/ws` stays. A text frame `ping` (every 20 s) is answered with `pong`; other text frames are refused (`KEEPALIVE_PING`, `KEEPALIVE_PONG`).
+Routes: `wss://host/r/<room_id>/ws` and `https://host/r/<room_id>/f/<name>` (sealed pictures; the client is in `docs/collab.md`). The room id is in the path so that a Worker can pick the room before it reads a frame. The v1 route `/ws` stays. A text frame `ping` (every 20 s) is answered with `pong`; other text frames are refused (`KEEPALIVE_PING`, `KEEPALIVE_PONG`).
 
 ### Names and proofs
 
