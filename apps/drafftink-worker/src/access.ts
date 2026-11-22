@@ -280,7 +280,8 @@ class KeyStore {
     try {
       const response = await this.fetchFn(this.certsUrl, {
         headers: { accept: "application/json" },
-        redirect: "error",
+        // workerd refuses `"error"`; a redirect arrives as a 3xx answer, which is not `ok` and so is refused below.
+        redirect: "manual",
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
       if (!response.ok) return undefined;
@@ -363,7 +364,8 @@ export class AccessVerifier {
 
   constructor(private readonly config: AccessConfig) {
     const certsUrl = config.certsUrl ?? `https://${config.teamDomain}/cdn-cgi/access/certs`;
-    this.keys = new KeyStore(certsUrl, config.fetch ?? fetch);
+    // Not `fetch` itself: workerd refuses the global `fetch` when it is called as a method of another object.
+    this.keys = new KeyStore(certsUrl, config.fetch ?? ((input, init) => fetch(input, init)));
     this.log = config.log ?? defaultLog;
   }
 

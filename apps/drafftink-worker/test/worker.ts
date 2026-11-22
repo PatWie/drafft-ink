@@ -21,6 +21,12 @@ export interface Probe {
   failStorageWith: Error | null;
   /** When set, creating the tables throws this (a quota error while a room wakes). */
   failSchemaWith: Error | null;
+  /** When set, the R2 call of that name throws this (R2 is down, or answers 429). */
+  failR2: { put: Error | null; list: Error | null; delete: Error | null };
+  /** When set, a purge of R2 lists this many objects at a time (the default is 1000). */
+  r2PageSize: number | null;
+  /** Every request that reached an object: its path and the headers it carried. */
+  objectRequests: { path: string; headers: [string, string][] }[];
   /** Room instances built so far: a hibernation shows as a new one. */
   constructed: number;
 }
@@ -31,7 +37,7 @@ export function probe(): Probe {
   const holder = globalThis as unknown as Record<symbol, Probe | undefined>;
   const existing = holder[KEY];
   if (existing !== undefined) return existing;
-  const fresh: Probe = { clockOffsetMs: 0, objectCalls: 0, socketMessages: 0, alarms: 0, failFetchWith: null, failStorageWith: null, failSchemaWith: null, constructed: 0 };
+  const fresh: Probe = { clockOffsetMs: 0, objectCalls: 0, socketMessages: 0, alarms: 0, failFetchWith: null, failStorageWith: null, failSchemaWith: null, failR2: { put: null, list: null, delete: null }, r2PageSize: null, objectRequests: [], constructed: 0 };
   holder[KEY] = fresh;
   return fresh;
 }
@@ -57,6 +63,21 @@ function failing(inner: SqlHost): SqlHost {
   };
 }
 
+/** Wraps the R2 bucket so that a test can make `put`, `list` or `delete` fail. */
+function flaky(inner: R2Bucket): R2Bucket {
+  return new Proxy(inner, {
+    get(target, property) {
+      const original: unknown = Reflect.get(target, property);
+      if (typeof original !== "function") return original;
+      return (...args: unknown[]): unknown => {
+        const failure = property === "put" || property === "list" || property === "delete" ? probe().failR2[property] : null;
+        if (failure !== null) return Promise.reject(failure);
+        return Reflect.apply(original, target, args);
+      };
+    },
+  });
+}
+
 export class Room extends ProductionRoom {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -74,6 +95,14 @@ export class Room extends ProductionRoom {
     super.prepareStorage();
   }
 
+  protected override bucket(): R2Bucket {
+    return flaky(super.bucket());
+  }
+
+  protected override r2PageSize(): number {
+    return probe().r2PageSize ?? super.r2PageSize();
+  }
+
   protected override sqlHost(): SqlHost {
     return failing(super.sqlHost());
   }
@@ -84,6 +113,7 @@ export class Room extends ProductionRoom {
 
   override async fetch(request: Request): Promise<Response> {
     probe().objectCalls++;
+    probe().objectRequests.push({ path: new URL(request.url).pathname, headers: [...request.headers] });
     const failure = probe().failFetchWith;
     if (failure !== null) throw failure;
     return super.fetch(request);

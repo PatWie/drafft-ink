@@ -136,7 +136,8 @@ export class R2Blobs extends ManifestBlobs {
     guard(() => {
       const before = this.head(name);
       this.sql().exec("INSERT OR REPLACE INTO room_images (name, size, data) VALUES (?, ?, NULL)", name, sealed.byteLength);
-      this.#pending.push({ name, bytes: sealed.slice(), previousSize: before });
+      // Both are views of the wasm module's memory, which is valid only during this call: copy what is kept.
+      this.#pending.push({ name: name.slice(), bytes: sealed.slice(), previousSize: before });
     });
   }
 

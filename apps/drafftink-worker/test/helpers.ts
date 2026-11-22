@@ -27,9 +27,9 @@ export const STRANGER = `Drafft-Member ${fixtures.stranger.token.base64urlNoPad}
 
 const ORIGIN = "https://drafft.test";
 
-/** A request to the Worker, as a client would send it. */
-export function request(path: string, init: RequestInit = {}): Promise<Response> {
-  return exports.default.fetch(new Request(`${ORIGIN}${path}`, init));
+/** A request to the Worker, as a client would send it. `origin` is the scheme and host the request is addressed to. */
+export function request(path: string, init: RequestInit = {}, origin: string = ORIGIN): Promise<Response> {
+  return exports.default.fetch(new Request(`${origin}${path}`, init));
 }
 
 export function roomStub(room: string = ROOM): DurableObjectStub {
@@ -98,6 +98,29 @@ export function retention(frame: Uint8Array): { expiresAtMs: bigint; expiring: b
 /** `Catchup`: how many records and the head, read from the tail of the frame. */
 export function snapshotResult(frame: Uint8Array): { ok: boolean; coversSeq: bigint } {
   return { ok: frame[1] === 1, coversSeq: view(frame).getBigUint64(2, true) };
+}
+
+/** `Joined.limits`, read from the end of the frame: what the environment announces to a client. */
+export function limitsOf(frame: Uint8Array): {
+  maxFrameBytes: number;
+  maxRecordBytes: number;
+  maxUpdatesPerSec: number;
+  maxPresencePerSec: number;
+  maxImageBytes: number;
+  maxRoomImageBytes: bigint;
+  maxRoomImages: number;
+} {
+  const v = view(frame);
+  const at = frame.byteLength - 28;
+  return {
+    maxFrameBytes: v.getUint32(at, true),
+    maxRecordBytes: v.getUint32(at + 4, true),
+    maxUpdatesPerSec: v.getUint16(at + 8, true),
+    maxPresencePerSec: v.getUint16(at + 10, true),
+    maxImageBytes: v.getUint32(at + 12, true),
+    maxRoomImageBytes: v.getBigUint64(at + 16, true),
+    maxRoomImages: v.getUint32(at + 24, true),
+  };
 }
 
 // ---- a client socket ---------------------------------------------------------------------------------------------

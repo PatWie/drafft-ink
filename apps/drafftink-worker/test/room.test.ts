@@ -1,7 +1,7 @@
 import { abortAllDurableObjects, evictDurableObject, runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 
-import { Client, ERROR, MEMBER, ROOM, TAG, ack, errorCode, fixtures, joined, recordSeq, request, roomStub, sleep, unhex } from "./helpers";
+import { Client, ERROR, MEMBER, ROOM, TAG, ack, errorCode, fixtures, joined, limitsOf, recordSeq, request, roomStub, sleep, unhex } from "./helpers";
 import { probe } from "./worker";
 
 const NAME = fixtures.image.name;
@@ -103,6 +103,21 @@ describe("one room, two people", () => {
     a.ws.close();
     await b.expect(TAG.peerLeft);
     b.close();
+    await wipe();
+  });
+});
+
+describe("the limits of the demo", () => {
+  it("Joined announces the protocol's numbers, which a client never has to hard-code", async () => {
+    const a = await Client.open();
+    a.sendNamed("joinCreateA");
+    const limits = limitsOf(await a.expect(TAG.joined));
+    expect(limits.maxImageBytes).toBe(4 * 1024 * 1024);
+    expect(limits.maxRoomImageBytes).toBe(50n * 1024n * 1024n);
+    expect(limits.maxRoomImages).toBe(200);
+    expect(limits.maxRecordBytes).toBe(4 * 1024 * 1024);
+    expect(limits.maxFrameBytes).toBe(16 * 1024 * 1024);
+    a.close();
     await wipe();
   });
 });

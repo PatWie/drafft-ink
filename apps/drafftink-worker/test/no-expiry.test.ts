@@ -49,6 +49,30 @@ describe("with ROOM_TTL_SECS unset (the private instance)", () => {
   });
 });
 
+describe("a room that never expires", () => {
+  it("opens after 400 days and a restart of the object, with everything in it", async () => {
+    const a = await Client.open();
+    a.sendNamed("joinCreateA");
+    await a.expect(TAG.joined);
+    a.sendNamed("appendA1");
+    await a.expect(TAG.ack);
+    a.close();
+    await a.untilClosed();
+    await sleep(100);
+    probe().clockOffsetMs = 400 * 24 * 3_600_000;
+    // The object is restarted: a new instance, which only has what the database holds.
+    await abortAllDurableObjects();
+    const b = await Client.open();
+    b.sendNamed("joinOpenB");
+    const frame = joined(await b.expect(TAG.joined));
+    expect(frame.headSeq).toBe(1n);
+    expect(frame.expiresAtMs).toBe(0n);
+    await b.expect(TAG.catchup);
+    expect(await alarmOf(), "still no alarm").toBeNull();
+    b.close();
+  });
+});
+
 describe("DeleteRoom, where the host allows it", () => {
   it("deletes records, pictures, alarm and sockets, and the room is missing afterwards", async () => {
     const a = await Client.open();
