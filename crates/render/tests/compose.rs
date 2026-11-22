@@ -584,7 +584,7 @@ fn fully_set_elements() -> Vec<Element> {
             stroke_style: StrokeStyle::Dashed,
             fill_color: Some(Color::rgb(4, 5, 6)),
             fill_pattern: FillPattern::Hachure,
-            highlight: Some(MarkerColor::Yellow),
+            highlight: Some(MarkerColor::YELLOW),
             sloppiness: Sloppiness::Cartoonist,
             opacity: 0.8,
             corner_radius: 4.0,
@@ -778,7 +778,14 @@ fn the_paint_hash_covers_every_field_of_the_element() {
     let schema = serde_json::to_value(schemars::schema_for!(Element)).unwrap();
     let mut strings = Vec::new();
     schema_strings(&schema, &mut strings);
-    strings.extend(["#0a0b0c".into(), "#0a0b0c0d".into(), "a".repeat(64), "z9".into(), "https://other.example".into()]);
+    strings.extend([
+        "#0a0b0c".into(),
+        "#0a0b0c0d".into(),
+        "a".repeat(64),
+        "z9".into(),
+        "violet-300".into(),
+        "https://other.example".into(),
+    ]);
 
     let mut seen_names = std::collections::BTreeSet::new();
     let mut hashed = std::collections::BTreeSet::new();

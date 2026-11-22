@@ -785,18 +785,18 @@ fn highlighting_a_selection_only_marks_that_range_and_is_reported_in_characters(
     let mut m = Rig::new("héllo wörld");
     assert_eq!(m.ed.highlight_state(None), Some(None));
     m.ed.select_chars(6..11);
-    assert!(m.ed.set_highlight(Some(MarkerColor::Yellow)));
-    assert_eq!(m.ed.highlight_state(None), Some(Some(MarkerColor::Yellow)));
-    assert!(!m.ed.set_highlight(Some(MarkerColor::Yellow)), "the same again changes nothing");
+    assert!(m.ed.set_highlight(Some(MarkerColor::YELLOW)));
+    assert_eq!(m.ed.highlight_state(None), Some(Some(MarkerColor::YELLOW)));
+    assert!(!m.ed.set_highlight(Some(MarkerColor::YELLOW)), "the same again changes nothing");
     let runs = m.ed.finish().runs;
     assert_eq!(runs.len(), 1);
-    assert_eq!((runs[0].start, runs[0].end, runs[0].highlight), (6, 11, SpanHighlight::On(MarkerColor::Yellow)));
+    assert_eq!((runs[0].start, runs[0].end, runs[0].highlight), (6, 11, SpanHighlight::On(MarkerColor::YELLOW)));
     // The whole text reads as mixed, and as yellow once the text itself is yellow.
     m.ed.select_chars(0..11);
     assert_eq!(m.ed.highlight_state(None), None);
     assert_eq!(
-        m.ed.highlight_state(Some(MarkerColor::Yellow)),
-        Some(Some(MarkerColor::Yellow)),
+        m.ed.highlight_state(Some(MarkerColor::YELLOW)),
+        Some(Some(MarkerColor::YELLOW)),
         "the first word follows the yellow text, the second says yellow itself"
     );
     m.ed.select_chars(6..11);
@@ -809,7 +809,7 @@ fn a_highlight_with_a_caret_is_what_is_typed_next() {
     use drafftink_scene::MarkerColor;
     let mut m = Rig::new("ab");
     m.ed.select_chars(2..2);
-    assert!(m.ed.set_highlight(Some(MarkerColor::Pink)));
+    assert!(m.ed.set_highlight(Some(MarkerColor::from_name("pink-400").unwrap())));
     m.ed.insert("cd");
     let runs = m.ed.finish().runs;
     assert_eq!((runs[0].start, runs[0].end), (2, 4));

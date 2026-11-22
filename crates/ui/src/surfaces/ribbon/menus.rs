@@ -3,18 +3,17 @@
 //! behave like every other menu: rows with check marks, a click outside closes them, a greyed row says why.
 
 use drafftink_engine::state::Tool;
-use drafftink_scene::MarkerColor;
 use egui::{Align2, Context, Id, Sense, pos2, vec2};
 use serde_json::{Value, json};
 
 use super::controls::{CORNERS, LINE_HEIGHTS, Pick, corner_ctl, corner_slider, has_path, new_arrows};
 use super::heads::{COLUMNS, End, HEADS, head_sample};
-use super::pictograms::marker_swatch;
 use super::{Group, shows};
 use crate::chrome::GAP;
 use crate::menu_kit::{MENU_WIDTH, Menu, Popup, Row, outer_width, popup_sized};
 use crate::model::MarkerState;
 use crate::state::{OpenRibbonMenu, RibbonMenu, UiState};
+use crate::surfaces::color::{MarkerPicker, marker_popover};
 use crate::theme::space;
 use crate::widgets::{Ctl, Cx, icon_color, paint_button_bg};
 
@@ -183,34 +182,6 @@ impl HeadRows {
     }
 }
 
-/// Cells of the marker grid: the five markers, then "none".
-const MARKER_COLUMNS: usize = 6;
-
-/// The marker colours as swatches in one row, then "None". A pick is `style.set` with `highlight`, so while a text is
-/// edited it reaches the selected characters (`text_editor_takes_style`).
-fn highlight_rows(menu: &mut Menu<'_, '_, '_>, current: Option<MarkerState>, pick: Pick) {
-    menu.heading("Highlight");
-    let pal = menu.palette();
-    let choices: Vec<Option<MarkerColor>> = MarkerColor::ALL.into_iter().map(Some).chain([None]).collect();
-    menu.grid(MARKER_COLUMNS, choices.len(), |ui, cx, index, size| {
-        let Some(choice) = choices.get(index).copied() else { return ui.allocate_response(size, Sense::hover()) };
-        let (name, value) = match choice {
-            Some(m) => (m.name(), json!(m.name())),
-            None => ("none", Value::Null),
-        };
-        let selected = match (choice, current) {
-            (Some(m), Some(MarkerState::On(on))) => m == on,
-            (None, Some(MarkerState::Off)) => true,
-            _ => false,
-        };
-        let ctl = pick.ctl(value).label(format!("Highlight: {name}")).selected(selected);
-        cx.command_widget(ui, &ctl, size, move |p, rect, look| {
-            paint_button_bg(p, rect, look, &pal, true);
-            marker_swatch(p, rect.shrink2(vec2(space::SM, space::SM)), choice, pal.dark, icon_color(look, &pal));
-        })
-    });
-}
-
 /// Draws the open menu, if any, and closes it after a pick or a click outside. `overflow` are the groups that did
 /// not fit the strip: the "More" popup holds them, one under the other, above the properties of its own.
 pub(crate) fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState, overflow: &[Group]) {
@@ -219,12 +190,26 @@ pub(crate) fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState, overflow: &
         st.ribbon_menu = None;
         return;
     }
+    if kind == RibbonMenu::Highlight {
+        // The colours of a highlight are the colour popover's layout (`color::marker_popover`), not a menu. The
+        // highlighter tool has its own colour; with any other tool the colours go to the selection.
+        let (current, pick) = if cx.model.tool == Tool::Highlighter {
+            (Some(cx.model.tool_marker.map_or(MarkerState::Off, MarkerState::On)), Pick::Tool)
+        } else {
+            (cx.model.marker(), Pick::Style)
+        };
+        let command = |value: Value| pick.ctl(value);
+        if marker_popover(ctx, cx, anchor, &MarkerPicker { current, command: &command }) {
+            st.ribbon_menu = None;
+        }
+        return;
+    }
     let label = match kind {
         RibbonMenu::More => "More options menu",
         RibbonMenu::StartHead => "Start head menu",
         RibbonMenu::EndHead => "End head menu",
         RibbonMenu::CornerRadius => "Corner radius menu",
-        RibbonMenu::Highlight => "Highlight menu",
+        RibbonMenu::Highlight => "Highlight colours",
     };
     let result = match kind {
         RibbonMenu::More => {
@@ -259,21 +244,8 @@ pub(crate) fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState, overflow: &
                 });
             })
         }
-        RibbonMenu::Highlight => {
-            let spec = Popup {
-                key: Id::unique(("ribbon_menu", kind)),
-                label,
-                pivot: Align2::LEFT_TOP,
-                at: anchor.left_bottom() + vec2(0.0, GAP),
-            };
-            // The highlighter tool has its own colour; with any other tool the colours go to the selection.
-            let (current, pick) = if cx.model.tool == Tool::Highlighter {
-                (Some(cx.model.tool_marker.map_or(MarkerState::Off, MarkerState::On)), Pick::Tool)
-            } else {
-                (cx.model.marker(), Pick::Style)
-            };
-            popup_sized(ctx, cx, &spec, MENU_WIDTH, |menu| highlight_rows(menu, current, pick))
-        }
+        // Drawn above, as a colour popover.
+        RibbonMenu::Highlight => return,
         RibbonMenu::StartHead | RibbonMenu::EndHead => {
             let spec = Popup {
                 key: Id::unique(("ribbon_menu", kind)),

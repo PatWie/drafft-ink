@@ -297,7 +297,8 @@ pub struct StyleProps {
     /// How the fill is painted: solid, hachure, zigzag, cross_hatch, dots, dashed or zigzag_line.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fill_pattern: Option<FillPattern>,
-    /// The marker band behind the element: yellow, green, pink, blue or orange. `null` removes it. For text this
+    /// The marker band behind the element: a palette family in shade 300, 400 or 500 (`yellow-400`; the old names
+    /// `yellow`, `green`, `pink`, `blue` and `orange` mean the 400 shade). `null` removes it. For text this
     /// is the whole text; a part of a text is highlighted with `text.format`.
     #[serde(deserialize_with = "double_option", skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<MarkerColor>")]

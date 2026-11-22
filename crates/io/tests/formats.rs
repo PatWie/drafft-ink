@@ -1174,7 +1174,7 @@ fn a_highlight_is_a_faded_group_of_wide_flat_strokes_under_the_shape_and_has_a_v
     use drafftink_scene::{MarkerColor, Tone};
     let mut r = Element::new(eid("r"), ElementKind::Rectangle, ZIndex::first()).with_bounds(0.0, 0.0, 100.0, 60.0);
     r.style.sloppiness = drafftink_scene::Sloppiness::Architect;
-    r.style.highlight = Some(MarkerColor::Pink);
+    r.style.highlight = Some(MarkerColor::from_name("pink-400").unwrap());
     let mut d = Document::new();
     d.elements = vec![r];
     let light = export_svg(&d, &SvgOptions::default(), &EstimateMeasure, None).unwrap();
@@ -1182,10 +1182,13 @@ fn a_highlight_is_a_faded_group_of_wide_flat_strokes_under_the_shape_and_has_a_v
     let ink = light.find("stroke-width=\"2\"").expect("and the stroke 2");
     assert!(band < ink, "the band comes first, so it lies under the stroke");
     assert!(light.contains("<g opacity=\"0.5\">"), "one faded group");
-    assert!(light.contains(&MarkerColor::Pink.rgb(Tone::Light).to_hex()), "{light}");
+    assert!(light.contains(&MarkerColor::from_name("pink-400").unwrap().rgb(Tone::Light).to_hex()), "{light}");
     assert!(light.contains("stroke-linecap=\"butt\""), "flat ends");
     let dark = export_svg(&d, &SvgOptions { dark: true, ..SvgOptions::default() }, &EstimateMeasure, None).unwrap();
-    assert!(dark.contains(&MarkerColor::Pink.rgb(Tone::Dark).to_hex()), "the dark export uses the dark marker");
+    assert!(
+        dark.contains(&MarkerColor::from_name("pink-400").unwrap().rgb(Tone::Dark).to_hex()),
+        "the dark export uses the dark marker"
+    );
     d.elements[0].style.highlight = None;
     assert!(!export_svg(&d, &SvgOptions::default(), &EstimateMeasure, None).unwrap().contains("<g opacity=\"0.5\">"));
 }

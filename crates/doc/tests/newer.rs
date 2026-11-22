@@ -38,9 +38,9 @@ fn a_highlight_syncs_between_peers_and_clearing_it_syncs_too() {
     let (mut a, mut b) = (peer(1), peer(2));
     add(&mut a, vec![rect("r", &zs(1)[0])]);
     sync(&mut a, &mut b);
-    edit(&mut a, "r", |e| e.style.highlight = Some(MarkerColor::Orange));
+    edit(&mut a, "r", |e| e.style.highlight = Some(MarkerColor::from_name("orange-400").unwrap()));
     push(&a, &mut b);
-    assert_eq!(b.get(&eid("r")).unwrap().style.highlight, Some(MarkerColor::Orange));
+    assert_eq!(b.get(&eid("r")).unwrap().style.highlight, Some(MarkerColor::from_name("orange-400").unwrap()));
     assert_view_matches_loro(&b);
     edit(&mut b, "r", |e| e.style.highlight = None);
     push(&b, &mut a);
@@ -55,7 +55,14 @@ fn the_highlight_of_a_run_is_a_mark_that_syncs_and_moves_with_its_characters() {
     add(&mut a, vec![text("t", &zs(1)[0], "one two three")]);
     sync(&mut a, &mut b);
     let runs = vec![
-        TextRun::new(4, 7, CharStyle { highlight: SpanHighlight::On(MarkerColor::Green), ..CharStyle::default() }),
+        TextRun::new(
+            4,
+            7,
+            CharStyle {
+                highlight: SpanHighlight::On(MarkerColor::from_name("green-400").unwrap()),
+                ..CharStyle::default()
+            },
+        ),
         TextRun::new(8, 13, CharStyle { highlight: SpanHighlight::Off, bold: true, ..CharStyle::default() }),
     ];
     edit(&mut a, "t", |e| {
@@ -79,7 +86,7 @@ fn the_highlight_of_a_run_is_a_mark_that_syncs_and_moves_with_its_characters() {
     push(&b, &mut a);
     let ElementKind::Text(t) = &a.get(&eid("t")).unwrap().kind else { panic!("text") };
     assert_eq!(t.runs[0].start, 7);
-    assert_eq!(t.runs[0].highlight, SpanHighlight::On(MarkerColor::Green));
+    assert_eq!(t.runs[0].highlight, SpanHighlight::On(MarkerColor::from_name("green-400").unwrap()));
 }
 
 #[test]
@@ -99,7 +106,7 @@ fn an_element_with_fields_of_a_newer_build_is_shown_and_its_fields_survive_an_ed
     n.send(&mut s).unwrap();
 
     let shown = s.get(&eid("new")).expect("shown, not quarantined");
-    assert_eq!(shown.style.highlight, Some(MarkerColor::Pink));
+    assert_eq!(shown.style.highlight, Some(MarkerColor::from_name("pink-400").unwrap()));
     assert_eq!(s.invalid_elements().count(), 0);
     assert_eq!(s.newer_element_count(), 1);
 
@@ -117,4 +124,38 @@ fn an_element_with_fields_of_a_newer_build_is_shown_and_its_fields_survive_an_ed
     peer_b.apply_remote(&s.export_snapshot().unwrap()).unwrap();
     assert_eq!(peer_b.get(&eid("new")).unwrap().style.opacity, 0.5);
     assert_eq!(peer_b.newer_element_count(), 1);
+}
+
+#[test]
+fn a_run_marked_with_an_old_highlight_name_reads_as_the_new_name_and_is_written_under_it() {
+    let mut s = peer(1);
+    add(&mut s, vec![text("t", &zs(1)[0], "one two three")]);
+    // A peer of the first builds marked "two" with `pink` and "three" with `none`.
+    let n = Newer::of(&s);
+    let Some(loro::ValueOrContainer::Container(loro::Container::Text(t))) = n.element("t").get("kind.content") else {
+        panic!("the text is a LoroText")
+    };
+    t.mark(4..7, "highlight", "pink").unwrap();
+    t.mark(8..13, "highlight", "none").unwrap();
+    n.send(&mut s).unwrap();
+    let ElementKind::Text(read) = &s.get(&eid("t")).unwrap().kind else { panic!("text") };
+    let pink = MarkerColor::from_name("pink-400").unwrap();
+    assert_eq!(
+        read.runs.iter().map(|r| (r.start, r.end, r.highlight)).collect::<Vec<_>>(),
+        [(4, 7, SpanHighlight::On(pink)), (8, 13, SpanHighlight::Off)]
+    );
+    // Writing the element again puts the new name on the mark: an old build's name is not written back.
+    edit(&mut s, "t", |e| e.locked = true);
+    edit(&mut s, "t", |e| {
+        if let ElementKind::Text(t) = &mut e.kind {
+            t.runs[0].end = 6;
+        }
+    });
+    let Some(loro::ValueOrContainer::Container(loro::Container::Text(t))) =
+        Newer::of(&s).element("t").get("kind.content")
+    else {
+        panic!("the text is a LoroText")
+    };
+    let marks = loro::ToJson::to_json_value(&t.get_richtext_value()).to_string();
+    assert!(marks.contains("pink-400") && !marks.contains("\"pink\""), "{marks}");
 }

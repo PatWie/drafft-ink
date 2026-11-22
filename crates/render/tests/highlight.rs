@@ -67,38 +67,49 @@ fn rect(highlight: Option<MarkerColor>) -> Element {
 fn a_highlight_is_one_faded_layer_drawn_before_the_ink() {
     let plain = paint(&rect(None));
     assert_eq!(layers(&plain), 0);
-    let f = paint(&rect(Some(MarkerColor::Yellow)));
+    let f = paint(&rect(Some(MarkerColor::YELLOW)));
     assert_eq!(layers(&f), 1, "one layer, so that overlaps do not darken");
     // The band is opaque inside its layer; the stroke comes after it.
-    assert_eq!(colors(&f), [packed(MarkerColor::Yellow.rgb(Tone::Light)), packed(Color::rgb(200, 30, 30))]);
+    assert_eq!(colors(&f), [packed(MarkerColor::YELLOW.rgb(Tone::Light)), packed(Color::rgb(200, 30, 30))]);
 }
 
 #[test]
 fn the_band_is_under_the_fill_and_the_stroke() {
-    let mut e = rect(Some(MarkerColor::Pink));
+    let mut e = rect(Some(MarkerColor::from_name("pink-400").unwrap()));
     e.style.fill_color = Some(Color::rgb(0, 120, 0));
     let f = paint(&e);
     assert_eq!(
         colors(&f),
-        [packed(MarkerColor::Pink.rgb(Tone::Light)), packed(Color::rgb(0, 120, 0)), packed(Color::rgb(200, 30, 30))]
+        [
+            packed(MarkerColor::from_name("pink-400").unwrap().rgb(Tone::Light)),
+            packed(Color::rgb(0, 120, 0)),
+            packed(Color::rgb(200, 30, 30))
+        ]
     );
 }
 
 #[test]
 fn the_dark_canvas_uses_the_dark_value_of_the_marker_and_the_light_one_does_not() {
-    let e = rect(Some(MarkerColor::Green));
+    let e = rect(Some(MarkerColor::from_name("green-400").unwrap()));
     let mut ts = Typesetter::new();
     let on_dark = colors(&paint_with(&e, dark(), &mut ts));
     let on_light = colors(&paint_with(&e, RenderOptions::default(), &mut ts));
-    assert_eq!(on_dark[0], packed(MarkerColor::Green.rgb(Tone::Dark)));
-    assert_eq!(on_light[0], packed(MarkerColor::Green.rgb(Tone::Light)));
-    assert_ne!(on_dark[0], packed(MarkerColor::Green.rgb(Tone::Light).for_dark_theme()), "not the filtered colour");
-    assert_eq!(Theme::Dark.marker(MarkerColor::Green), MarkerColor::Green.rgb(Tone::Dark));
+    assert_eq!(on_dark[0], packed(MarkerColor::from_name("green-400").unwrap().rgb(Tone::Dark)));
+    assert_eq!(on_light[0], packed(MarkerColor::from_name("green-400").unwrap().rgb(Tone::Light)));
+    assert_ne!(
+        on_dark[0],
+        packed(MarkerColor::from_name("green-400").unwrap().rgb(Tone::Light).for_dark_theme()),
+        "not the filtered colour"
+    );
+    assert_eq!(
+        Theme::Dark.marker(MarkerColor::from_name("green-400").unwrap()),
+        MarkerColor::from_name("green-400").unwrap().rgb(Tone::Dark)
+    );
 }
 
 #[test]
 fn the_band_is_wider_than_the_stroke_and_follows_the_outline_not_the_inside() {
-    let thin = paint(&rect(Some(MarkerColor::Yellow)));
+    let thin = paint(&rect(Some(MarkerColor::YELLOW)));
     let plain = paint(&rect(None));
     // 10 wide at least: the band reaches 5 beyond the outline.
     assert!(
@@ -107,11 +118,11 @@ fn the_band_is_wider_than_the_stroke_and_follows_the_outline_not_the_inside() {
         thin.bounds,
         plain.bounds
     );
-    let mut thick = rect(Some(MarkerColor::Yellow));
+    let mut thick = rect(Some(MarkerColor::YELLOW));
     thick.style.stroke_width = 8.0;
     assert!(paint(&thick).bounds.width() > thin.bounds.width() + 10.0, "3 x 8 = 24 wide");
     // The band is a stroke of the outline, not a filled box: no fill command for it.
-    assert!(path_segments(&paint(&rect(Some(MarkerColor::Yellow)))) > path_segments(&plain));
+    assert!(path_segments(&paint(&rect(Some(MarkerColor::YELLOW)))) > path_segments(&plain));
 }
 
 #[test]
@@ -126,9 +137,9 @@ fn an_arrow_head_is_in_the_band_and_an_open_line_gets_slanted_cuts() {
         e.style.highlight = highlight;
         e
     };
-    let headless = paint(&arrow(Head::None, Some(MarkerColor::Blue)));
+    let headless = paint(&arrow(Head::None, Some(MarkerColor::from_name("blue-400").unwrap())));
     // The head stands 20 units wide, 10 either side of the shaft, and its band comes with it.
-    let with = paint(&arrow(Head::Triangle, Some(MarkerColor::Blue)));
+    let with = paint(&arrow(Head::Triangle, Some(MarkerColor::from_name("blue-400").unwrap())));
     assert!(with.bounds.height() >= headless.bounds.height() + 10.0, "{:?} {:?}", with.bounds, headless.bounds);
 }
 
@@ -141,7 +152,7 @@ fn cardinality_markers_get_a_band_too() {
     e.style.sloppiness = Sloppiness::Architect;
     let band_of = |e: &Element| {
         let mut marked = e.clone();
-        marked.style.highlight = Some(MarkerColor::Orange);
+        marked.style.highlight = Some(MarkerColor::from_name("orange-400").unwrap());
         path_segments(&paint(&marked)) - path_segments(&paint(e))
     };
     let with_marker = band_of(&e);
@@ -157,20 +168,20 @@ fn cardinality_markers_get_a_band_too() {
 fn freehand_image_and_math_have_a_band_and_a_frame_has_none() {
     let mut rng = Rng(3);
     let mut hand = freehand_el("f", &ZIndex::first(), 0.0, 0.0, 12, &mut rng, false);
-    hand.style.highlight = Some(MarkerColor::Yellow);
+    hand.style.highlight = Some(MarkerColor::YELLOW);
     assert_eq!(layers(&paint(&hand)), 1);
     let mut img = Element::new(id("i"), ElementKind::Image(ImageData::new(None, 10, 10)), ZIndex::first())
         .with_bounds(0.0, 0.0, 60.0, 40.0);
     img.style = Style::for_image(1);
-    img.style.highlight = Some(MarkerColor::Yellow);
+    img.style.highlight = Some(MarkerColor::YELLOW);
     assert_eq!(layers(&paint(&img)), 1);
     let mut ts = Typesetter::new();
     let mut m = math_el(&mut ts, "m", &ZIndex::first(), 0.0, 0.0, "x^2");
-    m.style.highlight = Some(MarkerColor::Yellow);
+    m.style.highlight = Some(MarkerColor::YELLOW);
     assert_eq!(layers(&paint(&m)), 1);
     let mut frame = Element::new(id("fr"), ElementKind::Frame(FrameData::default()), ZIndex::first())
         .with_bounds(0.0, 0.0, 50.0, 50.0);
-    frame.style.highlight = Some(MarkerColor::Yellow);
+    frame.style.highlight = Some(MarkerColor::YELLOW);
     assert_eq!(layers(&paint(&frame)), 0, "a frame is a container, not content to mark");
 }
 
@@ -193,12 +204,12 @@ fn a_text_highlight_is_one_band_per_line_in_one_layer() {
     let mut ts = Typesetter::new();
     let mut e = text(&mut ts, "one\ntwo\nthree");
     let plain = paint_with(&e, RenderOptions::default(), &mut ts);
-    e.style.highlight = Some(MarkerColor::Yellow);
+    e.style.highlight = Some(MarkerColor::YELLOW);
     let f = paint_with(&e, RenderOptions::default(), &mut ts);
     assert_eq!(layers(&f), plain_layers(&plain) + 1);
     // Three lines: three quadrilaterals, each 5 path segments (move, three lines, close) before the glyphs.
     assert!(path_segments(&f) >= path_segments(&plain) + 15, "{} {}", path_segments(&f), path_segments(&plain));
-    assert_eq!(colors(&f)[0], packed(MarkerColor::Yellow.rgb(Tone::Light)), "the band is first");
+    assert_eq!(colors(&f)[0], packed(MarkerColor::YELLOW.rgb(Tone::Light)), "the band is first");
 }
 
 fn plain_layers(f: &Fragment) -> usize {
@@ -213,14 +224,34 @@ fn only_the_highlighted_characters_get_a_band_and_each_colour_its_own_layer() {
     set_runs(
         &mut e,
         vec![
-            TextRun::new(0, 5, CharStyle { highlight: SpanHighlight::On(MarkerColor::Green), ..Default::default() }),
-            TextRun::new(11, 16, CharStyle { highlight: SpanHighlight::On(MarkerColor::Pink), ..Default::default() }),
+            TextRun::new(
+                0,
+                5,
+                CharStyle {
+                    highlight: SpanHighlight::On(MarkerColor::from_name("green-400").unwrap()),
+                    ..Default::default()
+                },
+            ),
+            TextRun::new(
+                11,
+                16,
+                CharStyle {
+                    highlight: SpanHighlight::On(MarkerColor::from_name("pink-400").unwrap()),
+                    ..Default::default()
+                },
+            ),
         ],
     );
     let f = paint_with(&e, RenderOptions::default(), &mut ts);
     assert_eq!(layers(&f), before + 2, "two colours, two layers");
     let c = colors(&f);
-    assert_eq!(&c[..2], &[packed(MarkerColor::Green.rgb(Tone::Light)), packed(MarkerColor::Pink.rgb(Tone::Light))]);
+    assert_eq!(
+        &c[..2],
+        &[
+            packed(MarkerColor::from_name("green-400").unwrap().rgb(Tone::Light)),
+            packed(MarkerColor::from_name("pink-400").unwrap().rgb(Tone::Light))
+        ]
+    );
     // A highlight alone changes no glyph: the glyph runs are those of the plain text.
     let glyphs = |f: &Fragment| f.scene.encoding().resources.glyph_runs.len();
     let plain = paint_with(&text(&mut ts, "alpha beta gamma"), RenderOptions::default(), &mut ts);
@@ -231,7 +262,7 @@ fn only_the_highlighted_characters_get_a_band_and_each_colour_its_own_layer() {
 fn a_run_can_switch_the_highlight_of_the_whole_text_off_for_its_characters() {
     let mut ts = Typesetter::new();
     let mut e = text(&mut ts, "alpha beta gamma");
-    e.style.highlight = Some(MarkerColor::Yellow);
+    e.style.highlight = Some(MarkerColor::YELLOW);
     let whole = paint_with(&e, RenderOptions::default(), &mut ts);
     set_runs(&mut e, vec![TextRun::new(5, 11, CharStyle { highlight: SpanHighlight::Off, ..Default::default() })]);
     let holed = paint_with(&e, RenderOptions::default(), &mut ts);
@@ -243,7 +274,7 @@ fn a_run_can_switch_the_highlight_of_the_whole_text_off_for_its_characters() {
 fn the_ends_are_irregular_and_come_from_the_seed_alone() {
     let mut ts = Typesetter::new();
     let mut e = text(&mut ts, "marker pen");
-    e.style.highlight = Some(MarkerColor::Yellow);
+    e.style.highlight = Some(MarkerColor::YELLOW);
     let a = geometry(&paint_with(&e, RenderOptions::default(), &mut ts));
     assert_eq!(a, geometry(&paint_with(&e, RenderOptions::default(), &mut ts)), "deterministic");
     let mut moved = e.clone();
@@ -259,16 +290,23 @@ fn the_ends_are_irregular_and_come_from_the_seed_alone() {
 #[test]
 fn the_paint_hash_sees_the_highlight_of_the_element_and_of_a_run_and_not_the_position() {
     let base = paint_hash(&rect(None));
-    assert_ne!(base, paint_hash(&rect(Some(MarkerColor::Yellow))));
-    assert_ne!(paint_hash(&rect(Some(MarkerColor::Yellow))), paint_hash(&rect(Some(MarkerColor::Green))));
-    let mut moved = rect(Some(MarkerColor::Yellow));
+    assert_ne!(base, paint_hash(&rect(Some(MarkerColor::YELLOW))));
+    assert_ne!(
+        paint_hash(&rect(Some(MarkerColor::YELLOW))),
+        paint_hash(&rect(Some(MarkerColor::from_name("green-400").unwrap())))
+    );
+    let mut moved = rect(Some(MarkerColor::YELLOW));
     moved.transform.x += 40.0;
-    assert_eq!(paint_hash(&rect(Some(MarkerColor::Yellow))), paint_hash(&moved));
+    assert_eq!(paint_hash(&rect(Some(MarkerColor::YELLOW))), paint_hash(&moved));
 
     let mut ts = Typesetter::new();
     let mut t = text(&mut ts, "alpha beta");
     let plain = paint_hash(&t);
-    for h in [SpanHighlight::On(MarkerColor::Yellow), SpanHighlight::On(MarkerColor::Pink), SpanHighlight::Off] {
+    for h in [
+        SpanHighlight::On(MarkerColor::YELLOW),
+        SpanHighlight::On(MarkerColor::from_name("pink-400").unwrap()),
+        SpanHighlight::Off,
+    ] {
         set_runs(&mut t, vec![TextRun::new(0, 5, CharStyle { highlight: h, ..Default::default() })]);
         assert_ne!(paint_hash(&t), plain, "{h:?}");
     }
@@ -278,20 +316,20 @@ fn the_paint_hash_sees_the_highlight_of_the_element_and_of_a_run_and_not_the_pos
 fn a_fragment_cache_hit_is_not_served_after_the_highlight_changes() {
     let mut cache = FragmentCache::new(DEFAULT_CACHE_BYTES);
     let _ = &mut cache; // the key is what decides; see the hash test above
-    let (a, b) = (rect(None), rect(Some(MarkerColor::Orange)));
+    let (a, b) = (rect(None), rect(Some(MarkerColor::from_name("orange-400").unwrap())));
     assert_ne!(paint_hash(&a), paint_hash(&b));
 }
 
 #[test]
 fn the_paint_bounds_cover_the_band() {
     let plain = rect(None);
-    let marked = rect(Some(MarkerColor::Yellow));
+    let marked = rect(Some(MarkerColor::YELLOW));
     let (p, m) = (paint_bounds(&plain), paint_bounds(&marked));
     assert!(m.x0 < p.x0 && m.x1 > p.x1 && m.y0 < p.y0 && m.y1 > p.y1);
     let f = paint(&marked);
     let world = f.bounds;
     assert!(world.x0 >= m.x0 - paint_margin(&marked).left && world.x1 <= 120.0 + paint_margin(&marked).right);
-    let mut thick = rect(Some(MarkerColor::Yellow));
+    let mut thick = rect(Some(MarkerColor::YELLOW));
     thick.style.stroke_width = 10.0;
     assert!(paint_margin(&thick).left >= 3.0 * 10.0 / 2.0, "half the band");
 }
@@ -326,9 +364,11 @@ fn every_band_stays_inside_the_paint_bounds_whatever_the_shape() {
     elements.push(text_el(&mut ts, "t", &z, 0.0, 0.0, "marker\npen and a longer second line"));
     elements.push(math_el(&mut ts, "m", &z, 0.0, 0.0, "\\frac{a}{b}"));
     for mut e in elements {
-        for (sw, seed, color) in
-            [(0.0, 1, MarkerColor::Yellow), (2.0, 99, MarkerColor::Pink), (14.0, 7, MarkerColor::Blue)]
-        {
+        for (sw, seed, color) in [
+            (0.0, 1, MarkerColor::YELLOW),
+            (2.0, 99, MarkerColor::from_name("pink-400").unwrap()),
+            (14.0, 7, MarkerColor::from_name("blue-400").unwrap()),
+        ] {
             e.style.stroke_width = sw;
             e.style.seed = seed;
             e.style.highlight = Some(color);

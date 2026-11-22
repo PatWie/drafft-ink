@@ -2,10 +2,15 @@
 //! Highlight: the model, the files, the marker colours and the reading of files from a newer version.
 
 use drafftink_scene::{
-    CharStyle, Color, Document, DocumentError, Element, ElementId, ElementKind, MARKER_ALPHA, MarkerColor,
-    SpanHighlight, Style, TextData, TextRun, Tone, ZIndex, unknown::UnknownFields,
+    CharStyle, Color, Document, DocumentError, Element, ElementId, ElementKind, MARKER_ALPHA, MarkerColor, MarkerShade,
+    SpanHighlight, Style, TextData, TextRun, Tone, ZIndex, palette, unknown::UnknownFields,
 };
 use serde_json::json;
+
+/// The marker of a name.
+fn m(name: &str) -> MarkerColor {
+    MarkerColor::from_name(name).unwrap()
+}
 
 fn id(s: &str) -> ElementId {
     ElementId::new(s).unwrap()
@@ -19,7 +24,7 @@ fn rect(name: &str, highlight: Option<MarkerColor>) -> Element {
 
 #[test]
 fn a_highlight_round_trips_and_no_highlight_writes_nothing() {
-    for color in MarkerColor::ALL {
+    for color in MarkerColor::all() {
         let mut doc = Document::new();
         doc.elements = vec![rect("r", Some(color))];
         let json = doc.to_json().unwrap();
@@ -80,7 +85,11 @@ fn unknown_fields_are_ignored_collected_and_named() {
     assert_eq!(loaded.unknown.count(), 4);
     let doc = loaded.document;
     assert_eq!(doc.elements.len(), 2);
-    assert_eq!(doc.elements[0].style.highlight, Some(MarkerColor::Pink), "what is known is kept");
+    assert_eq!(
+        doc.elements[0].style.highlight,
+        Some(m("pink-400")),
+        "what is known is kept (the old name pink is pink-400)"
+    );
     let ElementKind::Text(t) = &doc.elements[1].kind else { panic!("a text") };
     assert_eq!((t.content.as_str(), t.runs.len(), t.runs[0].bold), ("hello", 1, true));
     assert!(UnknownFields::WARNING.contains("newer version of Drafft.ink"));
@@ -115,21 +124,21 @@ fn many_elements_with_unknown_fields_load_without_reparsing_the_document() {
 fn a_run_highlight_round_trips_and_inherit_is_not_written() {
     let mut text = TextData::new("one two three");
     text.runs = vec![
-        TextRun::new(0, 3, CharStyle { highlight: SpanHighlight::On(MarkerColor::Green), ..CharStyle::default() }),
+        TextRun::new(0, 3, CharStyle { highlight: SpanHighlight::On(m("green-400")), ..CharStyle::default() }),
         TextRun::new(4, 7, CharStyle { highlight: SpanHighlight::Off, bold: true, ..CharStyle::default() }),
         TextRun { start: 8, end: 13, bold: true, ..Default::default() },
     ];
     let mut doc = Document::new();
     doc.elements = vec![Element::new(id("t"), ElementKind::Text(text), ZIndex::first())];
     let json = doc.to_json().unwrap();
-    assert!(json.contains("\"highlight\":\"green\"") && json.contains("\"highlight\":\"none\""), "{json}");
+    assert!(json.contains("\"highlight\":\"green-400\"") && json.contains("\"highlight\":\"none\""), "{json}");
     assert_eq!(json.matches("highlight").count(), 2, "the third run has none to write: {json}");
     assert_eq!(Document::from_json(&json).unwrap(), doc);
 }
 
 #[test]
 fn a_run_with_only_a_highlight_is_not_plain_and_does_not_touch_glyphs() {
-    let run = TextRun { start: 0, end: 2, highlight: SpanHighlight::On(MarkerColor::Blue), ..Default::default() };
+    let run = TextRun { start: 0, end: 2, highlight: SpanHighlight::On(m("blue-400")), ..Default::default() };
     assert!(!run.style().is_plain());
     assert!(!run.styles_glyphs());
     assert!(TextRun { bold: true, ..run.clone() }.styles_glyphs());
@@ -137,29 +146,108 @@ fn a_run_with_only_a_highlight_is_not_plain_and_does_not_touch_glyphs() {
 
 #[test]
 fn the_span_rule_is_span_over_element() {
-    use MarkerColor::{Pink, Yellow};
+    let (pink, yellow) = (m("pink-300"), m("yellow-400"));
     use SpanHighlight::{Inherit, Off, On};
-    assert_eq!(Inherit.resolve(Some(Yellow)), Some(Yellow));
+    assert_eq!(Inherit.resolve(Some(yellow)), Some(yellow));
     assert_eq!(Inherit.resolve(None), None);
-    assert_eq!(Off.resolve(Some(Yellow)), None);
-    assert_eq!(On(Pink).resolve(Some(Yellow)), Some(Pink));
-    assert_eq!(On(Pink).resolve(None), Some(Pink));
-    for element in [None, Some(Yellow), Some(Pink)] {
-        for wanted in [None, Some(Yellow), Some(Pink)] {
+    assert_eq!(Off.resolve(Some(yellow)), None);
+    assert_eq!(On(pink).resolve(Some(yellow)), Some(pink));
+    assert_eq!(On(pink).resolve(None), Some(pink));
+    for element in [None, Some(yellow), Some(pink)] {
+        for wanted in [None, Some(yellow), Some(pink)] {
             assert_eq!(SpanHighlight::for_result(wanted, element).resolve(element), wanted);
         }
     }
-    assert_eq!(SpanHighlight::for_result(Some(Yellow), Some(Yellow)), Inherit, "no value of its own when not needed");
+    assert_eq!(SpanHighlight::for_result(Some(yellow), Some(yellow)), Inherit, "no value of its own when not needed");
 }
 
 #[test]
 fn span_highlight_names_parse_and_bad_ones_are_refused() {
-    for name in ["none", "yellow", "green", "pink", "blue", "orange"] {
+    for name in ["none", "yellow-400", "slate-300", "emerald-500"] {
         let h = SpanHighlight::from_name(name).unwrap();
-        assert_eq!(h.name(), Some(name));
+        assert_eq!(h.name().as_deref(), Some(name));
     }
-    assert!(serde_json::from_value::<SpanHighlight>(json!("purple")).is_err());
+    assert_eq!(SpanHighlight::from_name("yellow"), Some(SpanHighlight::On(m("yellow-400"))), "an old name");
+    assert!(serde_json::from_value::<SpanHighlight>(json!("purple")).is_err(), "a family needs a shade");
+    assert!(serde_json::from_value::<SpanHighlight>(json!("purple-100")).is_err(), "so does a marker shade");
     assert_eq!(serde_json::from_value::<SpanHighlight>(json!(null)).unwrap(), SpanHighlight::Inherit);
+}
+
+// ---- names ----------------------------------------------------------------------------------------------------------
+
+#[test]
+fn every_family_and_marker_shade_has_a_name_that_round_trips() {
+    let all: Vec<MarkerColor> = MarkerColor::all().collect();
+    assert_eq!(all.len(), palette::FAMILIES.len() * MarkerShade::ALL.len(), "22 families by 3 shades");
+    assert_eq!(palette::FAMILIES.len(), 22);
+    for marker in &all {
+        let name = marker.name();
+        assert_eq!(name, format!("{}-{}", marker.family_name(), marker.shade().number()));
+        assert_eq!(MarkerColor::from_name(&name), Some(*marker), "{name}");
+        assert_eq!(MarkerColor::from_name(&name.to_uppercase()), Some(*marker), "case is ignored: {name}");
+        assert_eq!(serde_json::to_value(marker).unwrap(), json!(name));
+        assert_eq!(serde_json::from_value::<MarkerColor>(json!(name)).unwrap(), *marker);
+        assert_eq!(marker.to_string(), name);
+        // The light ink is the palette colour of the same name: a marker is a palette colour, not an invention.
+        assert_eq!(Some(marker.rgb(Tone::Light)), palette::lookup(&name), "{name}");
+    }
+    let mut names: Vec<String> = all.iter().map(|x| x.name()).collect();
+    names.sort();
+    names.dedup();
+    assert_eq!(names.len(), all.len(), "no two markers share a name");
+    assert_eq!(MarkerColor::YELLOW, m("yellow-400"), "the default marker");
+}
+
+#[test]
+fn the_shades_are_300_400_and_500_and_nothing_else_is_a_marker() {
+    assert_eq!(MarkerShade::ALL.map(MarkerShade::number), [300, 400, 500]);
+    for shade in palette::SHADES.into_iter().filter(|s| ![300, 400, 500].contains(s)) {
+        assert_eq!(MarkerColor::from_name(&format!("blue-{shade}")), None, "blue-{shade}");
+    }
+    for bad in ["", "-", "blue-", "blue-4x0", "mauve-400", "blue 400", "#facc15", "yellow-400-400", "none"] {
+        assert_eq!(MarkerColor::from_name(bad), None, "{bad:?}");
+    }
+    let err = serde_json::from_value::<MarkerColor>(json!("blue-100")).unwrap_err().to_string();
+    assert!(err.contains("shade 300, 400 or 500") && err.contains("yellow-400") && err.contains("emerald"), "{err}");
+}
+
+#[test]
+fn the_five_old_names_still_load_as_the_standard_shade_of_their_family() {
+    for (old, new) in [
+        ("yellow", "yellow-400"),
+        ("green", "green-400"),
+        ("pink", "pink-400"),
+        ("blue", "blue-400"),
+        ("orange", "orange-400"),
+    ] {
+        assert_eq!(m(old), m(new), "{old}");
+        assert_eq!(serde_json::from_value::<MarkerColor>(json!(old)).unwrap(), m(new));
+        // They are written under the new name.
+        assert_eq!(serde_json::to_value(m(old)).unwrap(), json!(new));
+        // A file of the first builds loads, with the highlight of an element and of a run.
+        let text = json!({"format": "drafftink", "elements": [{
+            "id": "t", "kind": {"type": "text", "content": "abc", "runs": [{"start": 0, "end": 1, "highlight": old}]},
+            "transform": {"x": 0.0, "y": 0.0, "w": 5.0, "h": 5.0},
+            "style": {"highlight": old}, "index": "a0"
+        }]})
+        .to_string();
+        let doc = Document::from_json(&text).unwrap();
+        let e = &doc.elements[0];
+        assert_eq!(e.style.highlight, Some(m(new)));
+        let ElementKind::Text(t) = &e.kind else { panic!("a text") };
+        assert_eq!(t.runs[0].highlight, SpanHighlight::On(m(new)));
+        assert!(doc.to_json().unwrap().contains(&format!("\"{new}\"")));
+    }
+}
+
+#[test]
+fn the_json_schema_names_the_pattern_and_accepts_the_old_names() {
+    let schema = serde_json::to_value(schemars::schema_for!(MarkerColor)).unwrap();
+    let pattern = schema["pattern"].as_str().unwrap();
+    assert!(pattern.contains("emerald") && pattern.contains("(300|400|500)"), "{pattern}");
+    for old in ["yellow", "green", "pink", "blue", "orange"] {
+        assert!(pattern.contains(old), "{old}");
+    }
 }
 
 // ---- theme resolution and contrast --------------------------------------------------------------------------------
@@ -184,18 +272,73 @@ fn over(ink: Color, alpha: f64, under: Color) -> Color {
     Color::rgb(mix(ink.r, under.r), mix(ink.g, under.g), mix(ink.b, under.b))
 }
 
+/// The least contrast a band must have against the canvas, and a text on it, per marker shade and canvas (the
+/// measured least over the 22 families is in the comment of each line). Light: the wash shows (1.14; 1.153 measured,
+/// for lime and yellow) and keeps black text at 12 or more (15.2); the marker (1.2; 1.244, 12.7) and the strong marker
+/// (1.35; 1.39, with 10; 10.6 measured) follow. Dark: every band shows against the page (1.4 for the wash, 1.5 for the
+/// marker, 1.8 for the strong one; 1.417, 1.585, 1.917 measured) and the light text on it stays above 8, 6 and the
+/// WCAG AA 4.5 (8.8, 6.5, 4.9).
+fn limits(tone: Tone, shade: MarkerShade) -> (f64, f64) {
+    match (tone, shade) {
+        (Tone::Light, MarkerShade::Soft) => (1.14, 12.0),
+        (Tone::Light, MarkerShade::Standard) => (1.2, 12.0),
+        (Tone::Light, MarkerShade::Strong) => (1.35, 10.0),
+        (Tone::Dark, MarkerShade::Soft) => (1.4, 8.0),
+        (Tone::Dark, MarkerShade::Standard) => (1.5, 6.0),
+        (Tone::Dark, MarkerShade::Strong) => (1.8, 4.5),
+    }
+}
+
 #[test]
-fn every_marker_reads_as_a_marker_and_keeps_the_text_readable_on_both_canvases() {
-    // (canvas, text colour as the canvas shows it, least contrast of band against canvas, least of text on band).
-    let light = (Color::WHITE, Color::BLACK, Tone::Light, 1.15, 12.0);
-    let dark = (Color::WHITE.for_dark_theme(), Color::BLACK.for_dark_theme(), Tone::Dark, 1.7, 5.5);
-    for (canvas, text, tone, band_min, text_min) in [light, dark] {
-        for m in MarkerColor::ALL {
-            let band = over(m.rgb(tone), MARKER_ALPHA, canvas);
+fn every_family_and_shade_reads_as_a_marker_and_keeps_the_text_readable_on_both_canvases() {
+    let canvases = [
+        (Color::WHITE, Color::BLACK, Tone::Light),
+        (Color::WHITE.for_dark_theme(), Color::BLACK.for_dark_theme(), Tone::Dark),
+    ];
+    for (canvas, text, tone) in canvases {
+        for marker in MarkerColor::all() {
+            let (band_min, text_min) = limits(tone, marker.shade());
+            let band = over(marker.rgb(tone), MARKER_ALPHA, canvas);
             let (against_canvas, against_text) = (contrast(band, canvas), contrast(band, text));
-            assert!(against_canvas >= band_min, "{m} on {tone:?}: band against canvas {against_canvas:.2}");
-            assert!(against_text >= text_min, "{m} on {tone:?}: text on band {against_text:.2}");
+            assert!(against_canvas >= band_min, "{marker} on {tone:?}: band against canvas {against_canvas:.2}");
+            assert!(against_text >= text_min, "{marker} on {tone:?}: text on band {against_text:.2}");
         }
+    }
+}
+
+#[test]
+fn the_dark_value_is_the_same_family_at_the_mirrored_shade_and_the_greys_one_step_lighter() {
+    let dark_name = |marker: MarkerColor| {
+        let ink = marker.rgb(Tone::Dark);
+        palette::SHADES
+            .into_iter()
+            .find(|s| palette::lookup(&format!("{}-{s}", marker.family_name())) == Some(ink))
+            .unwrap()
+    };
+    for marker in MarkerColor::all() {
+        let grey = ["slate", "gray", "zinc", "neutral", "stone"].contains(&marker.family_name());
+        let expected = match (marker.shade(), grey) {
+            (MarkerShade::Soft, false) => 700,
+            (MarkerShade::Standard, false) => 600,
+            (MarkerShade::Strong, false) => 500,
+            (MarkerShade::Soft, true) => 600,
+            (MarkerShade::Standard, true) => 500,
+            (MarkerShade::Strong, true) => 400,
+        };
+        assert_eq!(dark_name(marker), expected, "{marker}");
+        // The strong marker of a coloured family is the palette 500 on both canvases (the mirror of 500 is 500).
+        if marker.shade() == MarkerShade::Strong && !grey {
+            assert_eq!(marker.rgb(Tone::Light), marker.rgb(Tone::Dark), "{marker}");
+        } else {
+            assert_ne!(marker.rgb(Tone::Light), marker.rgb(Tone::Dark), "{marker} resolves differently per theme");
+            // A grey at the strong shade is the one exception: its dark value is the palette 400, so that its band shows.
+            let exception = marker.shade() == MarkerShade::Strong;
+            assert!(
+                exception || luminance(marker.rgb(Tone::Dark)) < luminance(marker.rgb(Tone::Light)),
+                "{marker}: deeper on dark"
+            );
+        }
+        assert_eq!(marker.rgb(Tone::Light).a, 255, "the alpha is the layer's, not the colour's");
     }
 }
 
@@ -203,12 +346,11 @@ fn every_marker_reads_as_a_marker_and_keeps_the_text_readable_on_both_canvases()
 fn the_dark_canvas_is_not_the_light_one_with_a_filter() {
     let dark_canvas = Color::WHITE.for_dark_theme();
     assert_eq!((dark_canvas.r, dark_canvas.g, dark_canvas.b), (18, 18, 18), "the premise of the numbers above");
-    for m in MarkerColor::ALL {
-        assert_ne!(m.rgb(Tone::Light), m.rgb(Tone::Dark), "{m} resolves differently per theme");
-        assert!(luminance(m.rgb(Tone::Dark)) < luminance(m.rgb(Tone::Light)), "{m}: deeper on the dark canvas");
-        assert_eq!(m.rgb(Tone::Light).a, 255, "the alpha is the layer's, not the colour's");
-    }
-    // Yellow at 50% over black must still read as a marker, the case the marker pair exists for.
-    let band = over(MarkerColor::Yellow.rgb(Tone::Dark), MARKER_ALPHA, Color::BLACK);
+    // Yellow at 50% over black must still read as a marker, the case the dark values exist for.
+    let band = over(MarkerColor::YELLOW.rgb(Tone::Dark), MARKER_ALPHA, Color::BLACK);
     assert!(contrast(band, Color::BLACK) >= 2.0, "{band:?}");
+    // And the dark filter would not do: it maps the light yellow to something much duller than the dark value shows.
+    let filtered = over(MarkerColor::YELLOW.rgb(Tone::Light).for_dark_theme(), MARKER_ALPHA, dark_canvas);
+    let chosen = over(MarkerColor::YELLOW.rgb(Tone::Dark), MARKER_ALPHA, dark_canvas);
+    assert!(contrast(chosen, dark_canvas) > contrast(filtered, dark_canvas), "{filtered:?} {chosen:?}");
 }

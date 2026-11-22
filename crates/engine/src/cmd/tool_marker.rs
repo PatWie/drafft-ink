@@ -18,7 +18,8 @@ use crate::spec::{
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
 pub struct SetMarkerArgs {
-    /// The marker colour: `yellow`, `green`, `pink`, `blue` or `orange`. `null` (or absent) is none: the
+    /// The marker colour: `<family>-<shade>` with a palette family and shade 300, 400 or 500 (`yellow-400`); the
+    /// old names `yellow`, `green`, `pink`, `blue` and `orange` mean the 400 shade. `null` (or absent) is none: the
     /// highlighter then removes highlights.
     pub color: Option<MarkerColor>,
 }
@@ -60,11 +61,11 @@ pub const COMMANDS: &[CommandSpec] = &[CommandSpec::new(
     "tool.set_marker",
     "tool",
     "Set marker colour",
-    "Sets the colour of the highlighter tool: yellow, green, pink, blue or orange. null is none: the tool then removes highlights.",
+    "Sets the colour of the highlighter tool: a palette family in shade 300, 400 or 500, such as yellow-400. null is none: the tool then removes highlights.",
     &Typed::new(set_marker),
     FACTS,
 )
-.example(r#"{"color":"green"}"#)];
+.example(r#"{"color":"green-400"}"#)];
 
 #[cfg(test)]
 #[path = "tool_marker_tests.rs"]

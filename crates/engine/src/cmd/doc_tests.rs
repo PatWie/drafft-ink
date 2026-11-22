@@ -1893,7 +1893,7 @@ fn a_file_from_a_newer_build_opens_without_its_new_fields_and_says_so() {
     let warnings: Vec<&str> = out["warnings"].as_array().unwrap().iter().filter_map(Value::as_str).collect();
     assert!(warnings.contains(&drafftink_scene::unknown::UnknownFields::WARNING), "{warnings:?}");
     let shown = b.store().iter().next().unwrap().clone();
-    assert_eq!(shown.style.highlight, Some(drafftink_scene::MarkerColor::Blue), "what is known is kept");
+    assert_eq!(shown.style.highlight, Some(drafftink_scene::MarkerColor::from_name("blue-400").unwrap()), "what is known is kept");
     // A file this build writes has no such warning.
     let (mut c, _) = testing::session();
     let own = open_inline(&mut c, &native(&mut a), json!({})).unwrap();
