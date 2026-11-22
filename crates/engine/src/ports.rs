@@ -95,6 +95,8 @@ pub enum Ns {
     Settings,
     /// The shape library.
     Library,
+    /// The local cache of room pictures: plaintext bytes, key = file id (64 hex characters).
+    Blobs,
 }
 
 /// One stored entry.
@@ -896,6 +898,22 @@ pub mod fake {
             assert_eq!(fakes.storage.bytes(Ns::Documents, "b"), Some(b"22".to_vec()));
             st.delete(Ns::Documents, "a").unwrap();
             assert_eq!(st.get(Ns::Documents, "a").unwrap(), None);
+        }
+
+        #[test]
+        fn blobs_are_a_namespace_of_their_own() {
+            let fakes = Fakes::new();
+            let mut ports = fakes.ports();
+            let Some(st) = ports.storage.as_mut() else { panic!("storage") };
+            let id = "0f".repeat(32);
+            st.put(Ns::Blobs, &id, b"png").unwrap();
+            st.put(Ns::Library, &id, b"other").unwrap();
+            assert_eq!(fakes.storage.bytes(Ns::Blobs, &id), Some(b"png".to_vec()));
+            let names: Vec<String> = st.list(Ns::Blobs).unwrap().into_iter().map(|i| i.name).collect();
+            assert_eq!(names, [id.as_str()]);
+            st.delete(Ns::Blobs, &id).unwrap();
+            assert_eq!(st.get(Ns::Blobs, &id).unwrap(), None);
+            assert_eq!(fakes.storage.bytes(Ns::Library, &id), Some(b"other".to_vec()));
         }
 
         #[test]

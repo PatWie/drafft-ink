@@ -10,10 +10,12 @@
 //! exports and Excalidraw all read PNG, and a stored GIF would have to be decoded again at every start. A big
 //! picture is then made smaller, see [`prepare`].
 
+mod fit;
 mod ico;
 mod paint;
 mod svg;
 
+pub use fit::fit_into;
 pub use paint::baked_png;
 
 use std::io::Cursor;
