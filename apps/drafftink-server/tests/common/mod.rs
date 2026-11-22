@@ -2,6 +2,8 @@
 //! tiny HTTP client.
 #![allow(dead_code)]
 
+pub mod canary;
+pub mod http;
 pub mod mock_s3;
 pub mod room_client;
 

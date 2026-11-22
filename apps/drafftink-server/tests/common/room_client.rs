@@ -53,11 +53,16 @@ impl Exchange {
     }
 }
 
-/// What crossed the wire, shared by every client of a test.
+/// What crossed the wire, shared by every client of a test. It also holds the two switches a test turns on a client's
+/// connection: the network cable and the count of keepalive answers.
 #[derive(Clone, Default)]
 pub struct Taps {
     frames: Arc<Mutex<Vec<Vec<u8>>>>,
     http: Arc<Mutex<Vec<Exchange>>>,
+    /// The clients whose network is cut.
+    cut: Arc<Mutex<HashSet<u8>>>,
+    /// One entry per `pong` a client received, holding the client's number.
+    pongs: Arc<Mutex<Vec<u8>>>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -84,32 +89,71 @@ impl Taps {
     pub fn push_frame(&self, bytes: Vec<u8>) {
         lock(&self.frames).push(bytes);
     }
+
+    /// Cuts client `n` off the network: its open connection drops, and every new attempt fails until
+    /// [`restore`](Self::restore). The client sees what a lost network looks like (a closed socket, a failed open).
+    pub fn cut(&self, n: u8) {
+        lock(&self.cut).insert(n);
+    }
+
+    /// Plugs client `n` back in. It reconnects by itself, after its backoff.
+    pub fn restore(&self, n: u8) {
+        lock(&self.cut).remove(&n);
+    }
+
+    fn is_cut(&self, n: u8) -> bool {
+        lock(&self.cut).contains(&n)
+    }
+
+    /// How many keepalive answers (`pong`) client `n` has received.
+    pub fn pongs(&self, n: u8) -> usize {
+        lock(&self.pongs).iter().filter(|&&who| who == n).count()
+    }
 }
 
 /// A websocket transport that keeps every frame that crosses it, in both directions.
 pub struct Recording {
+    who: u8,
     inner: NativeTransport,
-    frames: Arc<Mutex<Vec<Vec<u8>>>>,
+    taps: Taps,
+    /// A connection is open that the cable cut has not been reported for yet.
+    connected: bool,
 }
 
 impl Transport for Recording {
     fn open(&mut self, url: &ServerUrl) -> Result<(), TransportError> {
+        if self.taps.is_cut(self.who) {
+            return Err(TransportError::Failed("the network is cut".to_owned()));
+        }
+        self.connected = true;
         self.inner.open(url)
     }
     fn send(&mut self, frame: Vec<u8>) -> Result<(), TransportError> {
-        lock(&self.frames).push(frame.clone());
+        lock(&self.taps.frames).push(frame.clone());
         self.inner.send(frame)
     }
     fn send_text(&mut self, text: &str) -> Result<(), TransportError> {
         self.inner.send_text(text)
     }
     fn close(&mut self) {
+        self.connected = false;
         self.inner.close();
     }
     fn poll(&mut self) -> Option<TransportEvent> {
+        if self.connected && self.taps.is_cut(self.who) {
+            // The cable is pulled: the socket dies without a goodbye, and nothing it had queued arrives any more.
+            self.connected = false;
+            self.inner.close();
+            return Some(TransportEvent::Closed { error: Some("the network is cut".to_owned()) });
+        }
         let event = self.inner.poll()?;
-        if let TransportEvent::Message(bytes) = &event {
-            lock(&self.frames).push(bytes.clone());
+        match &event {
+            TransportEvent::Message(bytes) => lock(&self.taps.frames).push(bytes.clone()),
+            TransportEvent::Text(text) if text == drafftink_protocol::KEEPALIVE_PONG => {
+                lock(&self.taps.pongs).push(self.who);
+            }
+            TransportEvent::Closed { .. } => self.connected = false,
+            _ => {}
         }
         Some(event)
     }
@@ -276,7 +320,8 @@ pub fn peer(n: u8, key: &RoomKey, url: &str, mode: JoinMode, taps: &Taps, option
         jitter_seed: u64::from(n),
         replace_when_trimmed: false,
     };
-    let transport = Recording { inner: NativeTransport::new(Arc::new(|| {})), frames: Arc::clone(&taps.frames) };
+    let transport =
+        Recording { who: n, inner: NativeTransport::new(Arc::new(|| {})), taps: taps.clone(), connected: false };
     let mut client = SealedClient::new(cfg).unwrap();
     client.start(0);
     let mut store =
