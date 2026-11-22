@@ -86,6 +86,43 @@ fn a_late_joiner_catches_up_and_then_follows_live_edits() {
     assert!(w.all_equal());
 }
 
+/// Rooms of the plaintext protocol take a drawing that arrives in one big update, which an editor decodes in slices:
+/// the joiner was online and empty before the first person drew, and holds what the room had sent it before.
+#[test]
+fn one_big_update_reaches_a_joiner_that_staged_it_and_that_was_online_before() {
+    const N: usize = 3000;
+    let server = Server::start(&[]);
+    let url = server.url();
+    let mut w = World::new();
+    let a = w.spawn(spec(1, &url, "big"));
+    w.wait_until("A online", |w| w.peers[a].state() == ConnState::Online);
+    w.converged();
+    let b = w.spawn(spec(2, &url, "big"));
+    w.peers[b].store.set_stage_import_bytes(256 * 1024);
+    w.wait_until("B online", |w| w.peers[b].state() == ConnState::Online);
+    w.peers[a].edit(|tx| {
+        for i in 0..N {
+            tx.insert(rect(&format!("big{i:05}"))).unwrap();
+        }
+    });
+    let deadline = std::time::Instant::now() + PATIENCE;
+    while w.peers[b].ids().len() != N {
+        assert!(std::time::Instant::now() < deadline, "timed out: B shows {} of {}", w.peers[b].ids().len(), N);
+        w.pump_all();
+        // An editor decodes a staged import slice by slice between frames; here it is finished at once.
+        while w.peers[b].store.import_progress().is_some() {
+            w.peers[b].store.import_step(4096).unwrap();
+        }
+        w.waker.wait(Duration::from_millis(20));
+    }
+    // The first message of the room left it without elements, so the big update was staged. It builds on the history
+    // of that message; losing it made the client ask the server for the missing range (a repair that costs a whole
+    // document again).
+    assert_eq!(w.peers[b].client().stats().sync_requests, 0, "{:?}", w.peers[b].client().stats());
+    w.converged();
+    assert!(w.all_equal());
+}
+
 #[test]
 fn edits_made_while_the_server_is_down_sync_after_it_returns() {
     let mut server = Server::start_persistent(&[]);

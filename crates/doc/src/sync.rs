@@ -12,7 +12,7 @@ use drafftink_scene::{
     ChangeSet, Color, DocMeta, ElementId, FileId, FileManifest, MemoryStore, SceneRead, SceneStore, SceneTx, VersionId,
 };
 use loro::event::{Diff, DiffEvent};
-use loro::{Container, Index, LoroValue, ValueOrContainer};
+use loro::{Container, ExportMode, Index, LoroValue, ValueOrContainer};
 
 use crate::codec::read_element;
 use crate::error::DocError;
@@ -253,16 +253,34 @@ pub(crate) fn wants_staging(store: &LoroStore, len: usize) -> bool {
 
 /// The first part of a staged import. The bytes go into a fresh CRDT document (about 8 ms for 100,000 elements),
 /// and the store switches to it. Importing into the document in use would be about 400 times slower, because its undo
-/// manager asks Loro for the diff of everything the import touches. The old document held nothing of the user's.
+/// manager asks Loro for the diff of everything the import touches. The old document held nothing of the user's, but
+/// it can hold history: the schema operations of this replica and whatever earlier snapshots and updates of the room
+/// brought. A later update of the room builds on that history, so the fresh document takes it over first, under
+/// the same peer id. What was sent stays as it was: this replica's own operations are still unsent. A trimmed
+/// snapshot (`replaces`) starts a new history, so nothing is carried over for it.
 /// The view is left empty for [`import_step`] to fill.
-fn begin_staged(store: &mut LoroStore, bytes: &[u8]) -> Result<ChangeSet, DocError> {
+fn begin_staged(store: &mut LoroStore, bytes: &[u8], replaces: bool) -> Result<ChangeSet, DocError> {
     let config = store.core.config.clone();
-    let (doc, pending) = import_fresh_pending(Core::make_doc(&config)?, bytes)?;
+    let doc = Core::make_doc(&config)?;
+    let doc = if replaces {
+        doc
+    } else {
+        let (held, own) = store.core.guard(|| {
+            let held = store.core.doc.export(ExportMode::all_updates()).map_err(DocError::backend);
+            (held, store.core.doc.peer_id())
+        })?;
+        doc.set_peer_id(own).map_err(|_| DocError::BadPeerId(own))?;
+        import_fresh_pending(doc, &held?)?.0
+    };
+    let (doc, pending) = import_fresh_pending(doc, bytes)?;
     let migrations = std::mem::take(&mut store.core.migrations);
     let opened = Core::adopt(doc, config, migrations.clone());
     store.core.migrations = migrations;
     let fresh = opened?;
+    let sent = store.core.sent.clone();
     store.core.reset_doc(fresh.doc.clone());
+    store.core.sent = sent;
+    mark_remote_as_sent(&mut store.core)?;
     store.core.invalid.clear();
     store.core.invalid_versions.clear();
     store.core.newer.clear();
@@ -315,14 +333,14 @@ pub(crate) fn apply_remote(store: &mut LoroStore, bytes: &[u8]) -> Result<Change
         // edits that were never sent.
         if is_pristine(store) {
             if wants_staging(store, bytes.len()) {
-                return begin_staged(store, bytes);
+                return begin_staged(store, bytes, true);
             }
             return store.replace_from_snapshot(bytes);
         }
         return Err(DocError::SnapshotStartsLater);
     }
     if wants_staging(store, bytes.len()) {
-        return begin_staged(store, bytes);
+        return begin_staged(store, bytes, false);
     }
     let LoroStore { view, core } = store;
     let (imported, touched) =

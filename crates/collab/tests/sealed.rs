@@ -115,16 +115,26 @@ fn peer(rig: &mut dyn Rig, n: u8, mode: JoinMode, store: Option<LoroStore>, resu
     let transport = Dyn(rig.transport());
     let mut client = SealedClient::new(cfg).unwrap();
     client.start(rig.now());
-    let store = store.unwrap_or_else(|| {
-        LoroStore::with_config(drafftink_doc::LoroConfig { peer_id: Some(u64::from(n) + 1000), ..Default::default() })
-            .unwrap()
-    });
+    let store = store.unwrap_or_else(|| LoroStore::with_config(editor_config(n)).unwrap());
     Peer { n, session: CollabSession::new(client, transport), store, events: Vec::new() }
+}
+
+/// The document of an editor: big imports are staged, as the engine configures its tabs.
+fn editor_config(n: u8) -> drafftink_doc::LoroConfig {
+    drafftink_doc::LoroConfig {
+        peer_id: Some(u64::from(n) + 1000),
+        stage_import_bytes: 256 * 1024,
+        ..Default::default()
+    }
 }
 
 fn pump(p: &mut Peer, now: u64) -> Option<u64> {
     let out = p.session.pump(now, &mut p.store);
     p.events.extend(out.events);
+    // The engine decodes a staged import slice by slice between frames; here it is finished at once.
+    while p.store.import_progress().is_some() {
+        p.store.import_step(4096).unwrap();
+    }
     out.next_wake_ms
 }
 
@@ -298,7 +308,14 @@ struct Process {
 
 impl Process {
     fn new() -> Process {
-        let server = Server::start(&["--room-ttl", "2s", "--room-grace", "1s"]);
+        Self::with(&[])
+    }
+
+    /// The server with more command line options.
+    fn with(extra: &[&str]) -> Process {
+        let mut args = vec!["--room-ttl", "2s", "--room-grace", "1s"];
+        args.extend_from_slice(extra);
+        let server = Server::start(&args);
         Process { server, waker: Arc::new(Waker::default()), started: Instant::now(), ttl_ms: 3000 + 1500 }
     }
 }
@@ -702,4 +719,240 @@ fn the_key_is_in_no_debug_output_and_no_status_text() {
         replace_when_trimmed: false,
     };
     assert!(!format!("{cfg:?}").contains(&key_text));
+}
+
+// ---- large rooms ----
+
+/// Adds `count` rectangles named `{prefix}{i}` to a store in one commit.
+fn fill(store: &mut LoroStore, prefix: &str, count: usize) {
+    let mut tx = store.begin();
+    for i in 0..count {
+        tx.insert(rect(&format!("{prefix}{i:05}"))).unwrap();
+    }
+    tx.commit().unwrap();
+}
+
+fn seeded(n: u8, count: usize) -> LoroStore {
+    let mut store = LoroStore::with_config(editor_config(n)).unwrap();
+    fill(&mut store, "e", count);
+    store
+}
+
+/// How the room holds its drawing when the newcomer arrives.
+#[derive(Clone, Copy, Debug)]
+enum Held {
+    /// The first person came with the whole drawing: the relay holds one snapshot and no log.
+    Snapshot,
+    /// The first person drew all of it in one commit in the empty room: a tiny snapshot of the empty room and one
+    /// big record after it.
+    OneRecord,
+    /// The first person drew batch after batch, a few hundred records and no snapshot: the newcomer gets the log
+    /// in pages.
+    LogTail,
+    /// As `LogTail`, but the relay asked for a compaction, and the newcomer gets a snapshot and a short tail.
+    Compacted,
+}
+
+/// Records the first person leaves in the room for `LogTail`: just below the 500 that make the relay ask for a
+/// compaction, so the newcomer gets all of them in pages.
+const LOG_RECORDS: usize = 450;
+/// Records for `Compacted`: past the 500 that make the relay ask for a compaction.
+const COMPACTING_RECORDS: usize = 520;
+
+/// The drawing of `count` rectangles reaches a newcomer whole, however the relay holds it.
+fn large_join(rig: &mut dyn Rig, count: usize, held: Held) {
+    let mut a = match held {
+        Held::Snapshot => peer(rig, 1, JoinMode::Create, Some(seeded(1, count)), Resume::default()),
+        _ => peer(rig, 1, JoinMode::Create, None, Resume::default()),
+    };
+    rig.drive(&mut [&mut a], "a to be online", &|p| p[0].online());
+    match held {
+        Held::Snapshot => {}
+        Held::OneRecord => {
+            fill(&mut a.store, "e", count);
+            let now = rig.now();
+            a.session.client_mut().local_changed(now);
+        }
+        Held::LogTail | Held::Compacted => {
+            let records = if matches!(held, Held::Compacted) { COMPACTING_RECORDS } else { LOG_RECORDS };
+            let per_record = count.div_ceil(records);
+            for batch in 0..count.div_ceil(per_record) {
+                fill(&mut a.store, &format!("e{batch:03}-"), per_record.min(count - batch * per_record));
+                let now = rig.now();
+                a.session.client_mut().local_changed(now);
+                rig.drive(&mut [&mut a], "a batch to be stored", &|p| p[0].settled());
+            }
+        }
+    }
+    rig.drive(&mut [&mut a], "a to be settled", &|p| p[0].settled());
+    assert_eq!(a.ids().len(), count);
+    if matches!(held, Held::Compacted) {
+        rig.drive(&mut [&mut a], "the relay to hold a snapshot", &|p| p[0].client().snapshot_seq() > 0);
+    }
+    let mut b = peer(rig, 2, JoinMode::Open, None, Resume::default());
+    rig.drive(&mut [&mut a, &mut b], "b to hold the whole room", &|p| {
+        p[1].ids().len() == count || p[1].stopped().is_some()
+    });
+    assert_eq!(b.stopped(), None, "{}", b.client().status().text);
+    assert_eq!(b.ids(), a.ids(), "{held:?} {count}");
+    rig.drive(&mut [&mut a, &mut b], "b to be settled", &|p| p[1].settled());
+    assert!(b.client().status().problem.is_none(), "{held:?} {count}: {:?}", b.client().status().problem);
+}
+
+macro_rules! large_join_tests {
+    ($($name:ident: $count:expr, $held:expr;)*) => {
+        mod large_join {
+            use super::*;
+            mod loopback {
+                use super::*;
+                $(#[test] fn $name() { large_join(&mut Loop::new(RelayConfig::self_host()), $count, $held); })*
+            }
+            mod process {
+                use super::*;
+                $(#[test] fn $name() { large_join(&mut Process::new(), $count, $held); })*
+            }
+        }
+    };
+}
+
+large_join_tests! {
+    snapshot_1000: 1000, Held::Snapshot;
+    snapshot_3000: 3000, Held::Snapshot;
+    snapshot_10000: 10_000, Held::Snapshot;
+    one_record_1000: 1000, Held::OneRecord;
+    one_record_3000: 3000, Held::OneRecord;
+    one_record_10000: 10_000, Held::OneRecord;
+    log_tail_1000: 1000, Held::LogTail;
+    log_tail_3000: 3000, Held::LogTail;
+    log_tail_10000: 10_000, Held::LogTail;
+    compacted_1000: 1000, Held::Compacted;
+    compacted_3000: 3000, Held::Compacted;
+    compacted_10000: 10_000, Held::Compacted;
+}
+
+// ---- history the relay does not hold ----
+
+impl Loop {
+    /// Puts one sealed update from client `from` into the room's log, as a member that is gone again would have.
+    fn plant(&mut self, from: u8, ctr: u64, update: &[u8]) {
+        use drafftink_protocol::v2::{ClientMessage, JoinMode, Proof, RecordHeader, RecordKind};
+        let sender = ClientId::from_bytes([from; 16]);
+        let keys = drafftink_seal::RoomKeys::new(&key());
+        let header = RecordHeader::new(RecordKind::Update, sender, ctr, 0).unwrap();
+        let record = keys.seal(header, update).unwrap().into_bytes();
+        let conn = ConnId(9000 + u64::from(from));
+        let now = self.now;
+        let join = ClientMessage::Join {
+            min_version: 2,
+            max_version: 2,
+            room: key().room_id(),
+            client_id: sender,
+            mode: JoinMode::Open,
+            proof: Proof::token(&key().membership_token()),
+            last_seq: 0,
+            captcha: None,
+        };
+        let out = self.relay.connect(conn, now);
+        self.effects(out);
+        for message in [join, ClientMessage::Append { record }] {
+            let out = self.relay.on_frame(conn, now, &message.encode().unwrap());
+            self.effects(out);
+        }
+        let out = self.relay.on_closed(conn, now);
+        self.effects(out);
+    }
+}
+
+#[test]
+fn a_room_whose_log_lacks_the_history_of_a_record_is_said_to_be_incomplete_not_shown_as_empty() {
+    let mut rig = Loop::new(RelayConfig::self_host());
+    let mut a = peer(&mut rig, 1, JoinMode::Create, None, Resume::default());
+    rig.drive(&mut [&mut a], "a online", &|p| p[0].online());
+    // Somebody drew two things and only the second update ever reached the relay.
+    let mut x = LoroStore::with_config(editor_config(7)).unwrap();
+    fill(&mut x, "first", 1);
+    let after_first = x.version_vector().unwrap();
+    fill(&mut x, "second", 3);
+    rig.plant(7, 1, &x.export_updates_since(&after_first).unwrap());
+
+    let mut b = peer(&mut rig, 2, JoinMode::Open, None, Resume::default());
+    rig.drive(&mut [&mut a, &mut b], "b to finish joining", &|p| p[1].online());
+    let status = b.client().status();
+    assert!(b.ids().is_empty(), "nothing of it can be shown");
+    let problem = status.problem.as_ref().expect("the person is told");
+    assert!(problem.text.contains("history is missing"), "{}", problem.text);
+    assert_eq!(problem.action, drafftink_collab::ProblemAction::SaveCopy);
+    assert_eq!(status.text, problem.text, "the status line says it too");
+    assert!(b.events.iter().any(|e| matches!(e, CollabEvent::Problem(p) if p == problem)));
+}
+
+// ---- a drawing that is over what a room may hold ----
+
+/// The size of the sealed snapshot with which `seeded(1, count)` fills an empty room.
+fn seed_record_bytes(count: usize) -> u64 {
+    let snapshot = seeded(1, count).export_snapshot().unwrap();
+    u64::try_from(snapshot.len() + drafftink_protocol::SEAL_OVERHEAD).unwrap()
+}
+
+/// A drawing of `count` rectangles meets a room that holds `limit` bytes. Returns the first person and a newcomer.
+fn seed_into_room_of(rig: &mut dyn Rig, count: usize) -> (Peer, Peer) {
+    let mut a = peer(rig, 1, JoinMode::Create, Some(seeded(1, count)), Resume::default());
+    rig.drive(&mut [&mut a], "a to settle or to be stopped", &|p| p[0].settled() || p[0].stopped().is_some());
+    let mut b = peer(rig, 2, JoinMode::Open, None, Resume::default());
+    rig.drive(&mut [&mut a, &mut b], "b to be online", &|p| p[1].online());
+    (a, b)
+}
+
+fn a_room_takes_a_drawing_up_to_its_limit(count: usize, rig: &mut dyn Rig) {
+    let (mut a, mut b) = seed_into_room_of(rig, count);
+    assert_eq!(a.stopped(), None, "{}", a.client().status().text);
+    rig.drive(&mut [&mut a, &mut b], "b to hold the drawing", &|p| p[1].ids().len() == count);
+    assert_eq!(b.ids(), a.ids());
+}
+
+fn a_room_refuses_a_drawing_over_its_limit_in_plain_words(count: usize, rig: &mut dyn Rig) {
+    let (a, b) = seed_into_room_of(rig, count);
+    assert_eq!(a.stopped(), Some(StopReason::TooLarge), "{:?}", a.client().status());
+    let text = &a.client().status().text;
+    assert!(text.contains("holds as much as a room may") && text.contains("Save a copy"), "{text}");
+    assert!(
+        a.client().status().problem.as_ref().is_some_and(|p| p.action == drafftink_collab::ProblemAction::ReduceSize)
+    );
+    assert_eq!(a.ids().len(), count, "the drawing stays on this device");
+    assert!(b.ids().is_empty(), "the room holds nothing: it was refused, not half taken");
+    assert_eq!(b.stopped(), None);
+}
+
+/// The room's limit in bytes for the tests: the seed of `COUNT` rectangles fits exactly, or one byte short.
+const COUNT: usize = 3000;
+
+fn loop_with_room_of(limit: u64) -> Loop {
+    Loop::new(RelayConfig { max_room_state_bytes: limit, ..RelayConfig::self_host() })
+}
+
+fn process_with_room_of(limit: u64) -> Process {
+    Process::with(&["--max-room-bytes", &limit.to_string()])
+}
+
+#[test]
+fn a_drawing_that_exactly_fills_the_room_is_taken_on_the_loopback() {
+    a_room_takes_a_drawing_up_to_its_limit(COUNT, &mut loop_with_room_of(seed_record_bytes(COUNT)));
+}
+
+#[test]
+fn a_drawing_that_exactly_fills_the_room_is_taken_by_the_server_process() {
+    a_room_takes_a_drawing_up_to_its_limit(COUNT, &mut process_with_room_of(seed_record_bytes(COUNT)));
+}
+
+#[test]
+fn a_drawing_one_byte_over_the_room_is_refused_in_plain_words_on_the_loopback() {
+    a_room_refuses_a_drawing_over_its_limit_in_plain_words(COUNT, &mut loop_with_room_of(seed_record_bytes(COUNT) - 1));
+}
+
+#[test]
+fn a_drawing_one_byte_over_the_room_is_refused_in_plain_words_by_the_server_process() {
+    a_room_refuses_a_drawing_over_its_limit_in_plain_words(
+        COUNT,
+        &mut process_with_room_of(seed_record_bytes(COUNT) - 1),
+    );
 }

@@ -519,3 +519,68 @@ fn a_staged_import_brings_the_manifests_and_a_replica_with_manifests_is_not_pris
     let trimmed = other.export_shallow_snapshot(0).unwrap();
     assert_eq!(local.apply_remote(&trimmed), Err(DocError::SnapshotStartsLater));
 }
+
+/// A replica takes the room's tiny first snapshot (nothing drawn yet), and then one big update on top of it.
+/// The replica still has nothing of its own, so the big update is staged. It must keep what the snapshot gave it:
+/// the update builds on the schema operations of the snapshot, and without them every element stays pending.
+#[test]
+fn a_big_update_after_a_small_snapshot_is_staged_on_top_of_it_and_fills_the_view() {
+    let mut a = peer(1);
+    let seed = a.export_snapshot().unwrap();
+    let after_seed = a.version_vector().unwrap();
+    let z = zs(N);
+    add(&mut a, (0..N).map(|i| rect(&id_of(i), &z[i])).collect());
+    let big = a.export_updates_since(&after_seed).unwrap();
+
+    // Only the big update reaches the staging threshold, as in a room.
+    let config = drafftink_doc::LoroConfig { stage_import_bytes: seed.len() + 1, ..staging(7) };
+    assert!(big.len() > config.stage_import_bytes);
+    let mut b = LoroStore::with_config(config).unwrap();
+    assert!(!b.would_stage(seed.len()));
+    b.apply_remote(&seed).unwrap();
+    assert!(b.import_progress().is_none(), "the small snapshot is applied at once");
+    b.apply_remote(&big).unwrap();
+    let progress = b.import_progress().expect("the big update is staged");
+    assert!(progress.total >= N, "{progress:?}");
+    while b.import_progress().is_some() {
+        b.import_step(500).unwrap();
+    }
+
+    assert_eq!(b.len(), N, "every element of the update is shown");
+    assert_same(&b, &a);
+    assert_view_matches_loro(&b);
+    assert!(b.export_updates_since(&a.version_vector().unwrap()).is_ok());
+
+    // What this replica makes afterwards still travels: its own operations are unsent, the room's are not.
+    add(&mut b, vec![rect("mine", &zs(1)[0])]);
+    let unsent = b.take_unsent_update().unwrap().expect("b has its own work to send");
+    let mut c = LoroStore::from_snapshot(&a.export_snapshot().unwrap()).unwrap();
+    c.apply_remote(&unsent).unwrap();
+    assert!(!c.has_pending_remote(), "nothing b sends waits for history c lacks");
+    assert_eq!(c.len(), N + 1);
+    assert!(c.get(&eid("mine")).is_some());
+}
+
+/// The same with a big snapshot first and a big update after it: each is staged or applied, and none is lost.
+#[test]
+fn a_big_update_after_a_big_snapshot_keeps_both() {
+    let mut a = peer(1);
+    let z = zs(2 * N);
+    add(&mut a, (0..N).map(|i| rect(&id_of(i), &z[i])).collect());
+    let first = a.export_snapshot().unwrap();
+    let after_first = a.version_vector().unwrap();
+    add(&mut a, (N..2 * N).map(|i| rect(&id_of(i), &z[i])).collect());
+    let second = a.export_updates_since(&after_first).unwrap();
+
+    let mut b = empty_staging(7);
+    b.apply_remote(&first).unwrap();
+    while b.import_progress().is_some() {
+        b.import_step(500).unwrap();
+    }
+    b.apply_remote(&second).unwrap();
+    while b.import_progress().is_some() {
+        b.import_step(500).unwrap();
+    }
+    assert_eq!(b.len(), 2 * N);
+    assert_same(&b, &a);
+}

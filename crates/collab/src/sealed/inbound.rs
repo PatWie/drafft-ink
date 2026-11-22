@@ -167,9 +167,23 @@ impl SealedClient {
         self.stable_since = Some(now_ms);
         self.presence.reset_sent();
         self.problem = None;
+        if store.has_pending_remote() {
+            self.history_missing();
+        }
         self.images.on_online(now_ms);
         self.seed_or_upload(now_ms, store);
         self.refresh_status();
+    }
+
+    /// The whole catch-up is applied and some operations still wait for history the relay did not send. Part of the
+    /// room cannot be shown: say so instead of looking like an empty or shorter room.
+    fn history_missing(&mut self) {
+        log::warn!("collab: the catch-up left operations that wait for missing history");
+        let text = "Part of this room could not be loaded because some of its saved history is missing. What is shown \
+                    may be incomplete. Save a copy of it, and ask for a new link if the drawing looks wrong.";
+        let problem = Problem::local(text, ProblemAction::SaveCopy, false);
+        self.problem = Some(problem.clone());
+        self.events.push(CollabEvent::Problem(problem));
     }
 
     /// Opens a sealed record of `kind`. `None` for anything that is not a record of this room and kind.
