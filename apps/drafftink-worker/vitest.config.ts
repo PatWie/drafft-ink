@@ -38,7 +38,7 @@ export default defineConfig({
   test: {
     projects: [
       // Rooms as the demo runs them: a 48 hour deadline and a one second grace, so a test can wait for it.
-      project("demo", ["test/routing.test.ts", "test/room.test.ts", "test/retention.test.ts", "test/canary.test.ts", "test/units.test.ts", "test/smoke.test.ts"], {
+      project("demo", ["test/routing.test.ts", "test/room.test.ts", "test/retention.test.ts", "test/canary.test.ts", "test/units.test.ts", "test/quota.test.ts"], {
         DEMO_ROOM_LEAVE_GRACE_SECS: "1",
         DEMO_ALLOWED_ORIGINS: "https://drafft.test",
       }),

@@ -10,7 +10,7 @@ import { imageResponse, readLimited } from "./image-http";
 import { parseRoute } from "./routes";
 import { ensureSchema, SqlRoomStore } from "./sql-store";
 import { legalCloseCode, parseAttachment, Sockets, type Attachment } from "./sockets";
-import { ImageCall, RoomCore, sealedImageLimit, nextUtcMidnightMs, type Effects } from "./wasm";
+import { ImageCall, RoomCore, sealedImageLimit, nextUtcMidnightMs, type Effects, type SqlHost } from "./wasm";
 import { WakeScheduler } from "./wake";
 
 /** A `webSocketMessage` rewrites the attachment at most this often, to keep `lastMessageAt` roughly current. */
@@ -28,6 +28,8 @@ const CLOSE_INTERNAL_ERROR = 1011;
 export class Room extends DurableObject<Env> {
   #core: RoomCore | null = null;
   readonly #sockets = new Sockets();
+  /** Sockets that the room closed itself when it was deleted: their close events must not wake the room again. */
+  readonly #closedByDeletion = new WeakSet<WebSocket>();
   readonly #scheduler: WakeScheduler;
   readonly #blobs: BlobBackend;
 
@@ -46,6 +48,19 @@ export class Room extends DurableObject<Env> {
   /** The time in milliseconds since the epoch. The one clock of the room; tests replace it. */
   protected now(): number {
     return Date.now();
+  }
+
+  /**
+   * When the runtime last answered a `ping` of `ws`, in the room's clock, or `null` before the first one. A client's
+   * `ping` never reaches the room, so this is how the core learns that a socket is alive. Tests move it with `now()`.
+   */
+  protected heardAt(ws: WebSocket): number | null {
+    return this.ctx.getWebSocketAutoResponseTimestamp(ws)?.getTime() ?? null;
+  }
+
+  /** The rows of this room. A seam for tests, which wrap it to make the storage fail. */
+  protected sqlHost(): SqlHost {
+    return new SqlRoomStore(this.ctx.storage);
   }
 
   // ---- requests ---------------------------------------------------------------------------------------------
@@ -156,6 +171,7 @@ export class Room extends DurableObject<Env> {
 
   /** Runs `work` for the connection of `ws`. A failure closes that socket and forgets the core; it never escapes. */
   async #guarded(ws: WebSocket, work: (core: RoomCore, conn: number, now: number) => Promise<void>): Promise<void> {
+    if (this.#closedByDeletion.has(ws)) return;
     try {
       const core = await this.#wake();
       const conn = this.#sockets.conn(ws);
@@ -222,8 +238,8 @@ export class Room extends DurableObject<Env> {
   /** Tells the core when the runtime last answered a `ping` of each socket: it never reaches the core itself. */
   #feedLiveness(core: RoomCore): void {
     for (const [conn, ws] of this.#sockets.entries()) {
-      const answered = this.ctx.getWebSocketAutoResponseTimestamp(ws);
-      if (answered !== null) core.heard(conn, answered.getTime());
+      const answered = this.heardAt(ws);
+      if (answered !== null) core.heard(conn, answered);
     }
   }
 
@@ -236,7 +252,7 @@ export class Room extends DurableObject<Env> {
     if (roomId === undefined) throw new Error("the room has no name: it must be reached with idFromName");
     // The tables are made on every wake: the database may have been wiped since the last one.
     ensureSchema(this.ctx.storage.sql);
-    const core = new RoomCore(roomId, relaySettings(this.env), new SqlRoomStore(this.ctx.storage), this.#blobs);
+    const core = new RoomCore(roomId, relaySettings(this.env), this.sqlHost(), this.#blobs);
     this.#core = core;
     this.#sockets.clear();
     const now = this.now();
@@ -247,7 +263,7 @@ export class Room extends DurableObject<Env> {
         continue;
       }
       this.#sockets.add(attachment.conn, ws);
-      const answered = this.ctx.getWebSocketAutoResponseTimestamp(ws)?.getTime() ?? 0;
+      const answered = this.heardAt(ws) ?? 0;
       const lastHeard = Math.max(attachment.lastMessageAt, attachment.connectedAt, answered);
       const restored =
         attachment.client !== undefined && attachment.order !== undefined
@@ -263,6 +279,8 @@ export class Room extends DurableObject<Env> {
   /** Carries out what the core decided: frames and closes now, then the timer or alarm, or the deletion. */
   async #apply(effects: Effects): Promise<void> {
     try {
+      // The core closes every socket of a deleted room. Their close events must not rebuild the room.
+      if (effects.deleted) for (const [, ws] of this.#sockets.entries()) this.#closedByDeletion.add(ws);
       applyEffects(effects, this.#sockets);
       if (effects.deleted) {
         await this.#destroy();

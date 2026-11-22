@@ -84,6 +84,12 @@ export function recordSeq(frame: Uint8Array): bigint {
   return view(frame).getBigUint64(1, true);
 }
 
+/** `Error`: the milliseconds to wait, when the frame carries them (the last five bytes: a flag and a u32). */
+export function retryAfterMs(frame: Uint8Array): number | null {
+  if (frame.byteLength < 6 || frame[frame.byteLength - 5] !== 1) return null;
+  return view(frame).getUint32(frame.byteLength - 4, true);
+}
+
 /** `Retention`: the deadline and whether the room is past it. */
 export function retention(frame: Uint8Array): { expiresAtMs: bigint; expiring: boolean } {
   return { expiresAtMs: view(frame).getBigUint64(1, true), expiring: frame[9] === 1 };

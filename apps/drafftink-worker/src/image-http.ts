@@ -1,4 +1,4 @@
-import { DAILY_LIMIT_HEADER } from "./http";
+import { DAILY_LIMIT_HEADER, dailyLimit } from "./http";
 import type { ImageReply } from "./wasm";
 
 /** The body of a request, or `null` when it is longer than `limit`. Never holds more than `limit + 1` bytes. */
@@ -30,10 +30,16 @@ export async function readLimited(request: Request, limit: number): Promise<Uint
 
 /** The HTTP reply for an answer of the core. `head` drops the body but keeps its length. */
 export function imageResponse(reply: ImageReply, head: boolean): Response {
-  const headers: Record<string, string> = { "content-type": reply.contentType, "cache-control": "no-store" };
   const retry = reply.retryAfterMs;
+  if (reply.code === "daily_limit" && retry !== undefined) {
+    // The shape that the Worker and the client expect: seconds, not milliseconds, and the marker for the Worker.
+    const seconds = Math.max(1, Math.ceil(retry / 1000));
+    const limited = dailyLimit(seconds);
+    limited.headers.set(DAILY_LIMIT_HEADER, String(seconds));
+    return limited;
+  }
+  const headers: Record<string, string> = { "content-type": reply.contentType, "cache-control": "no-store" };
   if (retry !== undefined) headers["retry-after"] = String(Math.max(1, Math.ceil(retry / 1000)));
-  if (reply.code === "daily_limit" && retry !== undefined) headers[DAILY_LIMIT_HEADER] = headers["retry-after"] ?? "1";
   const body = reply.body();
   if (head) {
     headers["content-length"] = String(body.byteLength);
