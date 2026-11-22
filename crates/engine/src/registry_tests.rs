@@ -102,6 +102,14 @@ fn facts_are_consistent() {
                 assert_ne!(s.undo, Undo::Gesture, "`{id}` replaces the document, so it is not a gesture");
             }
             DocWrite::Managed => {}
+            DocWrite::Metadata => {
+                assert_eq!(
+                    s.view_only,
+                    Gate::Refused,
+                    "`{id}` writes into the document, so it refuses in view-only mode"
+                );
+                assert_eq!(s.undo, Undo::NoUndo, "`{id}` writes document metadata, which undo does not touch");
+            }
         }
         if s.undo == Undo::Gesture {
             assert_eq!(s.doc_write, DocWrite::Edit, "`{id}` is a gesture command, so it is an ordinary edit");

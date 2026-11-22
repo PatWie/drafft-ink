@@ -231,7 +231,7 @@ pub enum RingMode {
 /// How a command that changes the document relates to undo and to view-only mode (docs/commands.md §1.2, test 2).
 ///
 /// Every registration declares it. The registry tests derive the rules from it instead of keeping lists of ids:
-/// a command whose `mutates` has `DOC` is `Edit`, `Replaces` or `Managed`, and any other command is `NotDocument`.
+/// a command whose `mutates` has `DOC` is `Edit`, `Replaces`, `Managed` or `Metadata`, and any other command is `NotDocument`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DocWrite {
@@ -245,6 +245,10 @@ pub enum DocWrite {
     /// It manages the document state itself (`history.undo`, `history.redo`, the `gesture` commands, `tool.cancel`):
     /// allowed in view-only mode, and its undo class is its own business (it restores or streams steps).
     Managed,
+    /// It writes data that belongs to the document but is not its scene (`version.save`, `version.rename`,
+    /// `version.delete`): refuses in view-only mode, like an edit, and has no undo step, because Ctrl+Z is for the
+    /// scene and must never delete a name the user gave.
+    Metadata,
 }
 
 impl DocWrite {
@@ -255,6 +259,7 @@ impl DocWrite {
             Self::Edit => "edit",
             Self::Replaces => "replaces",
             Self::Managed => "managed",
+            Self::Metadata => "metadata",
         }
     }
 }
@@ -267,7 +272,7 @@ impl DocWrite {
 pub enum HostEffect {
     /// Nothing special.
     None,
-    /// Success closes the rename dialog that asked for it (`doc.rename`, `tab.rename`, `library.rename`, `frame.rename`).
+    /// Success closes the rename dialog that asked for it (`doc.rename`, `tab.rename`, `library.rename`, `frame.rename`, `version.rename`, `version.save`).
     CompletesRename,
     /// Like `CompletesRename`, and a pending Save As goes on to ask for the place (`doc.rename`).
     CompletesRenameThenSaveAs,

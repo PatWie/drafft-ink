@@ -2,7 +2,7 @@
 
 `LoroStore` is the Loro-backed implementation of the `SceneStore` trait from `drafftink-scene` (docs/model.md section 9). This page is the schema (what is stored where, and why), the rules of the store, and the trade-offs of history trimming. The wire protocol around it is `docs/protocol.md`. Builds for wasm32; no `unsafe`, `unwrap`, `expect` or `panic!` outside tests.
 
-Contents: 1 What the old code did and what replaces it, 2 Roots, 3 Element fields, 4 Choices that matter, 5 Z-order, 6 Deleting, 7 Meta and files, 8 Bad data from peers, 9 Transactions, 10 Remote updates, 10a Repairing a merge, 11 Export, 12 Undo, 13 History and trimming, 14 Schema version and migrations, 15 Measurements, 16 Known limits.
+Contents: 1 What the old code did and what replaces it, 2 Roots, 3 Element fields, 4 Choices that matter, 5 Z-order, 6 Deleting, 7 Meta and files, 7a Named versions, 8 Bad data from peers, 9 Transactions, 10 Remote updates, 10a Repairing a merge, 11 Export, 12 Undo, 13 History and trimming, 14 Schema version and migrations, 15 Measurements, 16 Known limits.
 
 ## 1. What the old code did and what replaces it
 
@@ -17,13 +17,14 @@ Contents: 1 What the old code did and what replaces it, 2 Roots, 3 Element field
 
 ## 2. Roots
 
-A Loro document has three root maps. Nothing else is read; unknown roots are ignored, never deleted.
+A Loro document has four root maps. Nothing else is read; unknown roots are ignored, never deleted.
 
 | Root | Type | Content |
 |---|---|---|
 | `elements` | `LoroMap` | Key: element id. Value: a child `LoroMap` (an *element map*). |
 | `meta` | `LoroMap` | `schema` (integer), `name` (string), `background` (string). |
 | `files` | `LoroMap` | Key: SHA-256 of the bytes (64 hex digits). Value: `{mime: string, bytes: binary}`. |
+| `versions` | `LoroMap` | Key: version id. Value: a child `LoroMap` of one named version (section 7a). Added after schema 1 shipped; it needs no schema bump, because a root that a build does not know is ignored and kept. |
 
 The legacy collaboration format had roots `name`, `shapes` and `z_order`. A snapshot with those roots and no `meta.schema` is refused (`DocError::NotADocument`). It is never converted: the old app never persisted Loro bytes (`formats.md` section 2), so the only such bytes are old rooms on the old server.
 
@@ -106,6 +107,26 @@ There is no shared order list. The z-order of an element is its `index` field, a
 - `meta.name` and `meta.background` are strings, absent while default ("Untitled", white). Last writer wins; name and background are independent keys. The name is a string, not a `LoroText`: nobody edits a document title concurrently character by character, and the old code's delete-all-then-insert was a bug source.
 - `meta.schema` is written once when a document is created (section 14).
 - `files[hash]` is written once per distinct picture and is immutable, since the key is the content hash. Two peers adding the same picture write the same value. On read, an entry whose bytes do not hash to its key, whose media type is not `image/*`, or whose size is over the limit, is ignored (section 8). Removing a blob is the caller's decision (`SceneTx::remove_file`); the store does not collect unused blobs.
+
+## 7a. Named versions
+
+`versions[id]` is a mergeable child map (`ensure_mergeable_map`, like an element). The design, the measurements and the limits are in `docs/design/versions.md`; the code is `crates/doc/src/versions.rs`.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `name` | string | 1 to 100 characters, trimmed, no control characters. Last writer wins |
+| `at` | integer | milliseconds since the Unix epoch, not negative |
+| `author` | string | absent when unknown |
+| `elements` | integer | live elements in the scene |
+| `files` | string | blob ids joined by commas, absent when none |
+| `state` | binary | the compressed scene, at most 2 MiB. Written once, never changed |
+| `kind` | string | reserved. Absent: a version a person named. Present with any value: this build hides the entry and keeps it |
+
+* **A version is a value, not a pointer into history.** It survives every export, a trimmed snapshot, a state-only snapshot and `LoroStore::from_document`; the test `versions_survive_every_kind_of_export` checks each.
+* **Merge.** Two peers that save at once add two children. A rename writes `name` only (about 100 bytes, tested). A delete removes the child and wins over a rename. Names are not unique.
+* **Not undoable.** The engine writes version commits with the origin `sys:local` (`LoroTx::not_undoable`), so Ctrl+Z never takes a name back, and undo of the scene leaves them alone. They sync like any commit.
+* **Reading.** `sync_view` reads the touched ids of the root like it reads elements, and `Touched.versions` is filled from the diff events. An entry that fails to read (a missing key, a bad name, a size over the limit, a bad blob id, a `kind`) is hidden and kept, `Core::invalid_versions`. Past `MAX_VERSIONS_STORED` the view refuses further versions the same way.
+* **Cost.** A version costs its stored size in a state, and twice that in a full snapshot (state and the operation that wrote it).
 
 ## 8. Bad data from peers
 

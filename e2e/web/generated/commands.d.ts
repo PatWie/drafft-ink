@@ -7510,6 +7510,221 @@ export namespace ToolSetArrow {
   };
 }
 
+/** Deletes a named version for good. The scene is not changed. Not an undo step. */
+export namespace VersionDelete {
+  /** Arguments of `version.delete`. */
+  export type Args = {
+    /** The version, by the id that `version.list` shows. */
+    id: string;
+  };
+  /** Result of `version.rename` and `version.delete`. */
+  export type Output = {
+    /** False when the version already had this name. */
+    changed: boolean;
+    /** Versions the document holds now. */
+    count: number;
+    /** Ids of elements the command made. */
+    created?: string[];
+    /** Ids of elements the command removed. */
+    deleted?: string[];
+    /** The version. */
+    id: string;
+    /** Its name after the command (for `version.delete`, the name it had). */
+    name: string;
+    /** The label of the undo step the command pushed. */
+    undo_label?: string;
+    /** Non-fatal notes. */
+    warnings?: string[];
+    [key: string]: unknown;
+  };
+}
+
+/** Lists the named versions of the document, newest first, with id, name, time, author and element count. */
+export namespace VersionList {
+  /** An argument struct with no fields, for commands that take none. */
+  export type Args = Record<string, never>;
+  /** A version as `version.list` shows it. */
+  type O_VersionInfo = {
+    /** Who saved it, when they had set a name. */
+    author?: string | null;
+    /** Bytes the stored scene takes. */
+    bytes: number;
+    /** When it was saved, in milliseconds since the Unix epoch. */
+    created_ms: number;
+    /** Live elements in the scene it holds. */
+    elements: number;
+    /** The id to pass to the other `version` commands. */
+    id: string;
+    /** The name. */
+    name: string;
+    [key: string]: unknown;
+  };
+  /** Result of `version.list`. */
+  export type Output = {
+    /** Always false. */
+    changed: boolean;
+    /** How many there are. */
+    count: number;
+    /** Ids of elements the command made. */
+    created?: string[];
+    /** Ids of elements the command removed. */
+    deleted?: string[];
+    /** Most versions `version.save` keeps. */
+    limit: number;
+    /** The label of the undo step the command pushed. */
+    undo_label?: string;
+    /** The versions, newest first. */
+    versions: O_VersionInfo[];
+    /** Non-fatal notes. */
+    warnings?: string[];
+    [key: string]: unknown;
+  };
+}
+
+/** Opens a named version as an independent copy in a new tab, named "<document> — <version>". */
+export namespace VersionOpen {
+  /** Where `version.open` shows the version. */
+  type A_OpenMode = "new_tab";
+  /** Arguments of `version.open`. */
+  export type Args = {
+    /** The version, by the id that `version.list` shows. */
+    id: string;
+    /** `new_tab` (the only mode, and the default). */
+    mode?: A_OpenMode;
+  };
+  /** Result of `version.open`. */
+  export type Output = {
+    /** True. */
+    changed: boolean;
+    /** Ids of elements the command made. */
+    created?: string[];
+    /** Ids of elements the command removed. */
+    deleted?: string[];
+    /** Its position, counted from 0. */
+    index: number;
+    /** Its name. */
+    name: string;
+    /** The new tab. */
+    tab: string;
+    /** The label of the undo step the command pushed. */
+    undo_label?: string;
+    /** The version it shows. */
+    version: string;
+    /** Non-fatal notes. */
+    warnings?: string[];
+    [key: string]: unknown;
+  };
+}
+
+/** Changes the name of a named version. Not an undo step. */
+export namespace VersionRename {
+  /** Arguments of `version.rename`. */
+  export type Args = {
+    /** The version, by the id that `version.list` shows. */
+    id: string;
+    /** The new name, 1 to 100 characters, trimmed, no line breaks. */
+    name: string;
+  };
+  /** Result of `version.rename` and `version.delete`. */
+  export type Output = {
+    /** False when the version already had this name. */
+    changed: boolean;
+    /** Versions the document holds now. */
+    count: number;
+    /** Ids of elements the command made. */
+    created?: string[];
+    /** Ids of elements the command removed. */
+    deleted?: string[];
+    /** The version. */
+    id: string;
+    /** Its name after the command (for `version.delete`, the name it had). */
+    name: string;
+    /** The label of the undo step the command pushed. */
+    undo_label?: string;
+    /** Non-fatal notes. */
+    warnings?: string[];
+    [key: string]: unknown;
+  };
+}
+
+/** Makes the scene of a named version the current scene, as one undo step. Every named version is kept. */
+export namespace VersionRestore {
+  /** Arguments of `version.restore`. */
+  export type Args = {
+    /** The version, by the id that `version.list` shows. */
+    id: string;
+  };
+  /** Result of `version.restore`. */
+  export type Output = {
+    /** Elements that were gone or deleted and are back. */
+    brought_back: number;
+    /** False when the scene already was the scene of the version. */
+    changed: boolean;
+    /** Ids of elements the command made. */
+    created?: string[];
+    /** Elements the version does not have, now deleted. */
+    deleted: number;
+    /** The version. */
+    id: string;
+    /** Pictures the version shows that the document no longer holds. */
+    missing_pictures: number;
+    /** Its name. */
+    name: string;
+    /** Elements that changed to what the version has. */
+    reset: number;
+    /** The label of the undo step the command pushed. */
+    undo_label?: string;
+    /** Non-fatal notes. */
+    warnings?: string[];
+    [key: string]: unknown;
+  };
+}
+
+/** Names the current state of the document: keeps a copy of the scene with the name, the time and, when set, your name. Not an undo step. */
+export namespace VersionSave {
+  /** Arguments of `version.save`. */
+  export type Args = {
+    /** The name, 1 to 100 characters, trimmed, no line breaks. It need not be unique: versions are addressed by id. */
+    name: string;
+  };
+  /** A version as `version.list` shows it. */
+  type O_VersionInfo = {
+    /** Who saved it, when they had set a name. */
+    author?: string | null;
+    /** Bytes the stored scene takes. */
+    bytes: number;
+    /** When it was saved, in milliseconds since the Unix epoch. */
+    created_ms: number;
+    /** Live elements in the scene it holds. */
+    elements: number;
+    /** The id to pass to the other `version` commands. */
+    id: string;
+    /** The name. */
+    name: string;
+    [key: string]: unknown;
+  };
+  /** Result of `version.save`. */
+  export type Output = {
+    /** True. */
+    changed: boolean;
+    /** Versions the document holds now. */
+    count: number;
+    /** Ids of elements the command made. */
+    created?: string[];
+    /** Ids of elements the command removed. */
+    deleted?: string[];
+    /** Most versions `version.save` keeps. */
+    limit: number;
+    /** The label of the undo step the command pushed. */
+    undo_label?: string;
+    /** The new version. */
+    version: O_VersionInfo;
+    /** Non-fatal notes. */
+    warnings?: string[];
+    [key: string]: unknown;
+  };
+}
+
 /** Moves the camera to the origin, the content, the selection or a point, keeping the zoom. */
 export namespace ViewCenter {
   /** What `view.center` centres on. */
@@ -8157,6 +8372,12 @@ export interface CommandTable {
   "tool.release": { args: ToolRelease.Args; output: ToolRelease.Output };
   "tool.set": { args: ToolSet.Args; output: ToolSet.Output };
   "tool.set_arrow": { args: ToolSetArrow.Args; output: ToolSetArrow.Output };
+  "version.delete": { args: VersionDelete.Args; output: VersionDelete.Output };
+  "version.list": { args: VersionList.Args; output: VersionList.Output };
+  "version.open": { args: VersionOpen.Args; output: VersionOpen.Output };
+  "version.rename": { args: VersionRename.Args; output: VersionRename.Output };
+  "version.restore": { args: VersionRestore.Args; output: VersionRestore.Output };
+  "version.save": { args: VersionSave.Args; output: VersionSave.Output };
   "view.center": { args: ViewCenter.Args; output: ViewCenter.Output };
   "view.get": { args: ViewGet.Args; output: ViewGet.Output };
   "view.pan": { args: ViewPan.Args; output: ViewPan.Output };
@@ -8175,7 +8396,7 @@ export interface CommandTable {
 export type CommandId = keyof CommandTable;
 
 /** Commands whose arguments may all be left out. */
-export type OptionalArgsId = "arrow.delete_point" | "arrow.edit_points" | "arrow.reroute" | "arrow.swap_heads" | "clipboard.copy" | "clipboard.copy_as" | "clipboard.copy_style" | "clipboard.cut" | "clipboard.paste" | "clipboard.paste_style" | "collab.connect" | "collab.disconnect" | "collab.follow" | "collab.join_room" | "collab.leave_room" | "collab.set_pointer" | "collab.set_user" | "collab.status" | "doc.autosave" | "doc.clear" | "doc.export" | "doc.inspect" | "doc.list" | "doc.new" | "doc.outline" | "doc.save" | "doc.show_intro" | "element.convert" | "element.create_sticky" | "element.delete" | "element.duplicate" | "element.lock" | "element.move" | "element.open_link" | "element.query" | "element.set_bounds" | "element.set_link" | "element.unlock_all" | "engine.commands" | "engine.recent" | "engine.state" | "frame.remove" | "frame.select_children" | "frame.unwrap" | "frame.wrap" | "gesture.cancel" | "gesture.end" | "group.create" | "group.enter" | "group.exit" | "group.set_name" | "group.ungroup" | "history.clear" | "history.redo" | "history.state" | "history.undo" | "image.crop" | "image.crop_begin" | "image.crop_end" | "image.paint" | "image.paint_begin" | "image.paint_brush" | "image.paint_end" | "image.reset_crop" | "image.reset_paint" | "layout.apply" | "library.add" | "library.export" | "library.list" | "library.remove" | "perf.stats" | "selection.all" | "selection.clear" | "selection.get" | "selection.select" | "settings.get" | "settings.reset" | "style.get" | "style.list_themes" | "tab.close" | "tab.duplicate" | "tab.list" | "tab.new" | "text.edit_begin" | "text.edit_end" | "text.format" | "text.wrap_in_container" | "tool.cancel" | "tool.hold" | "tool.lock" | "tool.release" | "tool.set_arrow" | "view.center" | "view.get" | "view.screenshot" | "view.set" | "view.set_view_only" | "view.zoom_at" | "view.zoom_in" | "view.zoom_out" | "view.zoom_reset" | "view.zoom_to_fit";
+export type OptionalArgsId = "arrow.delete_point" | "arrow.edit_points" | "arrow.reroute" | "arrow.swap_heads" | "clipboard.copy" | "clipboard.copy_as" | "clipboard.copy_style" | "clipboard.cut" | "clipboard.paste" | "clipboard.paste_style" | "collab.connect" | "collab.disconnect" | "collab.follow" | "collab.join_room" | "collab.leave_room" | "collab.set_pointer" | "collab.set_user" | "collab.status" | "doc.autosave" | "doc.clear" | "doc.export" | "doc.inspect" | "doc.list" | "doc.new" | "doc.outline" | "doc.save" | "doc.show_intro" | "element.convert" | "element.create_sticky" | "element.delete" | "element.duplicate" | "element.lock" | "element.move" | "element.open_link" | "element.query" | "element.set_bounds" | "element.set_link" | "element.unlock_all" | "engine.commands" | "engine.recent" | "engine.state" | "frame.remove" | "frame.select_children" | "frame.unwrap" | "frame.wrap" | "gesture.cancel" | "gesture.end" | "group.create" | "group.enter" | "group.exit" | "group.set_name" | "group.ungroup" | "history.clear" | "history.redo" | "history.state" | "history.undo" | "image.crop" | "image.crop_begin" | "image.crop_end" | "image.paint" | "image.paint_begin" | "image.paint_brush" | "image.paint_end" | "image.reset_crop" | "image.reset_paint" | "layout.apply" | "library.add" | "library.export" | "library.list" | "library.remove" | "perf.stats" | "selection.all" | "selection.clear" | "selection.get" | "selection.select" | "settings.get" | "settings.reset" | "style.get" | "style.list_themes" | "tab.close" | "tab.duplicate" | "tab.list" | "tab.new" | "text.edit_begin" | "text.edit_end" | "text.format" | "text.wrap_in_container" | "tool.cancel" | "tool.hold" | "tool.lock" | "tool.release" | "tool.set_arrow" | "version.list" | "view.center" | "view.get" | "view.screenshot" | "view.set" | "view.set_view_only" | "view.zoom_at" | "view.zoom_in" | "view.zoom_out" | "view.zoom_reset" | "view.zoom_to_fit";
 
 /** The registry size when the types were made; a spec can compare it with `commands()`. */
-export declare const COMMAND_COUNT: 166;
+export declare const COMMAND_COUNT: 172;

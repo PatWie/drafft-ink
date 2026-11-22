@@ -10,10 +10,11 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::color::Color;
-use crate::document::{Document, DocumentError, FileEntry};
+use crate::document::{BASE_SCHEMA_VERSION, Document, DocumentError, FileEntry, SCHEMA_VERSION};
 use crate::element::Element;
 use crate::id::FileId;
-use crate::validate::{Validator, validate_parts};
+use crate::validate::{Report, Validator, validate_parts, validate_versions};
+use crate::version::NamedVersion;
 
 /// The content of a document, shared with the store it was taken from.
 #[derive(Debug, Clone)]
@@ -26,6 +27,8 @@ pub struct SharedDocument {
     pub elements: Vec<Arc<Element>>,
     /// Image blobs by content hash (the bytes are shared, too).
     pub files: BTreeMap<FileId, FileEntry>,
+    /// Named versions, oldest first (the stored scenes are shared, too).
+    pub versions: Vec<NamedVersion>,
 }
 
 impl SharedDocument {
@@ -33,13 +36,14 @@ impl SharedDocument {
     /// One pass, about 20 ms at 100,000 elements.
     pub fn check(&self) -> Result<(), DocumentError> {
         let refs: Vec<&Element> = self.elements.iter().map(|e| &**e).collect();
-        let report = validate_parts(&self.name, &refs, &self.files);
+        let mut report = validate_parts(&self.name, &refs, &self.files);
+        report.issues.append(&mut validate_versions(&self.versions).issues);
         if report.has_errors() { Err(DocumentError::Invalid(report)) } else { Ok(()) }
     }
 
     /// A check of this document in steps ([`DocumentCheck`]).
     pub fn checker(&self) -> DocumentCheck {
-        DocumentCheck { validator: Validator::for_document(&self.name) }
+        DocumentCheck { validator: Validator::for_document(&self.name), versions: validate_versions(&self.versions) }
     }
 
     /// The same content as an owned [`Document`] (a copy of every element).
@@ -51,6 +55,7 @@ impl SharedDocument {
             files: self.files.clone(),
             ..Document::default()
         }
+        .with_versions(self.versions.clone())
     }
 }
 
@@ -58,6 +63,8 @@ impl SharedDocument {
 #[derive(Debug)]
 pub struct DocumentCheck {
     validator: Validator,
+    /// The verdict on the named versions, made when the check began (they are few and checked by their metadata).
+    versions: Report,
 }
 
 impl DocumentCheck {
@@ -73,7 +80,8 @@ impl DocumentCheck {
     /// # Errors
     /// When the document breaks a rule.
     pub fn finish(self) -> Result<(), DocumentError> {
-        let report = self.validator.finish();
+        let mut report = self.validator.finish();
+        report.issues.extend(self.versions.issues);
         if report.has_errors() { Err(DocumentError::Invalid(report)) } else { Ok(()) }
     }
 }
@@ -97,7 +105,9 @@ impl JsonJob {
     pub fn new(doc: SharedDocument) -> Result<Self, DocumentError> {
         let write = |e: serde_json::Error| DocumentError::Write(Arc::new(e));
         // The head and the tail come from the serialiser itself: the empty document ends in `"elements":[]}`.
-        let empty = Document { name: doc.name.clone(), background: doc.background, ..Document::default() };
+        let schema_version = if doc.versions.is_empty() { BASE_SCHEMA_VERSION } else { SCHEMA_VERSION };
+        let empty =
+            Document { name: doc.name.clone(), background: doc.background, schema_version, ..Document::default() };
         let head = serde_json::to_string(&empty).map_err(write)?;
         let Some(head) = head.strip_suffix("]}") else {
             return Err(write(serde_json::Error::io(std::io::Error::other(
@@ -110,6 +120,10 @@ impl JsonJob {
         if !doc.files.is_empty() {
             tail.extend_from_slice(b",\"files\":");
             tail.extend_from_slice(serde_json::to_string(&doc.files).map_err(write)?.as_bytes());
+        }
+        if !doc.versions.is_empty() {
+            tail.extend_from_slice(b",\"versions\":");
+            tail.extend_from_slice(serde_json::to_string(&doc.versions).map_err(write)?.as_bytes());
         }
         tail.push(b'}');
         Ok(Self { doc, out, next: 0, tail })

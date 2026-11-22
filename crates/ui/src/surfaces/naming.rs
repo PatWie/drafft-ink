@@ -1,6 +1,8 @@
-//! The naming dialogs: rename (document, tab, library item, library section, frame) and Save As.
+//! The naming dialogs: rename (document, tab, library item, library section, frame, version), the name of a new
+//! version, and Save As.
 //!
-//! Rename ends in `doc.rename`, `tab.rename`, `library.rename`, `library.rename_section` or `frame.rename`. Save As asks for the
+//! Rename ends in `doc.rename`, `tab.rename`, `library.rename`, `library.rename_section`, `frame.rename` or
+//! `version.rename`; the name of a new version ends in `version.save`. Save As asks for the
 //! document name first: Save runs `doc.rename` when the name changed and then hands the app a
 //! [`HostRequest::PickSaveTarget`] (the app calls `doc.save` with `to` afterwards). A refusal (an empty
 //! name) keeps the dialog open next to its toast.
@@ -18,6 +20,9 @@ use crate::widgets::{Ctl, Cx};
 /// The longest name the engine takes.
 const MAX_NAME_CHARS: usize = 256;
 
+/// The longest name of a version.
+const MAX_VERSION_NAME_CHARS: usize = drafftink_scene::limits::MAX_VERSION_NAME_CHARS;
+
 /// The command and arguments that apply a rename.
 pub(crate) fn rename_call(target: &RenameTarget, text: &str) -> (&'static str, Value) {
     let name = text.trim();
@@ -33,6 +38,8 @@ pub(crate) fn rename_call(target: &RenameTarget, text: &str) -> (&'static str, V
             let name = (name != FrameData::DEFAULT_NAME).then_some(name);
             ("frame.rename", json!({ "frame": frame, "name": name }))
         }
+        RenameTarget::Version(id) => ("version.rename", json!({ "id": id, "name": name })),
+        RenameTarget::NewVersion => ("version.save", json!({ "name": name })),
     }
 }
 
@@ -44,6 +51,24 @@ fn title_of(target: &RenameTarget) -> &'static str {
         RenameTarget::LibraryItem(_) => "Rename the library item",
         RenameTarget::LibrarySection(_) => "Rename the library section",
         RenameTarget::Frame(_) => "Rename the frame",
+        RenameTarget::Version(_) => "Rename the version",
+        RenameTarget::NewVersion => "Name this version",
+    }
+}
+
+/// The label of the button that applies the name.
+fn button_of(target: &RenameTarget) -> &'static str {
+    match target {
+        RenameTarget::NewVersion => "Save",
+        _ => "Rename",
+    }
+}
+
+/// The most characters the field takes.
+fn limit_of(target: &RenameTarget) -> usize {
+    match target {
+        RenameTarget::Version(_) | RenameTarget::NewVersion => MAX_VERSION_NAME_CHARS,
+        _ => MAX_NAME_CHARS,
     }
 }
 
@@ -58,6 +83,10 @@ fn current_name(cx: &Cx<'_>, target: &RenameTarget) -> String {
         RenameTarget::LibrarySection(id) => {
             cx.model.library_sections.iter().find(|s| &s.id == id).map(|s| s.name.clone()).unwrap_or_default()
         }
+        RenameTarget::Version(id) => {
+            cx.model.versions.iter().find(|v| &v.id == id).map(|v| v.name.clone()).unwrap_or_default()
+        }
+        RenameTarget::NewVersion => String::new(),
         // The label the canvas shows: the name, or the default for a frame without one.
         RenameTarget::Frame(id) => cx
             .model
@@ -84,7 +113,7 @@ fn rename(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
     let text = text.get_or_insert_with(|| current_name(cx, target));
     let title = title_of(target);
     show_modal(ctx, cx, Modal::new(Id::unique("rename_dialog")), title, 380.0, &Close::Overlays, |ui, cx| {
-        let field = text_field(ui, text, "Name", None, Some(MAX_NAME_CHARS), "Name");
+        let field = text_field(ui, text, "Name", None, Some(limit_of(target)), "Name");
         if !*focused {
             focus_and_select_all(ui, &field, text);
             *focused = true;
@@ -96,8 +125,8 @@ fn rename(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
             if plain_button(ui, &pal, "Cancel", false).clicked() {
                 cx.verb(crate::action::Verb::CloseOverlays);
             }
-            let ok = Ctl::new(id).args(args.clone()).label("Rename");
-            let clicked = cx.text_button(ui, &ok, "Rename", true).clicked();
+            let ok = Ctl::new(id).args(args.clone()).label(button_of(target));
+            let clicked = cx.text_button(ui, &ok, button_of(target), true).clicked();
             if enter && !clicked {
                 cx.run(id, args.clone());
             }
@@ -174,6 +203,14 @@ mod tests {
         assert_eq!(
             rename_call(&RenameTarget::Frame("f1".into()), "Part"),
             ("frame.rename", json!({"frame": "f1", "name": "Part"}))
+        );
+        assert_eq!(
+            rename_call(&RenameTarget::Version("v1".into()), "  Final "),
+            ("version.rename", json!({"id": "v1", "name": "Final"}))
+        );
+        assert_eq!(
+            rename_call(&RenameTarget::NewVersion, " Before review "),
+            ("version.save", json!({"name": "Before review"}))
         );
         assert_eq!(
             rename_call(&RenameTarget::Frame("f1".into()), " Frame "),

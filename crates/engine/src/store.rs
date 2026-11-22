@@ -32,7 +32,7 @@ use drafftink_doc::{DocError, LoroStore, LoroTx};
 use drafftink_geom::kurbo::Point;
 use drafftink_scene::{
     Change, ChangeKind, ChangeSet, DerivedIndex, DocMeta, Document, Element, ElementId, Fields, FileEntry, FileId,
-    MemoryStore, SceneRead, SceneStore, SceneTx, StoreError, ZIndex,
+    MemoryStore, NamedVersion, SceneRead, SceneStore, SceneTx, StoreError, VersionId, ZIndex,
 };
 
 use crate::fingerprint::{Feed, Fingerprint, Tracker};
@@ -51,12 +51,13 @@ pub struct Patch {
     elements: BTreeMap<ElementId, Option<Element>>,
     meta: Option<DocMeta>,
     files: BTreeMap<FileId, Option<FileEntry>>,
+    versions: BTreeMap<VersionId, Option<NamedVersion>>,
 }
 
 impl Patch {
     /// True when the patch touches nothing.
     pub fn is_empty(&self) -> bool {
-        self.elements.is_empty() && self.meta.is_none() && self.files.is_empty()
+        self.elements.is_empty() && self.meta.is_none() && self.files.is_empty() && self.versions.is_empty()
     }
 
     /// Folds a patch recorded *after* this one into it: for every thing both touch, this (earlier) patch's
@@ -70,6 +71,9 @@ impl Patch {
         }
         for (id, v) in later.files {
             self.files.entry(id).or_insert(v);
+        }
+        for (id, v) in later.versions {
+            self.versions.entry(id).or_insert(v);
         }
     }
 
@@ -104,6 +108,14 @@ impl Patch {
                 }
             }
         }
+        for (id, prev) in &self.versions {
+            match prev {
+                Some(v) => tx.put_version(v.clone())?,
+                None => {
+                    tx.remove_version(id);
+                }
+            }
+        }
         Ok(())
     }
 }
@@ -126,6 +138,13 @@ impl DocTx<'_, '_> {
     fn note_meta(&mut self) {
         if self.patch.meta.is_none() {
             self.patch.meta = Some(self.inner.meta().clone());
+        }
+    }
+
+    fn note_version(&mut self, id: &VersionId) {
+        if !self.patch.versions.contains_key(id) {
+            let prev = self.inner.version(id).cloned();
+            self.patch.versions.insert(id.clone(), prev);
         }
     }
 
@@ -158,6 +177,12 @@ impl SceneRead for DocTx<'_, '_> {
     }
     fn files(&self) -> impl Iterator<Item = (&FileId, &FileEntry)> {
         self.inner.files()
+    }
+    fn version(&self, id: &VersionId) -> Option<&NamedVersion> {
+        self.inner.version(id)
+    }
+    fn versions(&self) -> impl Iterator<Item = &NamedVersion> {
+        self.inner.versions()
     }
     fn top_z(&self) -> Option<ZIndex> {
         self.inner.top_z()
@@ -211,6 +236,21 @@ impl SceneTx for DocTx<'_, '_> {
     fn remove_file(&mut self, id: &FileId) -> bool {
         self.note_file(id);
         self.inner.remove_file(id)
+    }
+
+    fn put_version(&mut self, version: NamedVersion) -> Result<(), StoreError> {
+        self.note_version(&version.id);
+        self.inner.put_version(version)
+    }
+
+    fn rename_version(&mut self, id: &VersionId, name: &str) -> Result<(), StoreError> {
+        self.note_version(id);
+        self.inner.rename_version(id, name)
+    }
+
+    fn remove_version(&mut self, id: &VersionId) -> bool {
+        self.note_version(id);
+        self.inner.remove_version(id)
     }
 
     fn commit(self) -> Result<ChangeSet, StoreError> {
@@ -400,7 +440,7 @@ impl TabDoc {
                         .into_iter()
                         .map(|id| Change { id, kind: ChangeKind::Updated, fields: Fields::all(), version: 0 })
                         .collect();
-                    cache.index.apply(&self.work, &ChangeSet { revision, elements, meta: false, files: Vec::new() });
+                    cache.index.apply(&self.work, &ChangeSet { revision, elements, ..ChangeSet::default() });
                 }
                 cache.revision = Some(revision);
             }
@@ -532,9 +572,16 @@ impl TabDoc {
         }
         let existing: Vec<ElementId> = self.work.iter_all().map(|e| e.id.clone()).collect();
         let old_files: Vec<FileId> = self.work.files().map(|(id, _)| id.clone()).collect();
+        let old_versions: Vec<VersionId> = self.work.versions().map(|v| v.id.clone()).collect();
         let (_, cs) = self.edit::<(), StoreError>(|tx| {
             for id in &existing {
                 tx.remove(id)?;
+            }
+            for id in &old_versions {
+                tx.remove_version(id);
+            }
+            for v in &doc.versions {
+                tx.put_version(v.clone())?;
             }
             for id in old_files.iter().filter(|id| !doc.files.contains_key(*id)) {
                 tx.remove_file(id);
@@ -616,6 +663,7 @@ impl TabDoc {
         let mut first: BTreeMap<&ElementId, &Option<Element>> = BTreeMap::new();
         let mut meta: Option<&DocMeta> = None;
         let mut files: BTreeMap<&FileId, &Option<FileEntry>> = BTreeMap::new();
+        let mut versions: BTreeMap<&VersionId, &Option<NamedVersion>> = BTreeMap::new();
         for p in tail {
             for (id, prev) in &p.elements {
                 first.entry(id).or_insert(prev);
@@ -625,6 +673,9 @@ impl TabDoc {
             }
             for (id, prev) in &p.files {
                 files.entry(id).or_insert(prev);
+            }
+            for (id, prev) in &p.versions {
+                versions.entry(id).or_insert(prev);
             }
         }
         let mut elements = Vec::new();
@@ -646,7 +697,18 @@ impl TabDoc {
             .filter(|(id, prev)| prev.as_ref() != self.work.file(id))
             .map(|(id, _)| id.clone())
             .collect();
-        ChangeSet { revision: self.work.revision(), elements, meta: meta.is_some_and(|m| m != self.work.meta()), files }
+        let versions = versions
+            .into_iter()
+            .filter(|(id, prev)| prev.as_ref() != self.work.version(id))
+            .map(|(id, _)| id.clone())
+            .collect();
+        ChangeSet {
+            revision: self.work.revision(),
+            elements,
+            meta: meta.is_some_and(|m| m != self.work.meta()),
+            files,
+            versions,
+        }
     }
 
     /// The elements as they were at `mark`, for those the commits since then changed or removed (an element that
@@ -673,7 +735,7 @@ impl TabDoc {
             .iter()
             .map(|id| Change { id: id.clone(), kind: ChangeKind::Updated, fields: Fields::all(), version: 0 })
             .collect();
-        self.mirror(&ChangeSet { revision: self.work.revision(), elements, meta: false, files: Vec::new() })
+        self.mirror(&ChangeSet { revision: self.work.revision(), elements, ..ChangeSet::default() })
     }
 
     /// What the commits since `mark` did, without removing them.
@@ -785,6 +847,23 @@ impl TabDoc {
                 _ => {}
             }
         }
+        for id in patch.versions.keys() {
+            match (self.work.version(id), tx.version(id)) {
+                (Some(w), None) => tx.put_version(w.clone())?,
+                (Some(w), Some(cur)) if w != cur => {
+                    // Only the name differs: a rename writes the name and not the stored scene again.
+                    if (NamedVersion { name: cur.name.clone(), ..w.clone() }) == *cur {
+                        tx.rename_version(id, &w.name)?;
+                    } else {
+                        tx.put_version(w.clone())?;
+                    }
+                }
+                (None, Some(_)) => {
+                    tx.remove_version(id);
+                }
+                _ => {}
+            }
+        }
         tx.commit()?;
         self.local_writes += 1;
         Ok(())
@@ -827,6 +906,14 @@ impl TabDoc {
                 }
                 None => {
                     tx.remove_file(id);
+                }
+            }
+        }
+        for id in &cs.versions {
+            match loro.version(id) {
+                Some(v) => tx.put_version(v.clone())?,
+                None => {
+                    tx.remove_version(id);
                 }
             }
         }
@@ -987,6 +1074,7 @@ impl TabDoc {
         let mut first: BTreeMap<&ElementId, &Option<Element>> = BTreeMap::new();
         let mut meta: Option<&DocMeta> = None;
         let mut files: BTreeMap<&FileId, &Option<FileEntry>> = BTreeMap::new();
+        let mut versions: BTreeMap<&VersionId, &Option<NamedVersion>> = BTreeMap::new();
         for p in tail {
             for (id, prev) in &p.elements {
                 first.entry(id).or_insert(prev);
@@ -996,6 +1084,9 @@ impl TabDoc {
             }
             for (id, prev) in &p.files {
                 files.entry(id).or_insert(prev);
+            }
+            for (id, prev) in &p.versions {
+                versions.entry(id).or_insert(prev);
             }
         }
         let mut s = Summary::default();
@@ -1014,7 +1105,8 @@ impl TabDoc {
         }
         let meta_changed = meta.is_some_and(|m| m != self.work.meta());
         let files_changed = files.iter().any(|(id, prev)| prev.as_ref() != self.work.file(id));
-        s.changed = !s.touched.is_empty() || meta_changed || files_changed;
+        let versions_changed = versions.iter().any(|(id, prev)| prev.as_ref() != self.work.version(id));
+        s.changed = !s.touched.is_empty() || meta_changed || files_changed || versions_changed;
         s
     }
 }

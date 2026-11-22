@@ -131,7 +131,12 @@ fn the_menu_opens_under_the_menu_button() {
     // taken for (the e2e specs click them).
     assert!((row.center().y - (92.0 + shift)).abs() < 1.0 && row.min.x < 50.0 && row.max.x > 50.0, "{row:?}");
     let png = h.get_all_by_label("Export as PNG").map(|n| n.rect()).find(|r| r.min.x < 100.0).unwrap();
-    assert!((png.center().y - (322.0 + shift)).abs() < 1.0 && png.min.x < 50.0 && png.max.x > 50.0, "{png:?}");
+    // The "Versions" row of the File section is one more row (28 points and 1 of spacing) above the Export heading.
+    let versions_row = 29.0;
+    assert!(
+        (png.center().y - (322.0 + versions_row + shift)).abs() < 1.0 && png.min.x < 50.0 && png.max.x > 50.0,
+        "{png:?}"
+    );
 }
 
 #[test]

@@ -149,10 +149,11 @@ fn looks_like_mermaid(text: &str) -> bool {
 /// A copy of `doc` holding only the elements in `keep` (tombstones and unknown ids are dropped), and only the blobs
 /// they use. References that point outside the set are cut so the result validates: bindings to elements that are
 /// not kept become unbound ends, bound text whose container is gone becomes free text, frame membership of a missing
-/// frame is dropped. Use it to export or copy a selection.
+/// frame is dropped. Use it to export or copy a selection. The result has no named versions: a selection is not the
+/// document, and a PNG or SVG that carries a scene must stay small.
 pub fn subset(doc: &Document, keep: &std::collections::HashSet<drafftink_scene::ElementId>) -> Document {
     use drafftink_scene::ElementKind;
-    let mut out = Document { files: Default::default(), elements: Vec::new(), ..doc.clone() };
+    let mut out = Document { name: doc.name.clone(), background: doc.background, ..Document::default() };
     for e in doc.elements.iter().filter(|e| !e.deleted && keep.contains(&e.id)) {
         let mut e = e.clone();
         if e.frame_id.as_ref().is_some_and(|f| !keep.contains(f)) {

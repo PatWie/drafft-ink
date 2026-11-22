@@ -432,3 +432,65 @@ fn a_server_that_is_not_there_is_retried_with_backoff_and_not_in_a_loop() {
     let st = w.peers[a].client().status();
     assert!(st.text.contains("Cannot reach the server") && st.text.contains("kept on this device"), "{}", st.text);
 }
+
+/// Names the current scene of `peer` as a version, in a commit that undo does not see.
+fn name_version(w: &mut World, peer: usize, id: &str, name: &str, at: u64) {
+    let v = NamedVersion::capture(VersionId::new(id).unwrap(), name, at, None, &w.peers[peer].store).unwrap();
+    w.peers[peer].edit(|tx| {
+        tx.not_undoable();
+        tx.put_version(v).unwrap();
+    });
+}
+
+fn version_names(p: &common::live::Peer) -> Vec<String> {
+    p.store.versions().map(|v| v.name.clone()).collect()
+}
+
+#[test]
+fn versions_named_at_once_by_two_clients_reach_everyone_and_a_late_joiner_through_the_server() {
+    let mut server = Server::start_persistent(&[]);
+    let url = server.url();
+    let mut w = World::new();
+    for n in 1..=2 {
+        w.spawn(spec(n, &url, "versions"));
+    }
+    w.wait_until("everyone online", |w| w.peers.iter().all(|p| p.state() == ConnState::Online));
+    w.peers[0].add("shared");
+    w.converged();
+    // Both name a version in the same instant, with no pumping in between.
+    name_version(&mut w, 0, "va", "From one", 100);
+    name_version(&mut w, 1, "vb", "From two", 101);
+    w.converged();
+    for p in &w.peers {
+        assert_eq!(version_names(p), vec!["From one", "From two"]);
+    }
+    // One renames, the other deletes a different one; both reach both.
+    w.peers[0].edit(|tx| {
+        tx.not_undoable();
+        tx.rename_version(&VersionId::new("va").unwrap(), "Renamed").unwrap();
+    });
+    w.peers[1].edit(|tx| {
+        tx.not_undoable();
+        tx.remove_version(&VersionId::new("vb").unwrap());
+    });
+    w.converged();
+    assert_eq!(version_names(&w.peers[0]), vec!["Renamed"]);
+
+    // A late joiner gets them with the scene, from the server's snapshot and log.
+    let late = w.spawn(spec(3, &url, "versions"));
+    w.wait_until("the late joiner has the scene", |w| {
+        w.peers[late].ids().len() == 1 && w.peers[late].state() == ConnState::Online
+    });
+    assert_eq!(version_names(&w.peers[late]), vec!["Renamed"]);
+    let scene = w.peers[late].store.version(&VersionId::new("va").unwrap()).unwrap().open().unwrap();
+    assert_eq!(scene.elements.len(), 1, "and the stored scene opens");
+
+    // And after the server restarted and compacted what it kept.
+    server.restart();
+    let mut w2 = World::new();
+    let again = w2.spawn(spec(4, &url, "versions"));
+    w2.wait_until("the room is back", |w| {
+        w.peers[again].ids().len() == 1 && w.peers[again].state() == ConnState::Online
+    });
+    assert_eq!(version_names(&w2.peers[again]), vec!["Renamed"]);
+}

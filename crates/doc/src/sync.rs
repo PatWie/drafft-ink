@@ -9,14 +9,14 @@ use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
 
 use drafftink_scene::{
-    ChangeSet, Color, DocMeta, ElementId, FileEntry, FileId, MemoryStore, SceneRead, SceneStore, SceneTx,
+    ChangeSet, Color, DocMeta, ElementId, FileEntry, FileId, MemoryStore, SceneRead, SceneStore, SceneTx, VersionId,
 };
 use loro::event::{Diff, DiffEvent};
 use loro::{Container, Index, LoroValue, ValueOrContainer};
 
 use crate::codec::read_element;
 use crate::error::DocError;
-use crate::schema::{META_BACKGROUND, META_NAME, ROOT_ELEMENTS, ROOT_FILES, ROOT_META, SCHEMA_VERSION};
+use crate::schema::{META_BACKGROUND, META_NAME, ROOT_ELEMENTS, ROOT_FILES, ROOT_META, ROOT_VERSIONS, SCHEMA_VERSION};
 use crate::staged::{Item, Staged};
 use crate::store::{Core, LoroStore, check_size, guard, guarded, import_fresh_pending};
 use crate::undo::{UndoInfo, UndoStep, lock};
@@ -26,6 +26,7 @@ use crate::undo::{UndoInfo, UndoStep, lock};
 pub(crate) struct Touched {
     pub elements: BTreeSet<String>,
     pub files: BTreeSet<String>,
+    pub versions: BTreeSet<String>,
     pub meta: bool,
     /// Events could not be attributed; re-read everything.
     pub all: bool,
@@ -51,6 +52,15 @@ fn collect(t: &mut Touched, e: &DiffEvent) {
             ROOT_FILES => {
                 if at_root && let Diff::Map(m) = &d.diff {
                     t.files.extend(m.updated.keys().map(|k| k.to_string()));
+                }
+            }
+            ROOT_VERSIONS => {
+                if at_root {
+                    if let Diff::Map(m) = &d.diff {
+                        t.versions.extend(m.updated.keys().map(|k| k.to_string()));
+                    }
+                } else if let Some((_, Index::Key(id))) = d.path.get(1) {
+                    t.versions.insert(id.to_string());
                 }
             }
             ROOT_META => t.meta = true,
@@ -111,6 +121,7 @@ pub(crate) fn sync_view(view: &mut MemoryStore, core: &mut Core, t: Touched) -> 
 fn sync_view_inner(view: &mut MemoryStore, core: &mut Core, mut t: Touched) -> Result<ChangeSet, DocError> {
     let elements = core.doc.get_map(ROOT_ELEMENTS);
     let files_map = core.doc.get_map(ROOT_FILES);
+    let versions_map = core.doc.get_map(ROOT_VERSIONS);
     if t.all {
         core.stats.full_rebuilds += 1;
         elements.for_each(|k, _| {
@@ -121,6 +132,10 @@ fn sync_view_inner(view: &mut MemoryStore, core: &mut Core, mut t: Touched) -> R
             t.files.insert(k.to_owned());
         });
         t.files.extend(view.files().map(|(id, _)| id.to_string()));
+        versions_map.for_each(|k, _| {
+            t.versions.insert(k.to_owned());
+        });
+        t.versions.extend(view.versions().map(|v| v.id.to_string()));
         t.meta = true;
     }
     let mut tx = view.begin();
@@ -191,6 +206,33 @@ fn sync_view_inner(view: &mut MemoryStore, core: &mut Core, mut t: Touched) -> R
             }
         }
     }
+    for sid in &t.versions {
+        let Ok(id) = VersionId::new(sid) else { continue };
+        let raw = versions_map.get(sid);
+        let exists_in_loro = raw.is_some();
+        let decoded = match raw {
+            Some(ValueOrContainer::Container(Container::Map(m))) => crate::versions::read(&id, &m),
+            _ => None,
+        };
+        match decoded {
+            // Past the limit a version stays in Loro and out of the view, like an invalid one.
+            Some(v) => {
+                if tx.put_version(v).is_ok() {
+                    core.invalid_versions.remove(&id);
+                } else {
+                    core.invalid_versions.insert(id);
+                }
+            }
+            None => {
+                tx.remove_version(&id);
+                if exists_in_loro {
+                    core.invalid_versions.insert(id);
+                } else {
+                    core.invalid_versions.remove(&id);
+                }
+            }
+        }
+    }
     let cs = tx.commit().map_err(DocError::backend)?;
     #[cfg(feature = "profile")]
     drafftink_profile::count(drafftink_profile::Counter::SyncOpsApplied, u64::try_from(cs.elements.len()).unwrap_or(0));
@@ -221,6 +263,7 @@ fn begin_staged(store: &mut LoroStore, bytes: &[u8]) -> Result<ChangeSet, DocErr
     let fresh = opened?;
     store.core.reset_doc(fresh.doc.clone());
     store.core.invalid.clear();
+    store.core.invalid_versions.clear();
     store.core.pending = pending;
     store.core.stats.remote_updates += 1;
     store.core.staged = Some(Staged::scan(&store.view, &store.core)?);
@@ -240,6 +283,9 @@ pub(crate) fn import_step(store: &mut LoroStore, max_items: usize) -> Result<Cha
             }
             Item::File(id) => {
                 touched.files.insert(id.clone());
+            }
+            Item::Version(id) => {
+                touched.versions.insert(id.clone());
             }
         }
     }

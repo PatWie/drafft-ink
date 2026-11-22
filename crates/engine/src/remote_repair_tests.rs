@@ -238,7 +238,7 @@ fn a_repair_is_written_once_and_a_second_pass_changes_nothing() {
             fields: drafftink_scene::Fields::all(),
             version: 0,
         });
-        let cs = drafftink_scene::ChangeSet { revision: 1, elements: cs.collect(), meta: false, files: Vec::new() };
+        let cs = drafftink_scene::ChangeSet { revision: 1, elements: cs.collect(), ..Default::default() };
         let tab = peer.tab().id;
         let r = peer.repair_merge(tab, &cs).unwrap();
         assert!(r.is_empty(), "peer {i} repaired a scene that was repaired already: {r:?}");

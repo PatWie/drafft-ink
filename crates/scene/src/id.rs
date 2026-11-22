@@ -124,6 +124,13 @@ string_id!(
 );
 
 string_id!(
+    /// Identifier of a named version of a document (`NamedVersion`). Random like an element id, so two peers that
+    /// name a version at the same moment never collide.
+    VersionId,
+    "VersionId"
+);
+
+string_id!(
     /// Identifier of one brush stroke on a picture. It starts with a sequence number, which is the order the strokes
     /// are applied in (`paint::next_stroke_id`). It never contains a dot, because the document store joins keys with
     /// dots.
@@ -205,6 +212,10 @@ pub trait IdSource {
     fn group_id(&mut self) -> GroupId;
     /// A fresh seed for the hand-drawn jitter of one element.
     fn seed(&mut self) -> u32;
+    /// A fresh id for a named version: `v` and the text of an element id.
+    fn version_id(&mut self) -> VersionId {
+        VersionId(SmolStr::new(format!("v{}", self.element_id())))
+    }
 }
 
 /// A 64-bit random generator supplied by the caller (OS randomness in the app, a fixed seed in tests).
@@ -264,11 +275,13 @@ impl<R: Rng64> IdSource for RandomIds<R> {
     }
 }
 
-/// Sequential ids for tests and scripts: `e1`, `e2`, ... for elements, `g1`, `g2`, ... for groups, seeds 1, 2, ...
+/// Sequential ids for tests and scripts: `e1`, `e2`, ... for elements, `g1`, `g2`, ... for groups, `v1`, `v2`, ...
+/// for versions, seeds 1, 2, ...
 #[derive(Debug, Clone, Default)]
 pub struct SeqIds {
     elements: u64,
     groups: u64,
+    versions: u64,
     seeds: u32,
 }
 
@@ -291,6 +304,10 @@ impl IdSource for SeqIds {
     fn seed(&mut self) -> u32 {
         self.seeds = self.seeds.wrapping_add(1);
         self.seeds
+    }
+    fn version_id(&mut self) -> VersionId {
+        self.versions += 1;
+        VersionId(SmolStr::new(format!("v{}", self.versions)))
     }
 }
 

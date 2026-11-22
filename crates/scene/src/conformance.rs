@@ -23,11 +23,12 @@ use crate::color::Color;
 use crate::derived::DerivedIndex;
 use crate::document::{Document, FileEntry};
 use crate::element::{BindMode, Binding, Element, ElementKind, LinearData, LinearKind, TextData, Transform};
-use crate::id::{ElementId, GroupId};
+use crate::id::{ElementId, GroupId, IdSource, SeqIds, VersionId};
 use crate::store::{
     ChangeKind, ChangeSet, Fields, SceneRead, SceneStore, SceneTx, StoreError, load_document, snapshot,
 };
 use crate::validate::validate_scene;
+use crate::version::NamedVersion;
 use crate::zindex::ZIndex;
 use kurbo::Point;
 
@@ -497,6 +498,71 @@ fn meta_and_files<S: SceneStore>(mut s: S) -> Result<(), String> {
     Ok(())
 }
 
+fn named_versions<S: SceneStore>(mut s: S) -> Result<(), String> {
+    let z = zs(1)?;
+    commit_all(&mut s, vec![rect("a", &z[0])?])?;
+    let mut ids = SeqIds::new();
+    let first = NamedVersion::capture(ids.version_id(), "First", 20, Some("Ana"), &s).map_err(e2s)?;
+    let second = NamedVersion::capture(ids.version_id(), "Second", 10, None, &s).map_err(e2s)?;
+    let mut tx = s.begin();
+    tx.put_version(first.clone()).map_err(e2s)?;
+    tx.put_version(second.clone()).map_err(e2s)?;
+    ensure_eq!(tx.version(&first.id), Some(&first), "visible inside the transaction");
+    let cs = tx.commit().map_err(e2s)?;
+    ensure_eq!(cs.versions, vec![first.id.clone(), second.id.clone()], "both reported, sorted by id");
+    ensure!(cs.elements.is_empty() && !cs.meta && cs.files.is_empty(), "nothing else changed: {cs:?}");
+    let names: Vec<&str> = s.versions().map(|v| v.name.as_str()).collect();
+    ensure_eq!(names, vec!["Second", "First"], "listed oldest first");
+    ensure_eq!(snapshot(&s).versions.len(), 2, "a snapshot carries the versions");
+    ensure_eq!(snapshot(&s).schema_version, crate::document::SCHEMA_VERSION, "and says so in its format version");
+
+    let mut tx = s.begin();
+    tx.rename_version(&first.id, "  Renamed ").map_err(e2s)?;
+    let cs = tx.commit().map_err(e2s)?;
+    ensure_eq!(cs.versions, vec![first.id.clone()], "a rename is a change of that version");
+    let renamed = s.version(&first.id).ok_or("the renamed version is gone")?;
+    ensure_eq!(renamed.name.as_str(), "Renamed", "the name is normalised");
+    ensure_eq!(renamed.state, first.state, "the stored scene is untouched");
+
+    let mut tx = s.begin();
+    tx.put_version(first.clone()).map_err(e2s)?;
+    tx.rename_version(&first.id, "Renamed").map_err(e2s)?;
+    let cs = tx.commit().map_err(e2s)?;
+    ensure!(cs.is_empty(), "putting back what is there is not a change: {cs:?}");
+
+    let mut tx = s.begin();
+    ensure!(tx.rename_version(&VersionId::new("nope").map_err(e2s)?, "x").is_err(), "rename of a missing version");
+    ensure!(tx.rename_version(&first.id, "  ").is_err(), "rename to an empty name");
+    ensure!(tx.remove_version(&second.id), "remove");
+    ensure!(!tx.remove_version(&second.id), "remove twice");
+    drop(tx);
+    ensure_eq!(s.versions().count(), 2, "a dropped transaction removes nothing");
+
+    let mut tx = s.begin();
+    tx.remove_version(&second.id);
+    tx.put_version(NamedVersion { id: ids.version_id(), ..second.clone() }).map_err(e2s)?;
+    tx.rollback();
+    ensure_eq!(s.versions().count(), 2, "rollback restores the versions");
+
+    let mut tx = s.begin();
+    let bad = NamedVersion { name: String::new(), ..second.clone() };
+    ensure!(tx.put_version(bad).is_err(), "an empty name is refused");
+    drop(tx);
+
+    // Loading a document replaces the versions with the document's.
+    let mut doc = snapshot(&s);
+    doc.versions.retain(|v| v.id == first.id);
+    load_document(&mut s, &doc).map_err(e2s)?;
+    ensure_eq!(
+        s.versions().map(|v| v.id.clone()).collect::<Vec<_>>(),
+        vec![first.id.clone()],
+        "load replaces versions"
+    );
+    load_document(&mut s, &Document::new()).map_err(e2s)?;
+    ensure!(s.versions().next().is_none(), "loading a document without versions leaves none");
+    Ok(())
+}
+
 fn document_round_trip<S: SceneStore>(mut s: S) -> Result<(), String> {
     let z = zs(3)?;
     let (fid, entry) = FileEntry::new("image/png", vec![9, 9, 9]);
@@ -589,6 +655,7 @@ pub fn checks<S: SceneStore>() -> Vec<Check<S>> {
         Check { name: "derived_indexes", run: derived_indexes },
         Check { name: "box_index", run: box_index },
         Check { name: "meta_and_files", run: meta_and_files },
+        Check { name: "named_versions", run: named_versions },
         Check { name: "document_round_trip", run: document_round_trip },
         Check { name: "same_document_loaded_twice_changes_nothing", run: same_document_loaded_twice_changes_nothing },
         Check { name: "validate_scene_sees_problems", run: validate_scene_sees_problems },

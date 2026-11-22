@@ -34,6 +34,7 @@ pub mod tabs;
 pub mod toasts;
 pub mod toolbar;
 pub mod topbar;
+pub mod versions;
 
 /// Draws everything. Zen mode hides the chrome and keeps dialogs and toasts.
 pub fn show_all(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
@@ -46,6 +47,7 @@ pub fn show_all(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
         toolbar::show(ctx, cx, st);
         menu::show(ctx, cx, st);
         library::show(ctx, cx, st);
+        versions::show(ctx, cx, st);
         // The minimap reads the library drawer's rectangle, and the presence panel stands above the minimap.
         minimap::show(ctx, cx, st);
         collab::show_presence(ctx, cx, st);

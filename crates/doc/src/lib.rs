@@ -24,6 +24,7 @@ mod sync;
 mod text;
 mod tx;
 mod undo;
+mod versions;
 
 pub use error::DocError;
 pub use history::{HistoryStats, TrimOptions, TrimReport};

@@ -2,7 +2,7 @@
 
 Pure data. No clock, no global randomness, no I/O. Builds for wasm32. Everything else (hit testing, rendering, edit rules, the Loro store) builds on these types.
 
-Contents: 1 Principles, 2 Ids, 3 Element, 4 Kinds, 5 Style, 6 Z-order, 7 Document and native JSON, 8 Invariants, 9 SceneStore, 10 Old format mapping, 11 Decisions.
+Contents: 1 Principles, 2 Ids, 3 Element, 4 Kinds, 5 Style, 6 Z-order, 7 Document and native JSON, 8 Invariants, 9 SceneStore, 10 Old format mapping, 11 Decisions. Named versions are in section 7 (the file) and `docs/design/versions.md`.
 
 ## 1. Principles
 
@@ -110,11 +110,12 @@ Colours are strings: `#rrggbb`, or `#rrggbbaa` when not opaque; `#rgb` and `tran
   "files": { "<sha256 hex>": { "mime": "image/png", "bytes": "<base64>" } } }
 ```
 
-- `format` must be `"drafftink"`. `version` is the schema version (1). A reader refuses a **newer** version with `NewerVersion` and the text "Update the app"; the same version is read strictly (unknown fields are errors, so typos are caught).
+- `format` must be `"drafftink"`. `version` is the schema version: **1** for a document without named versions, **2** for one with (`versions`, below). A reader refuses a **newer** version with `NewerVersion` and the text "Update the app"; the same version is read strictly (unknown fields are errors, so typos are caught). A build from before named versions therefore refuses a file that has them with that clear message, and opens every file that has none. The version a document is written as follows from its content, and reading sets it from the content too (`Document::with_versions`).
 - `elements` are in z-order, tombstones included, keys strictly increasing.
 - Omitted fields take their defaults; defaults are not written. Numbers round-trip exactly (`float_roundtrip`).
 - `Document::from_json` validates and refuses any document with an error-level issue. `to_json` refuses an invalid document too, so a file we write can be read back (the old app wrote NaN as `null` and could not reload).
 - `scene::json_schema()` returns the JSON Schema (schemars) for agents and tools.
+- `versions` (optional, absent when there are none): the named versions, oldest first: `{id, name, created_ms, author?, elements, files?, state}`. `state` is base64 of the scene as one codec byte and zlib-deflated JSON (`NamedVersion`, `docs/design/versions.md` section 2). The images a version needs stay in `files`; `files` of the version only lists their ids. At most 500 versions, 2 MiB each, 32 MiB together; names are 1 to 100 characters. `validate_document` checks each version's metadata, duplicate ids and the limits, and warns when a version needs a blob the file does not hold. A scene embedded in a PNG or SVG, a clipboard and the export of a selection never carry versions.
 - Not in the file: selection, camera, tabs, undo history, derived indexes. Those belong to the session.
 
 A golden file `crates/scene/tests/golden/native_v1.json` fixes the format; a change that alters it must bump the version or be a bug.
@@ -145,9 +146,9 @@ A reference to an id that never existed is an error. A reference to a tombstone 
 
 ## 9. SceneStore
 
-`SceneRead`: `get`, `iter` (live, back to front), `iter_all`, `len`, `len_all`, `meta`, `file`, `files`, `top_z`, `bottom_z`, `z_neighbors`.
+`SceneRead`: `get`, `iter` (live, back to front), `iter_all`, `len`, `len_all`, `meta`, `file`, `files`, `version`, `versions` (oldest first), `top_z`, `bottom_z`, `z_neighbors`.
 `SceneStore: SceneRead`: `begin() -> Tx`, `revision()`, `derived()`, `subscribe(callback)`, `unsubscribe`.
-`SceneTx: SceneRead`: `insert`, `update(id, |e| ...)`, `remove`, `set_name`, `set_background`, `put_file`, `remove_file`, `commit() -> ChangeSet`, `rollback()`; dropping a transaction rolls it back.
+`SceneTx: SceneRead`: `insert`, `update(id, |e| ...)`, `remove`, `set_name`, `set_background`, `put_file`, `remove_file`, `put_version`, `rename_version`, `remove_version`, `commit() -> ChangeSet`, `rollback()`; dropping a transaction rolls it back.
 
 Guarantees (tested by `conformance`): reads inside a transaction see its writes; invalid elements and duplicate ids are refused and leave the store unchanged; a commit reports the **net** change per element (`Added`/`Updated`/`Removed` and the `Fields` that differ: `position size angle flip kind style index groups frame locked deleted name link custom`); a commit with no net change is a no-op (no revision, no notification, no version bump); every reported change raises the element's `version` by one; subscribers run once per commit after the store is consistent.
 

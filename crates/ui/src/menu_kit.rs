@@ -476,10 +476,16 @@ impl<'u, 'c, 'a> Menu<'u, 'c, 'a> {
 
     /// A row that only changes what the UI shows (it opens a dialog by itself). The caller reads `clicked()`.
     pub(crate) fn local(&mut self, label: &str, row: Row<'_>) -> Response {
+        self.local_gated(label, row, None)
+    }
+
+    /// Like [`Menu::local`], greyed with `reason` as its tooltip when `reason` is set: the refusal of the command
+    /// the dialog leads to, so that a row does not open a question that only ends in a refusal.
+    pub(crate) fn local_gated(&mut self, label: &str, row: Row<'_>, reason: Option<String>) -> Response {
         self.flush();
         let text = row.text(label);
         let face = Face { label: &text, icon: row.icon, check: row.check, shortcut: None, submenu: false };
-        let resp = plain_row(self.cx, self.ui, &face, None, false);
+        let resp = plain_row(self.cx, self.ui, &face, reason, false);
         self.track(&resp, false);
         if resp.clicked() {
             self.picked.local = true;

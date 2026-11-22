@@ -190,6 +190,7 @@ const READS: &[&str] = &[
     "text_edit",
     "gesture_running",
     "library_revision",
+    "now_ms",
     "query",
 ];
 

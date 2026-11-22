@@ -1,5 +1,5 @@
 {
- "count": 166,
+ "count": 172,
  "families": [
   "arrange",
   "arrow",
@@ -23,6 +23,7 @@
   "tab",
   "text",
   "tool",
+  "version",
   "view"
  ],
  "ids": [
@@ -179,6 +180,12 @@
   "tool.release",
   "tool.set",
   "tool.set_arrow",
+  "version.delete",
+  "version.list",
+  "version.open",
+  "version.rename",
+  "version.restore",
+  "version.save",
   "view.center",
   "view.get",
   "view.pan",

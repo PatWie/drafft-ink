@@ -93,7 +93,7 @@ Facts that matter beyond the obvious:
 Registry tests (in `crates/engine/src/registry_tests.rs`, all run in `cargo xtask ci`):
 
 1. ids are unique, match `^[a-z]+\.[a-z_]+$`, and the prefix equals `family`.
-2. Every fact above is declared. `reads_only` implies `mutates` is empty and `undo = NoUndo`. A command whose `mutates` contains `D` declares how it relates to the document (`doc_write`, Appendix A2): an `edit` refuses in view-only mode and has an undo class other than `NoUndo`; a command that `replaces` the document (`doc.new`, `doc.open`, `doc.show_intro`, `collab.join_room`) refuses in view-only mode and is not a gesture; the commands that are `managed` (`history.undo`, `history.redo`, the `gesture` commands, `tool.cancel`) carry no further rule. The rule is derived from the declared fact, not from a list of ids in the test, and a command that manages its own transaction is never an `edit` or a `replaces`.
+2. Every fact above is declared. `reads_only` implies `mutates` is empty and `undo = NoUndo`. A command whose `mutates` contains `D` declares how it relates to the document (`doc_write`, Appendix A2): an `edit` refuses in view-only mode and has an undo class other than `NoUndo`; a command that `replaces` the document (`doc.new`, `doc.open`, `doc.show_intro`, `collab.join_room`) refuses in view-only mode and is not a gesture; the commands that are `managed` (`history.undo`, `history.redo`, the `gesture` commands, `tool.cancel`) carry no further rule; the commands that write `metadata` of the document (`version.save`, `version.rename`, `version.delete`) refuse in view-only mode and have no undo step. The rule is derived from the declared fact, not from a list of ids in the test, and a command that manages its own transaction is never an `edit` or a `replaces`.
 3. Titles are unique. Default shortcuts do not collide within the same `when` scope.
 4. Every `Refusal` code a command can return is in the catalog of §1.5 (checked by `refusal_codes_are_catalogued`, which scans the specs' declared `refusals: &[&str]` lists).
 5. `hostile_params_never_panic`: every command, with every hostile JSON value for every argument key, never panics and never changes the document when it refuses.
@@ -342,7 +342,7 @@ For each family in §2 the first table gives identity, undo class, keys and sour
 
 ## 2. Families
 
-Twenty-three families. Each table row's first cell is the backticked id (checked by `catalog_matches_registry`). Facts that are the same for every command of a family are not repeated; the per-command fact values are in Appendix A (§10).
+Twenty-four families. Each table row's first cell is the backticked id (checked by `catalog_matches_registry`). Facts that are the same for every command of a family are not repeated; the per-command fact values are in Appendix A (§10).
 
 How to read the "availability and refusals" column: text before `Execute:` is a state condition checked by `available` (it depends on session state only). Codes after `Execute:` come from step 4 or from the effect, after the arguments are known. The generic target codes `no_target`, `too_few` and `needs_single` also come from step 4, but the UI evaluates them with the default arguments (the current selection) through `Session::availability`, so a disabled control shows them too. A code written with a text (`code: "message"`) uses exactly that text; a code written alone uses the §1.5 catalog text.
 
@@ -998,6 +998,30 @@ These are what `window.drafftink.commands()`, `recent()` and the MCP tool list a
 
 These were considered and are not commands: `doc.import` (merging is `doc.open` with mode=merge), per-tool ids such as `tool.rectangle` (they are bindings of `tool.set`), a separate `group.select` (use `selection.select` with `group`), a separate `edit.escape` (it is `tool.cancel`), and `tool.image` (inserting an image is `ui.insert_image` then `image.insert`).
 
+### 2.24 `version`: named versions
+
+Names the current state of the document (the "Versionsverlauf"), lists the names, opens one as a copy, restores one, renames and deletes. A version is a snapshot of the scene kept inside the document, so it survives a save, the workspace autosave, a restart, tab duplication and a room. Storage, limits, export rules and the choice against Loro frontiers are in `docs/design/versions.md`. The family is `version` and not `history`: `history` is the undo stack of one peer, which is lost on restart, and a named version is data of the document.
+
+`version.save`, `version.rename` and `version.delete` are `doc write: metadata` (Appendix A2): they write into the document, refuse in view-only mode, and are **not** undo steps, so Ctrl+Z never deletes a name the user gave. `version.restore` is an ordinary `edit`: one undo step, and in a room it syncs like any other edit. The panel (`ui.toggle_versions`) asks for a confirmation before it calls `version.restore`; the command itself never opens a dialog.
+
+| id | title | undo | keys (mac / other) | source |
+|---|---|---|---|---|
+| `version.save` | Name this version | NoUndo | none | NEW |
+| `version.list` | List versions | NoUndo, read-only | none | NEW |
+| `version.open` | Open version as copy | NoUndo | none | NEW |
+| `version.restore` | Restore version | Undoable | none | NEW |
+| `version.rename` | Rename version | NoUndo | none | NEW |
+| `version.delete` | Delete version | NoUndo | none | NEW |
+
+| id | args | availability and refusals | effect |
+|---|---|---|---|
+| `version.save` | `name: string` (1 to 100 characters, trimmed, no line breaks) | `room_loading` while a room is still loading (the copy would leave elements out). Execute: `empty_name`: "The version needs a name of 1 to 100 characters without line breaks, for example \\"Before review\\"." (also for a name over the limit or with a line break); `too_many_versions` at 50 versions (`MAX_VERSIONS`): "This document already has 50 named versions, which is the limit. Delete one you no longer need with `version.delete`, then save again."; `version_too_large` when the scene is over 2 MiB compressed (`MAX_VERSION_STATE_BYTES`, half the largest update of the collaboration protocol); `versions_too_large` when all versions together would pass 32 MiB. | Keeps a compressed copy of every element (tombstones included) and the background, with the time from the clock port and, when the setting `collab.user_name` is not empty, that name as the author. A name that another version already has is allowed: versions are addressed by id, and two peers can name a version alike at the same moment. Pictures are not copied; the version lists the blob ids it needs. Output `{version: {id, name, created_ms, author?, elements, bytes}, count, limit}`. |
+| `version.list` | none | Always available. | The versions, newest first: `{versions: [{id, name, created_ms, author?, elements, bytes}], count, limit}`. |
+| `version.open` | `id: string`, `mode: "new_tab" = new_tab` | `room_loading`. Execute: `no_such_version`: "There is no version `{id}` in this document. List the versions with `version.list`."; `version_unreadable`: "The version \\"{name}\\" cannot be read: {why}. Nothing was changed. Delete it with `version.delete`, or use another version."; `too_many_tabs`. | Adds a tab after the active one, named "<document> — <version>" (cut to 256 characters), holding the scene of the version as an **independent, editable copy**: no link to the original, no history, none of the original's versions, the pictures it needs, clean. A read-only tab was rejected: a copy is what "open as copy" promises, and view-only is a property of a session, not of a tab. batch: last. Output `{tab, index, name, version}`. |
+| `version.restore` | `id: string` | `room_loading`. Execute: `no_such_version`, `version_unreadable`. | Makes the scene of the version the current scene in one transaction: elements of the version take its values (a deleted one comes back), live elements it does not have are deleted (tombstones), the background is the version's. The document name, the picture blobs and **every named version** stay, so a restore can be taken back with `history.undo`, or by restoring the version made just before it. Selected ids that are gone are dropped. In a room it is a normal edit and syncs. A picture the document no longer holds is listed in `warnings`. Restoring what is already current is `changed: false` and no step. Output `{id, name, brought_back, reset, deleted, missing_pictures}`. |
+| `version.rename` | `id: string`, `name: string` | Execute: `no_such_version`, `empty_name` (as `version.save`). | Changes the name only; the stored scene is not written again. The same name is Ok with changed=false. Output `{id, name, count}`. |
+| `version.delete` | `id: string` | Execute: `no_such_version`. | Removes the version for good. The scene is untouched. In a room the removal wins over a rename of the same version. Output `{id, name, count}`. |
+
 ---
 
 ## 3. Read-only and introspection index
@@ -1014,6 +1038,7 @@ Read-only commands never change any state class (`reads_only = true`). They are 
 | `doc.outline` | compact text and JSON structure (nodes, edges, groups, frames) | agent orientation after edits |
 | `doc.list` | recent and stored documents | open dialogs |
 | `tab.list` | tabs | tab bar |
+| `version.list` | the named versions of the document | versions panel |
 | `selection.get` | selected ids, groups, editing group, bounds | ribbon, stats panel |
 | `style.get` | common value or "mixed" per prop, applicability | ribbon |
 | `style.list_themes` | named style bundles | theme pickers, agents |
@@ -1237,6 +1262,7 @@ Not commands, never in `engine.commands`. Each ends, when it produces a result, 
 | `ui.open_export` | export dialog (format, scope, scale, background, dark, embed scene) | `doc.export` or `clipboard.copy_as` | X:ImageExportDialog |
 | `ui.open_preferences` | preferences dialog | `settings.set`, `settings.toggle`, `collab.set_user` | X:DefaultItems |
 | `ui.toggle_library` | library panel | `library.*` | X:LibraryMenu |
+| `ui.toggle_versions` | versions panel: "Name this version…", the list newest first, per row Open as copy, Restore (after a confirmation), Rename and Delete. In the File section of the menu and in the command palette | `version.*` | NEW |
 | `ui.rename_document` | rename field for the document | `doc.rename` | X:ProjectName |
 | `ui.open_about` | About dialog: version, commit, licence, the link to the source code (AGPL-3.0 section 13) and a note that the fonts have their own licences (`ATTRIBUTION.md`). The address is the project repository unless the operator sets another (`drafftink-headless serve --source-url`, `DRAFFTINK_SOURCE_URL` for a native build) | none (a `HostRequest::OpenUrl` for the link) | NEW |
 | `ui.open_equation_editor` | LaTeX dialog (opened after `text.edit_begin` on a math element) | `text.edit_end` | U:2911 |
@@ -1747,6 +1773,12 @@ Legend:
 | `history.redo` | D,O | - | - | never | no | no | no | scene | always | y | y |
 | `history.clear` | O | - | - | never | ok | no | no | scene | always | n | y |
 | `history.state` | - | - | - | ok | ok | ok | ok | - | always | y | y |
+| `version.save` | D | - | - | ok | no | no | commit | overlay | always | y | y |
+| `version.list` | - | - | - | ok | ok | ok | ok | - | always | n | y |
+| `version.open` | B | - | - | last | ok | no | commit | scene | always | n | y |
+| `version.restore` | D,O | - | - | ok | no | no | commit | scene | always | n | y |
+| `version.rename` | D | - | - | ok | no | no | commit | overlay | always | n | y |
+| `version.delete` | D | - | - | ok | no | no | commit | overlay | always | n | y |
 | `collab.connect` | C | - | Net | never | ok | ok | ok | overlay | always | y | y |
 | `collab.disconnect` | C | - | Net | never | ok | ok | ok | overlay | always | y | y |
 | `collab.join_room` | C,D,B | - | Net | never | no | no | commit | overlay | always | y | y |
@@ -1798,7 +1830,7 @@ Four more facts of a registration, kept apart from the table above because most 
 
 | Column | Values |
 |---|---|
-| doc write | `not_document`: the command does not change the document (`mutates` has no `D`). `edit`: an ordinary edit of the open document: an undo class other than `NoUndo`, refuses in view-only mode. `replaces`: replaces the document wholesale (`doc.new`, `doc.open`, `doc.show_intro`, `collab.join_room`): refuses in view-only mode and is not a gesture. `managed`: manages the document state itself (`history.undo`, `history.redo`, the `gesture` commands, `tool.cancel`). Default: `edit` when `mutates` has `D`, else `not_document`. |
+| doc write | `not_document`: the command does not change the document (`mutates` has no `D`). `edit`: an ordinary edit of the open document: an undo class other than `NoUndo`, refuses in view-only mode. `replaces`: replaces the document wholesale (`doc.new`, `doc.open`, `doc.show_intro`, `collab.join_room`): refuses in view-only mode and is not a gesture. `managed`: manages the document state itself (`history.undo`, `history.redo`, the `gesture` commands, `tool.cancel`). `metadata`: writes data that belongs to the document but is not its scene (`version.save`, `version.rename`, `version.delete`): refuses in view-only mode and has no undo step. Default: `edit` when `mutates` has `D`, else `not_document`. |
 | host effect | What a host (the UI) does after the command ran, read from the registration instead of matched by id. `-` is the default. `completes_rename`, `completes_rename_then_save_as`, `completes_export`, `completes_library_add`, `completes_link_edit`: success closes the dialog or clears the field that asked for it. `shows_convert_popup`: success after a keyboard conversion shows the popup. `returns_url_to_open`: success returns a `url` for the host to open. `shows_search_results`: success fills the open search panel. `begins_gesture`, `ends_gesture`, `ends_gesture_on_refusal`: the host's scrub follows the gesture commands. `ends_equation_edit`: any answer closes the equation editor. |
 | refusal toast | `show` (default), or `silent`: the host does not toast a `no_gesture` refusal (a scrub that lost its gesture just stops); any other refusal of the command is shown. |
 | key repeat | `repeats` (default), or `first_press_only`: auto-repeat of a held key does not run the command again (`tool.hold`). |
@@ -1827,6 +1859,9 @@ Four more facts of a registration, kept apart from the table above because most 
 | `gesture.cancel` | managed | ends_gesture | silent | repeats | n | n |
 | `history.undo` | managed | - | show | repeats | n | n |
 | `history.redo` | managed | - | show | repeats | n | n |
+| `version.save` | metadata | completes_rename | show | repeats | n | n |
+| `version.rename` | metadata | completes_rename | show | repeats | n | n |
+| `version.delete` | metadata | - | show | repeats | n | n |
 | `library.add` | not_document | completes_library_add | show | repeats | n | n |
 | `library.rename` | not_document | completes_rename | show | repeats | n | n |
 | `library.rename_section` | not_document | completes_rename | show | repeats | n | n |

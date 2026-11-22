@@ -38,6 +38,8 @@ flate2 = { version = "1", default-features = false, features = ["rust_backend"] 
 drafftink-typeset = { path = "../typeset", features = ["hand-fonts", "embedded"] }
 # The tests use the fact checks.
 drafftink-io = { path = ".", features = ["facts"] }
+# The size tests of named versions generate a 1,000-element scene.
+drafftink-scene = { path = "../scene", features = ["scenegen"] }
 proptest.workspace = true
 png.workspace = true
 roxmltree = "0.21"

@@ -229,13 +229,22 @@ pub fn export_scene(doc: &Document) -> Result<String, IoError> {
 /// Writes a document as `.excalidraw` JSON and lists what could not be written (an image without its picture).
 ///
 /// Refuses a document that breaks a model rule ([`IoError::Document`]). Values Excalidraw cannot hold are kept in
-/// `customData.drafftink`, so they are not warnings.
+/// `customData.drafftink`, so they are not warnings. The named versions of the document are dropped, and the report
+/// says so.
 pub fn export_scene_with_report(doc: &Document) -> Result<(String, ImportReport), IoError> {
     let check = doc.validate();
     if check.has_errors() {
         return Err(IoError::Document(drafftink_scene::DocumentError::Invalid(check)));
     }
     let mut report = ImportReport::default();
+    if !doc.versions.is_empty() {
+        let n = doc.versions.len();
+        report.warn(format!(
+            "{n} named version{} left out: an Excalidraw file has no named versions. Save as a drafft.ink document to keep {}.",
+            if n == 1 { " was" } else { "s were" },
+            if n == 1 { "it" } else { "them" }
+        ));
+    }
     let out = export::export_elements(&doc.elements, &doc.files, true, &mut report);
     let root = serde_json::json!({
         "type": "excalidraw",

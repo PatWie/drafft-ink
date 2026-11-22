@@ -1,0 +1,34 @@
+{
+  "about": "Name a state, change the scene, and go back: restore is one undo step that keeps every version, open puts a version in a tab of its own, and an empty name is refused in words.",
+  "steps": [
+    { "harness": "load_generated", "args": { "count": 6 } },
+    { "execute": "doc.rename", "args": { "name": "Plan" } },
+    { "assert": "version.list", "expect": [ { "path": "$.count", "eq": 0 }, { "path": "$.limit", "eq": 50 } ] },
+
+    { "execute": "version.save", "args": { "name": "" }, "refused": "empty_name", "text": "The version needs a name of 1 to 100 characters" },
+    { "execute": "version.save", "args": { "name": "  Six shapes  " },
+      "expect": [ { "path": "$.version.name", "eq": "Six shapes" }, { "path": "$.version.elements", "eq": 6 }, { "path": "$.count", "eq": 1 } ],
+      "save": { "six": "$.version.id" } },
+    { "assert": "history.state", "expect": [ { "path": "$.undo_depth", "eq": 1, "note": "Only the rename of the document is a step. Naming a version is not one." }, { "path": "$.undo_label", "eq": "Rename document" } ] },
+
+    { "execute": "element.delete", "args": { "ids": ["e0", "e1"] } },
+    { "execute": "version.save", "args": { "name": "Four shapes" }, "expect": [ { "path": "$.version.elements", "eq": 4 } ], "save": { "four": "$.version.id" } },
+    { "assert": "version.list", "expect": [ { "path": "$.versions[0].name", "eq": "Four shapes", "note": "Newest first." }, { "path": "$.versions[1].name", "eq": "Six shapes" } ] },
+
+    { "execute": "version.open", "args": { "id": "{{six}}", "mode": "new_tab" }, "expect": [ { "path": "$.name", "eq": "Plan — Six shapes" } ] },
+    { "assert": "doc.inspect", "expect": [ { "path": "$.elements", "eq": 6 } ] },
+    { "assert": "version.list", "expect": [ { "path": "$.count", "eq": 0, "note": "A copy starts without the versions of its source." } ] },
+    { "execute": "tab.switch", "args": { "tab": 0 } },
+    { "assert": "doc.inspect", "expect": [ { "path": "$.elements", "eq": 4, "note": "Opening a version changed nothing in the document it came from." } ] },
+
+    { "execute": "version.restore", "args": { "id": "{{six}}" }, "expect": [ { "path": "$.brought_back", "eq": 2 }, { "path": "$.name", "eq": "Six shapes" } ] },
+    { "assert": "doc.inspect", "expect": [ { "path": "$.elements", "eq": 6 } ] },
+    { "assert": "history.state", "expect": [ { "path": "$.undo_label", "eq": "Restore version" } ] },
+    { "assert": "version.list", "expect": [ { "path": "$.count", "eq": 2, "note": "A restore keeps every named version." } ] },
+    { "undo": 1, "expect": [ { "path": "$.undone", "eq": ["Restore version"] } ] },
+    { "assert": "doc.inspect", "expect": [ { "path": "$.elements", "eq": 4, "note": "One undo takes the whole restore back." } ] },
+    { "assert": "version.list", "expect": [ { "path": "$.count", "eq": 2 } ] },
+
+    { "execute": "version.restore", "args": { "id": "nope" }, "refused": "no_such_version", "text": "There is no version `nope` in this document. List the versions with `version.list`." }
+  ]
+}
