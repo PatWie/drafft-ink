@@ -5,8 +5,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use axum::Router;
-use axum::extract::State;
 use axum::extract::ws::WebSocketUpgrade;
+use axum::extract::{Path, State};
 use axum::http::header::{self, HeaderMap, HeaderName, HeaderValue};
 use axum::http::{Request, StatusCode};
 use axum::middleware::{self, Next};
@@ -19,6 +19,7 @@ use tracing::{debug, warn};
 use crate::auth::Auth;
 use crate::config::Config;
 use crate::room::RoomManager;
+use crate::sealed::SealedHost;
 
 /// Which Origin headers may open a WebSocket.
 #[derive(Debug, Clone)]
@@ -82,6 +83,7 @@ impl OriginPolicy {
 pub(crate) struct AppState {
     pub config: Arc<Config>,
     pub manager: Arc<RoomManager>,
+    pub sealed: Arc<SealedHost>,
     pub auth: Auth,
     pub origin: OriginPolicy,
     pub permits: Arc<Semaphore>,
@@ -105,6 +107,8 @@ pub(crate) fn router(state: Arc<AppState>) -> Router {
         .not_found_service(ServeFile::new(index));
     Router::new()
         .route("/ws", get(ws_handler))
+        .route("/r/{room}/ws", get(sealed_ws_handler))
+        .merge(crate::sealed::image_routes())
         .route("/health", get(health))
         .route("/source", get(source_redirect))
         .route("/source.json", get(source_json))
@@ -166,23 +170,70 @@ fn header_str(headers: &HeaderMap, name: header::HeaderName) -> Option<&str> {
     headers.get(name).and_then(|v| v.to_str().ok())
 }
 
-async fn ws_handler(State(state): State<Arc<AppState>>, headers: HeaderMap, ws: WebSocketUpgrade) -> Response {
+/// Why a WebSocket request is not let in.
+enum Refused {
+    /// The Origin is not allowed.
+    Origin,
+    /// The server has as many connections as it takes.
+    Busy,
+}
+
+impl IntoResponse for Refused {
+    fn into_response(self) -> Response {
+        match self {
+            Refused::Origin => (StatusCode::FORBIDDEN, "this origin is not allowed to connect; see --allowed-origin").into_response(),
+            Refused::Busy => (StatusCode::SERVICE_UNAVAILABLE, "the server has reached its connection limit").into_response(),
+        }
+    }
+}
+
+/// What both WebSocket routes check before they upgrade: the Origin, and a free connection slot.
+fn admit(state: &AppState, headers: &HeaderMap) -> Result<tokio::sync::OwnedSemaphorePermit, Refused> {
     let origin = headers.get(header::ORIGIN);
     // A non-UTF-8 Origin cannot be one we allow.
     let origin_text = origin.map(|v| v.to_str().unwrap_or("\u{fffd}"));
-    if !state.origin.allows(origin_text, header_str(&headers, header::HOST)) {
+    if !state.origin.allows(origin_text, header_str(headers, header::HOST)) {
         warn!("refused a WebSocket from a disallowed origin");
-        return (StatusCode::FORBIDDEN, "this origin is not allowed to connect; see --allowed-origin").into_response();
+        return Err(Refused::Origin);
     }
-    let Ok(permit) = state.permits.clone().try_acquire_owned() else {
+    state.permits.clone().try_acquire_owned().map_err(|_| {
         warn!("connection limit of {} reached", state.config.limits.max_connections);
-        return (StatusCode::SERVICE_UNAVAILABLE, "the server has reached its connection limit").into_response();
+        Refused::Busy
+    })
+}
+
+async fn ws_handler(State(state): State<Arc<AppState>>, headers: HeaderMap, ws: WebSocketUpgrade) -> Response {
+    let permit = match admit(&state, &headers) {
+        Ok(permit) => permit,
+        Err(refusal) => return refusal.into_response(),
     };
     let max = state.config.limits.max_frame_bytes;
     ws.max_message_size(max).max_frame_size(max).on_upgrade(move |socket| async move {
         debug!("connection opened");
         crate::conn::serve(socket, state, permit).await;
         debug!("connection closed");
+    })
+}
+
+/// `/r/<id>/ws`: a sealed room. The id is part of the address so that the membership check needs no room.
+async fn sealed_ws_handler(
+    State(state): State<Arc<AppState>>,
+    Path(room): Path<String>,
+    headers: HeaderMap,
+    ws: WebSocketUpgrade,
+) -> Response {
+    let Ok(room) = room.parse::<drafftink_protocol::v2::RoomId>() else {
+        return (StatusCode::NOT_FOUND, "this is not the address of an encrypted room").into_response();
+    };
+    let permit = match admit(&state, &headers) {
+        Ok(permit) => permit,
+        Err(refusal) => return refusal.into_response(),
+    };
+    let max = state.config.relay.limits.max_frame_bytes as usize;
+    ws.max_message_size(max).max_frame_size(max).on_upgrade(move |socket| async move {
+        debug!("sealed connection opened");
+        crate::sealed::serve_socket(socket, state.sealed.clone(), room, permit).await;
+        debug!("sealed connection closed");
     })
 }
 

@@ -341,3 +341,34 @@ impl Rng {
         (0..n).map(|_| (self.next() >> 24) as u8).collect()
     }
 }
+
+/// One HTTP request with a body. Returns the status, the lower-cased headers and the body.
+pub async fn http_request(
+    addr: SocketAddr,
+    method: &str,
+    path: &str,
+    headers: &[(&str, String)],
+    body: &[u8],
+) -> (u16, Vec<(String, String)>, Vec<u8>) {
+    let mut s = TcpStream::connect(addr).await.expect("connect");
+    let mut head =
+        format!("{method} {path} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\nContent-Length: {}\r\n", body.len());
+    for (name, value) in headers {
+        head.push_str(&format!("{name}: {value}\r\n"));
+    }
+    head.push_str("\r\n");
+    s.write_all(head.as_bytes()).await.expect("write head");
+    // The server may answer and close before it has read the whole body (a refused upload), so a failed write is fine.
+    let _ = s.write_all(body).await;
+    let mut raw = Vec::new();
+    let _ = s.read_to_end(&mut raw).await;
+    let split = raw.windows(4).position(|w| w == b"\r\n\r\n").expect("header end");
+    let head = String::from_utf8_lossy(&raw[..split]).into_owned();
+    let mut lines = head.lines();
+    let status = lines.next().expect("status line").split(' ').nth(1).expect("code").parse().expect("number");
+    let headers = lines
+        .filter_map(|l| l.split_once(':'))
+        .map(|(k, v)| (k.trim().to_ascii_lowercase(), v.trim().to_owned()))
+        .collect();
+    (status, headers, raw[split + 4..].to_vec())
+}

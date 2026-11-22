@@ -281,6 +281,21 @@ impl<S: RelayStore, B: BlobStore> Relay<S, B> {
         self.finish(now_ms, out)
     }
 
+    /// The host is stopping: write what is buffered, tell everybody to come back later and close every connection.
+    /// The room stays as it is on disk.
+    pub fn shutdown(&mut self, now_ms: u64) -> Output {
+        let mut out = Output::default();
+        self.flush(now_ms, &mut out);
+        let open: Vec<ConnId> = self.conns.keys().copied().collect();
+        for conn in open {
+            let text = "The relay is shutting down. Trying again soon.";
+            out.send(conn, &retry_error(ErrorCode::Unavailable, text, 3000));
+            out.close(conn);
+        }
+        self.conns.clear();
+        self.finish(now_ms, out)
+    }
+
     /// The time in `wake_at` of an earlier [`Output`] has come. Calling it early or late does no harm.
     pub fn on_wake(&mut self, now_ms: u64) -> Output {
         let mut out = Output::default();

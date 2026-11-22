@@ -9,7 +9,8 @@ use crate::store::{BlobStore, RelayStore};
 impl<S: RelayStore, B: BlobStore> Relay<S, B> {
     /// Asks the retention state machine what to do with the room, and does it. Sets the next retention wake.
     pub(super) fn run_retention(&mut self, now_ms: u64, out: &mut Output) {
-        let Some(meta) = self.meta_now() else {
+        // A room that is not loaded yet (the host resumes stored rooms) is read now, so its deadline is seen.
+        let Some(meta) = self.load_meta().ok().flatten() else {
             self.retention_wake = None;
             return;
         };

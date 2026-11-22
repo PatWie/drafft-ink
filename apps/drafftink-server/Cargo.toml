@@ -24,6 +24,8 @@ s3 = ["dep:object_store"]
 
 [dependencies]
 drafftink-protocol = { path = "../../crates/protocol", version = "0.2.0" }
+drafftink-relay = { path = "../../crates/relay", version = "0.2.0" }
+base64ct = { version = "1.8", features = ["alloc"] }
 axum.workspace = true
 tokio.workspace = true
 tower-http.workspace = true
@@ -41,6 +43,7 @@ rusqlite = { workspace = true, optional = true }
 object_store = { workspace = true, optional = true }
 
 [dev-dependencies]
+drafftink-seal = { path = "../../crates/seal", version = "0.2.0" }
 # Only to check that SERVED_SCHEMA is the schema of the document crate.
 drafftink-doc = { path = "../../crates/doc" }
 tokio-tungstenite.workspace = true

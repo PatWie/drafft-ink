@@ -188,6 +188,71 @@ pub trait BlobStore {
     fn delete_all(&mut self) -> Result<(), StoreError>;
 }
 
+impl<T: RelayStore + ?Sized> RelayStore for Box<T> {
+    fn load_meta(&mut self) -> Result<Option<RoomMeta>, StoreError> {
+        (**self).load_meta()
+    }
+
+    fn save_meta(&mut self, meta: &RoomMeta) -> Result<(), StoreError> {
+        (**self).save_meta(meta)
+    }
+
+    fn append_segment(&mut self, segment: &Segment, meta: &RoomMeta) -> Result<(), StoreError> {
+        (**self).append_segment(segment, meta)
+    }
+
+    fn read_since(
+        &mut self,
+        after_seq: u64,
+        max_records: usize,
+        target_bytes: usize,
+    ) -> Result<Vec<StoredRecord>, StoreError> {
+        (**self).read_since(after_seq, max_records, target_bytes)
+    }
+
+    fn read_snapshot(&mut self) -> Result<Option<StoredSnapshot>, StoreError> {
+        (**self).read_snapshot()
+    }
+
+    fn put_snapshot_cas(
+        &mut self,
+        expected_snapshot_seq: u64,
+        snapshot: &StoredSnapshot,
+    ) -> Result<CasOutcome, StoreError> {
+        (**self).put_snapshot_cas(expected_snapshot_seq, snapshot)
+    }
+
+    fn delete_all(&mut self) -> Result<(), StoreError> {
+        (**self).delete_all()
+    }
+}
+
+impl<T: BlobStore + ?Sized> BlobStore for Box<T> {
+    fn put(&mut self, name: &ImageName, sealed: &[u8]) -> Result<(), StoreError> {
+        (**self).put(name, sealed)
+    }
+
+    fn get(&mut self, name: &ImageName) -> Result<Option<Vec<u8>>, StoreError> {
+        (**self).get(name)
+    }
+
+    fn head(&mut self, name: &ImageName) -> Result<Option<u64>, StoreError> {
+        (**self).head(name)
+    }
+
+    fn list(&mut self) -> Result<Vec<BlobInfo>, StoreError> {
+        (**self).list()
+    }
+
+    fn stats(&mut self) -> Result<BlobStats, StoreError> {
+        (**self).stats()
+    }
+
+    fn delete_all(&mut self) -> Result<(), StoreError> {
+        (**self).delete_all()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

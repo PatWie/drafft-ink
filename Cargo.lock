@@ -1921,9 +1921,12 @@ version = "0.2.0"
 dependencies = [
  "async-trait",
  "axum",
+ "base64ct",
  "clap",
  "drafftink-doc",
  "drafftink-protocol",
+ "drafftink-relay",
+ "drafftink-seal",
  "futures-util",
  "loro",
  "object_store",
