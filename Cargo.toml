@@ -364,6 +364,9 @@ opt-level = "z"
 [profile.release-wasm.package.drafftink-doc]
 opt-level = "z"
 
+[profile.release-wasm.package.drafftink-edit]
+opt-level = "z"
+
 [profile.release-wasm.package.drafftink-collab]
 opt-level = "z"
 

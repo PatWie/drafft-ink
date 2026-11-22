@@ -77,58 +77,62 @@ pub fn arg_info<A: JsonSchema + 'static>() -> std::sync::Arc<ArgInfo> {
 }
 
 /// Parses `args` as `A`. See the module docs for the refusal wording. The happy path builds no schema.
+///
+/// Only the read itself depends on `A`: every command has its own copy of this function, so the refusal is built by
+/// [`refuse`], which is shared (155 copies of it were 150 KB of the web module).
 pub fn parse_args<A: DeserializeOwned + JsonSchema + 'static>(command: &str, args: &Value) -> Result<A, Refusal> {
     let empty = Value::Object(serde_json::Map::new());
     let args = if args.is_null() { &empty } else { args };
+    // A command whose arguments are not an object (rare) still gets a chance to deserialise.
+    serde_path_to_error::deserialize::<_, A>(args).map_err(|e| refuse(command, args, keys_of::<A>(), &e))
+}
+
+/// The refusal for arguments that did not read. `info` finds the keys of the argument type, and is asked only when the
+/// message needs them.
+#[inline(never)]
+fn refuse(
+    command: &str,
+    args: &Value,
+    info: fn(&str) -> std::sync::Arc<ArgInfo>,
+    error: &serde_path_to_error::Error<serde_json::Error>,
+) -> Refusal {
+    let path = error.path().to_string();
+    let reason = error.inner().to_string();
     if !args.is_object() {
-        // A command whose arguments are not an object (rare) still gets a chance to deserialise.
-        let probe: Result<A, _> = serde_path_to_error::deserialize(args);
-        return probe.map_err(|e| {
-            Refusal::bad_args(
-                command,
-                format!("the arguments must be a JSON object ({})", echo(&e.inner().to_string())),
-            )
-        });
+        return Refusal::bad_args(command, format!("the arguments must be a JSON object ({})", echo(&reason)));
     }
-    match serde_path_to_error::deserialize::<_, A>(args) {
-        Ok(a) => Ok(a),
-        Err(e) => {
-            let path = e.path().to_string();
-            let reason = e.inner().to_string();
-            let info = info_of::<A>(command);
-            if info.closed
-                && !info.keys.is_empty()
-                && let Some(bad) = args.as_object().and_then(|o| o.keys().find(|k| !info.keys.iter().any(|v| v == *k)))
-            {
-                return Err(unknown_key(command, bad, &info.keys));
-            }
-            // Only a top-level unknown field is matched against this command's keys; one nested in an argument
-            // (a misspelt style property) keeps serde's own message, which lists that struct's fields.
-            if (path == "." || path.is_empty())
-                && let Some(bad) = unknown_field_in(&reason)
-            {
-                return Err(unknown_key(command, &bad, &info.keys));
-            }
-            if path == "." || path.is_empty() {
-                Err(Refusal::bad_args(command, echo_reason(&reason)))
-            } else {
-                Err(Refusal::bad_arg(command, &path, echo_reason(&reason)))
-            }
-        }
+    let info = info(command);
+    if info.closed
+        && !info.keys.is_empty()
+        && let Some(bad) = args.as_object().and_then(|o| o.keys().find(|k| !info.keys.iter().any(|v| v == *k)))
+    {
+        return unknown_key(command, bad, &info.keys);
+    }
+    // Only a top-level unknown field is matched against this command's keys; one nested in an argument
+    // (a misspelt style property) keeps serde's own message, which lists that struct's fields.
+    if (path == "." || path.is_empty())
+        && let Some(bad) = unknown_field_in(&reason)
+    {
+        return unknown_key(command, &bad, &info.keys);
+    }
+    if path == "." || path.is_empty() {
+        Refusal::bad_args(command, echo_reason(&reason))
+    } else {
+        Refusal::bad_arg(command, &path, echo_reason(&reason))
     }
 }
 
-/// The keys of command `command`, from its type, or from the installed table in a build without schemas.
-fn info_of<A: JsonSchema + 'static>(command: &str) -> std::sync::Arc<ArgInfo> {
-    #[cfg(feature = "schemas")]
-    {
-        let _ = command;
-        arg_info::<A>()
-    }
-    #[cfg(not(feature = "schemas"))]
-    {
-        crate::schemas::arg_info_of(command)
-    }
+/// How the keys of the argument type `A` are found once a parse has failed: from its schema, or in a build without
+/// schemas from the installed table by command id (one function for every type, so that no type adds an entry to
+/// the module's function table).
+#[cfg(feature = "schemas")]
+fn keys_of<A: JsonSchema + 'static>() -> fn(&str) -> std::sync::Arc<ArgInfo> {
+    |_| arg_info::<A>()
+}
+
+#[cfg(not(feature = "schemas"))]
+fn keys_of<A: JsonSchema + 'static>() -> fn(&str) -> std::sync::Arc<ArgInfo> {
+    crate::schemas::arg_info_of
 }
 
 fn echo_reason(reason: &str) -> String {

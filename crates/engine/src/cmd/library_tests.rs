@@ -177,6 +177,18 @@ fn a_damaged_item_in_storage_is_skipped_with_a_warning() {
     assert!(list["warnings"][0].as_str().unwrap().contains(&id2), "{list}");
 }
 
+#[test]
+fn an_item_in_storage_that_is_not_text_is_skipped_with_a_warning() {
+    let (mut s, f) = drawn();
+    let id = run(&mut s, "library.add", json!({"name": "Bad"}))["item"]["id"].as_str().unwrap().to_owned();
+    f.storage.clone().put(Ns::Library, &item_key(&id), &[b'{', 0xff, b'}']).unwrap();
+    let mut again = Session::with_services(f.ports(), Services::fake());
+    let list = run(&mut again, "library.list", json!({}));
+    assert!(ids_of(&list).is_empty());
+    let warning = list["warnings"][0].as_str().unwrap();
+    assert!(warning.contains(&id) && warning.contains("not text"), "{list}");
+}
+
 // ---- library.thumbnail ----
 
 /// A renderer that keeps what it was asked for and answers with `answer`.

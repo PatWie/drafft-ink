@@ -147,7 +147,7 @@ pub(super) fn ensure_loaded(s: &mut Session) {
                         st.sections = read_sections(&index, &mut st.notes);
                         for id in order.into_iter().take(MAX_LIBRARY_ITEMS) {
                             match storage.get(Ns::Library, &item_key(&id)) {
-                                Ok(Some(b)) => match serde_json::from_slice::<Stored>(&b) {
+                                Ok(Some(b)) => match parse_item(&b) {
                                     Ok(it) => {
                                         let hash = drafftink_edit::library::content_hash(&it.document);
                                         st.items.push(Arc::new(Item {
@@ -175,6 +175,22 @@ pub(super) fn ensure_loaded(s: &mut Session) {
         }
     }
     s.ext.set(st);
+}
+
+/// Why a stored item could not be read.
+#[derive(Debug, thiserror::Error)]
+enum ItemError {
+    #[error("it is not text: {0}")]
+    Text(#[from] std::str::Utf8Error),
+    #[error("{0}")]
+    Json(#[from] serde_json::Error),
+}
+
+/// Reads one stored item. As text and not as bytes: the document inside is read from text everywhere else, and a
+/// second reader type would compile the whole element deserialiser again into the web module
+/// (`docs/performance.md`, 8.6).
+fn parse_item(bytes: &[u8]) -> Result<Stored, ItemError> {
+    Ok(serde_json::from_str(std::str::from_utf8(bytes)?)?)
 }
 
 /// The section records of the index. A schema 1 index has none.
