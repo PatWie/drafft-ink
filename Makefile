@@ -79,10 +79,16 @@ cf-whoami: ## Show which Cloudflare account a deploy of CF_ENV (demo or private)
 	[ -n "$$CLOUDFLARE_ACCOUNT_ID" ] || unset CLOUDFLARE_ACCOUNT_ID; \
 	cd $(WORKER_DIR) && $(WRANGLER) whoami
 
-cf-dev: ## Run web app and relay locally with wrangler dev (CF_ENV=demo|private, CF_PORT=8787; no login)
+# LOCAL DEV ONLY: CF_ENV=private requires Cloudflare Access, and a local run has none in front of it, so the Worker would
+# refuse every request. cf-dev therefore passes `--var ACCESS_REQUIRED:false` for the private environment. That switch
+# must never reach a deploy: no cf-check or cf-deploy recipe may contain it (`cargo nextest run -p xtask` checks).
+CF_DEV_VARS = $(if $(filter private,$(CF_ENV)),-- --var ACCESS_REQUIRED:false)
+
+cf-dev: ## Run web app and relay locally with wrangler dev (CF_ENV=demo|private, CF_PORT=8787; no login; private runs WITHOUT Access)
 	@$(cf_web_missing)
 	@$(cf_wasm_missing)
-	$(WORKER_DIR)/scripts/dev.sh --env $(CF_ENV) --port $(CF_PORT) --no-build
+	@$(if $(CF_DEV_VARS),echo "cf-dev: private environment WITHOUT Cloudflare Access (ACCESS_REQUIRED:false); local use only.")
+	WRANGLER='$(WRANGLER)' $(WORKER_DIR)/scripts/dev.sh --env $(CF_ENV) --port $(CF_PORT) --no-build $(CF_DEV_VARS)
 
 cf-config-demo: ## Write target/cloudflare/demo/wrangler.toml from .env
 	@$(call cf_render,demo)
@@ -115,6 +121,8 @@ cf-deploy-demo: ## Build and deploy the demo (DEMO_* in .env; its own Cloudflare
 
 cf-deploy-private: ## Build and deploy the private instance (PRIVATE_* in .env; its own Cloudflare account)
 	$(call cf_require,private,PRIVATE_CLOUDFLARE_ACCOUNT_ID PRIVATE_DOMAIN PRIVATE_ACCESS_TEAM_DOMAIN PRIVATE_ACCESS_AUD)
+	@case "$(PRIVATE_ACCESS_REQUIRED)" in ""|true|1) ;; *) \
+		echo "Cannot deploy to private: PRIVATE_ACCESS_REQUIRED is \"$(PRIVATE_ACCESS_REQUIRED)\" in .env. The private instance is always deployed with Cloudflare Access required."; exit 1;; esac
 	@$(cf_web_always)
 	@$(cf_wasm_always)
 	@$(call cf_render,private)

@@ -41,7 +41,7 @@ wrangler only during its own deploy.
 |---|---|
 | `make help` | Lists the targets. |
 | `make web` | Builds the web app into `dist/` (`scripts/build-web.sh --no-precompress`; Cloudflare compresses by itself). |
-| `make cf-dev` | Runs the web app and the relay locally with `wrangler dev` on http://127.0.0.1:8787. Demo settings; `CF_ENV=private` for the private ones, `CF_PORT=N` for another port. Builds `dist/` and the Worker's wasm if they are missing. Uses no Cloudflare login and sends nothing. |
+| `make cf-dev` | Runs the web app and the relay locally with `wrangler dev` on http://127.0.0.1:8787. Demo settings; `CF_ENV=private` for the private ones (**without Cloudflare Access**, see below), `CF_PORT=N` for another port. Builds `dist/` and the Worker's wasm if they are missing. Uses no Cloudflare login and sends nothing. |
 | `make cf-config-demo`, `make cf-config-private` | Writes `target/cloudflare/<env>/wrangler.toml` from `.env`. |
 | `make cf-check-demo`, `make cf-check-private` | Builds what is missing, writes the config, and runs `wrangler deploy --dry-run`. No login, and an empty `.env` is enough. |
 | `make cf-deploy-demo`, `make cf-deploy-private` | Builds web and wasm, writes the config, and deploys that environment. Stops at once, before any build, and names the `.env` variable when a required one is empty. |
@@ -62,7 +62,12 @@ addresses are off, so that nothing reaches the app around Cloudflare Access.
 
 `make cf-check-private` works without the Access values: wrangler only copies them into the bundle.
 
-The transport parity suite runs this Worker under `wrangler dev`: see [testing.md](testing.md).
+**`CF_ENV=private make cf-dev` runs without Cloudflare Access: local use only, never for a deploy.** The private
+environment requires an Access assertion on every request, and a local run has none in front of it, so `cf-dev` passes
+`--var ACCESS_REQUIRED:false` to `wrangler dev` and prints a warning. No `cf-check-*` or `cf-deploy-*` recipe passes it
+(a test in `xtask` reads the Makefile and fails if one does). `cf-dev` uses the `WRANGLER` command of `.env`, like the other targets.
+
+The transport parity suite runs this Worker under `wrangler dev`, the demo and the private environment (with a stand-in for Access): see [testing.md](testing.md).
 
 ## Notes
 
