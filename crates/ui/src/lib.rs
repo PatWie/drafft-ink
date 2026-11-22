@@ -38,7 +38,7 @@ pub use debug::{DebugCost, DebugRow, DebugSection, DebugView, RowTone};
 pub use eyedropper::{Eyedropper, Preview};
 pub use keymap::{Chord, Pointer, help_rows, parse_chord, resolve_keys};
 pub use model::{
-    AboutInfo, AgentServerView, BoundsView, BrushView, CollabStatus, CollabView, Model, Peer, RoomLoading, TextFaces,
+    AboutInfo, AgentServerView, BoundsView, BrushView, CollabStatus, CollabView, MarkerState, Model, Peer, RoomLoading, TextFaces,
 };
 pub use scrub::ScrubControl;
 pub use shell::{FrameInput, FrameResult, UiShell, draw};

@@ -1230,3 +1230,85 @@ fn swatch_circle(h: &H, label: &str) -> egui::Color32 {
         .map(|(_, fill)| fill)
         .unwrap_or_else(|| panic!("no swatch is painted for {label:?}"))
 }
+
+// ---- the highlight button ----
+
+fn marker_button(h: &H) -> bool {
+    h.query_by_role_and_label(egui::accesskit::Role::Button, "Highlight colours").is_some()
+}
+
+#[test]
+fn only_what_can_be_highlighted_gets_the_highlight_button() {
+    assert!(marker_button(&desk(one_rect())), "a shape");
+    assert!(marker_button(&desk(free_text())), "a text");
+    assert!(marker_button(&desk(arrow())), "an arrow");
+    assert!(marker_button(&desk(freehand())), "a pencil stroke");
+    assert!(!marker_button(&desk(dialog::fixture())), "nothing selected: new elements are never highlighted");
+    let mut f = dialog::fixture();
+    let frame = create(&mut f, json!({ "kind": "frame", "bounds": { "x": 0, "y": 0, "w": 200, "h": 100 } }));
+    selecting(&mut f, &[frame]);
+    assert!(!marker_button(&desk(f)), "a frame has none");
+    assert!(!marker_button(&desk(with_tool("rectangle"))), "a tool has none either");
+}
+
+/// Clicks, runs what the click asked for on the session as the app would, and draws again.
+fn click_and_apply(h: &mut H, label: &str) -> Vec<drafftink_ui::Call> {
+    let calls = common::click(h, label);
+    h.state_mut().dispatch();
+    h.run();
+    calls
+}
+
+#[test]
+fn the_marker_toggles_the_highlight_with_the_last_colour_and_the_menu_picks_one() {
+    let mut h = desk(one_rect());
+    // Off: a click puts the default (yellow) on.
+    let calls = click_and_apply(&mut h, "Highlight (yellow)");
+    assert_eq!(
+        calls.last().map(|c| (c.id.as_str(), c.args.clone())),
+        Some(("style.set", json!({ "props": { "highlight": "yellow" } })))
+    );
+    // On: the button now takes it off.
+    let calls = click_and_apply(&mut h, "Take the highlight off");
+    assert_eq!(calls.last().map(|c| c.args.clone()), Some(json!({ "props": { "highlight": null } })));
+    // The menu lists the five markers and none, and a pick is `style.set` too.
+    open(&mut h, "Highlight colours");
+    for name in ["yellow", "green", "pink", "blue", "orange", "none"] {
+        assert!(has(&h, &format!("Highlight: {name}")), "{name}");
+    }
+    let calls = click_and_apply(&mut h, "Highlight: pink");
+    assert_eq!(calls.last().map(|c| c.args.clone()), Some(json!({ "props": { "highlight": "pink" } })));
+    // The colour picked is the one the button puts on the next time.
+    assert!(has(&h, "Take the highlight off"));
+    click_and_apply(&mut h, "Take the highlight off");
+    assert!(has(&h, "Highlight (pink)"), "the last colour is remembered");
+}
+
+#[test]
+fn during_a_text_edit_the_highlight_goes_to_the_editor() {
+    let mut f = free_text();
+    f.model.text_editing = true;
+    let mut h = desk(f);
+    h.state_mut().clear();
+    h.get_by_label("Highlight (yellow)").click();
+    h.run();
+    assert!(h.state().calls().is_empty(), "`style.set` would refuse while a text is edited");
+    assert_eq!(
+        h.state().actions,
+        vec![drafftink_ui::UiAction::Host(drafftink_ui::HostRequest::TextEditStyle(json!({ "highlight": "yellow" })))]
+    );
+}
+
+#[test]
+fn the_editor_selection_decides_what_the_button_shows_while_a_text_is_edited() {
+    use drafftink_ui::MarkerState;
+    let mut f = free_text();
+    f.model.text_editing = true;
+    f.model.editor_highlight = Some(MarkerState::On(drafftink_scene::MarkerColor::Green));
+    let h = desk(f);
+    assert!(has(&h, "Take the highlight off"));
+    let mut f = free_text();
+    f.model.text_editing = true;
+    f.model.editor_highlight = Some(MarkerState::Mixed);
+    assert!(has(&desk(f), "Highlight (yellow)"), "a mixed selection puts the marker on");
+}

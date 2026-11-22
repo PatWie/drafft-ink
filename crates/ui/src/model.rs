@@ -187,6 +187,18 @@ pub struct TextFaces {
     pub italic: Option<bool>,
 }
 
+/// The highlight of what the highlight button acts on, as it shows it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MarkerState {
+    /// Not highlighted.
+    #[default]
+    Off,
+    /// All of it is highlighted with this marker.
+    On(drafftink_scene::MarkerColor),
+    /// Some of it, or with different markers.
+    Mixed,
+}
+
 /// The brush of the paint editor: what the session paints with (`image.paint_brush`).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BrushView {
@@ -540,6 +552,9 @@ pub struct Model {
     /// Bold and italic at the selection of the text editor while one runs. The editor owns the text then, so these
     /// win over [`Model::text_faces`]. Set by the app.
     pub editor_faces: Option<TextFaces>,
+    /// The highlight at the selection of the text editor while one runs; it wins over the highlight of the
+    /// element that `style.get` reports. Set by the app.
+    pub editor_highlight: Option<MarkerState>,
     /// The common bounds of the selection; `None` when nothing is selected.
     pub selection_bounds: Option<BoundsView>,
     /// The link of the selected element, when exactly one is selected and it has a link.
@@ -606,6 +621,7 @@ impl Default for Model {
             brush: BrushView::default(),
             text_faces: None,
             editor_faces: None,
+            editor_highlight: None,
             selection_bounds: None,
             selection_link: None,
             selection: Vec::new(),
@@ -822,6 +838,24 @@ impl Model {
     /// texts. `None` when there is no text to format.
     pub fn faces(&self) -> Option<TextFaces> {
         self.editor_faces.or(self.text_faces)
+    }
+
+    /// The highlight the button shows: the editor's selection while a text edit runs, else what `style.get` says of
+    /// the selection. `None` when the selection cannot be highlighted.
+    pub fn marker(&self) -> Option<MarkerState> {
+        if let Some(editor) = self.editor_highlight {
+            return Some(editor);
+        }
+        let prop = self.style.prop("highlight").filter(|p| p.applicable)?;
+        Some(if prop.is_mixed() {
+            MarkerState::Mixed
+        } else {
+            prop.value
+                .as_ref()
+                .and_then(Value::as_str)
+                .and_then(drafftink_scene::MarkerColor::from_name)
+                .map_or(MarkerState::Off, MarkerState::On)
+        })
     }
 
     /// The command with this id.
