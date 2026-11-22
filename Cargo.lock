@@ -1933,6 +1933,7 @@ dependencies = [
  "clap",
  "drafftink-collab",
  "drafftink-doc",
+ "drafftink-profile",
  "drafftink-protocol",
  "drafftink-relay",
  "drafftink-scene",
@@ -1952,6 +1953,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "tungstenite 0.29.0",
+ "ureq",
 ]
 
 [[package]]

@@ -226,3 +226,19 @@ object saw; it is not part of the product); and `DeleteRoom` removes the picture
   finds a deliberately leaky row, blob, table name, key-value entry and frame.
 - Noise: miniflare prints `Application called abortAllDurableObjects()` when a test drops an instance, and an
   `uncaught exception ... the object is overloaded` line for the test that makes an object call throw. Neither is a failure.
+
+## Parity suite
+
+The same scenarios run against this Worker and against the other relays through the real native clients
+(`apps/drafftink-server/tests/parity/`, see `docs/testing.md`, "Transport parity"). Each test starts its own `wrangler dev`
+(the pinned one of `node_modules`, a config rendered by `scripts/render-config.sh`, a free port, a temporary
+`--persist-to` folder) and stops its process group when it ends. It needs `npm ci` and `npm run build:wasm` here once.
+
+```bash
+DRAFFTINK_PARITY_WRANGLER=1 cargo nextest run -p drafftink-server parity                     # all targets, about a minute
+DRAFFTINK_PARITY_WRANGLER=1 cargo nextest run -p drafftink-server parity::wrangler::expire   # one scenario on this Worker
+cargo xtask worker                                                                           # the TypeScript tests, then the parity suite
+```
+
+Without the variable the Worker tests print `SKIPPED:` and pass. Output of each run: `target/parity-wrangler/<test>.log`
+(printed when the test fails).

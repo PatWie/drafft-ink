@@ -228,13 +228,49 @@ jobs:
             target/wasm32-unknown-unknown/release-wasm/drafftink_web.wasm
           retention-days: 7
 
+  # The Cloudflare Worker host of the relay: vitest on miniflare, then the transport parity suite of the server against a
+  # local `wrangler dev` (nothing is deployed, no Cloudflare login). A separate job because it needs Node and takes
+  # minutes (wasm build, npm install, wrangler), but it reproduces locally with the same command.
+  # Needs wasm-bindgen-cli at the version of Cargo.toml (the worker's wasm glue) and cargo-nextest (the parity run).
+  worker:
+    name: Worker (wrangler dev)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/drafftink-worker/package-lock.json
+      - name: Install wasm-bindgen
+        run: |
+          # rust-cache keeps ~/.cargo/bin, so the install happens once per cache.
+          command -v wasm-bindgen >/dev/null || cargo install wasm-bindgen-cli --version 0.2.130 --locked
+      - uses: taiki-e/install-action@nextest
+      - run: cargo xtask worker
+      - name: Keep the wrangler logs
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: worker-wrangler-logs
+          path: |
+            target/parity-wrangler/*.log
+            apps/drafftink-worker/.wrangler/**/*.log
+          if-no-files-found: ignore
+          retention-days: 7
+
   # The single required check. Branch protection requires only this job.
   # `if: always()` makes it report even when an earlier job failed or was cancelled;
   # a job that did not succeed fails the aggregate.
   ci:
     name: ci
     if: always()
-    needs: [fmt, clippy, layers, wasm, test, fixtures, deny, quarantine, build-native, packaging, size]
+    needs: [fmt, clippy, layers, wasm, test, fixtures, deny, quarantine, build-native, packaging, size, worker]
     runs-on: ubuntu-latest
     steps:
       - name: Require every job to succeed

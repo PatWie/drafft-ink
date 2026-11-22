@@ -77,6 +77,7 @@ The browser needs WebGPU: Chromium-based browsers 113 and newer. Firefox and Saf
 |---|---|
 | `cargo xtask ci` | Every gate: fmt, clippy `-D warnings`, layers, standards, wasm, deny, tests. |
 | `cargo xtask wasm` | L0 to L5, `drafftink-app` and `drafftink-web` for `wasm32-unknown-unknown`. |
+| `cargo xtask worker` | The Cloudflare Worker host of the relay (`apps/drafftink-worker/README.md`): tool checks, `npm ci`, typecheck and vitest, then the parity tests against a local `wrangler dev`. Needs Node 22 or newer, `wasm-bindgen-cli` 0.2.130 and the wasm target. |
 | `cargo test -p drafftink-app` | The app without a window, over the fake ports (start-up, restore, file argument, room link), input translation, clipboard conversion, desktop storage and files. |
 | `~/.venvs/perf/bin/python scripts/native_check.py target/release/drafftink` | The desktop app under a private Xvfb with real X input and the bridge: draws a rectangle, an arrow and a text with the mouse and keyboard, checks them through the bridge, takes screenshots, measures idle, hover, pan and wheel, closes the window and checks the perf dump. Needs `Xvfb`, a GPU (or lavapipe) and the Python venv with `python-xlib` and `pillow`. |
 

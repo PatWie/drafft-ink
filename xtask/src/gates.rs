@@ -8,7 +8,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use crate::{cargo, exceptions, harness, layers, perf, run, size, skips, standards, tools, wasm};
+use crate::{cargo, exceptions, harness, layers, perf, run, size, skips, standards, tools, wasm, worker};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Gate {
@@ -23,6 +23,7 @@ pub enum Gate {
     Perf,
     // Pending: reserved names with no implementation yet.
     Size,
+    Worker,
     Fixtures,
     Harness,
 }
@@ -40,6 +41,7 @@ impl Gate {
         Gate::Test,
         Gate::Perf,
         Gate::Size,
+        Gate::Worker,
         Gate::Fixtures,
         Gate::Harness,
     ];
@@ -56,6 +58,7 @@ impl Gate {
             Gate::Test => "test",
             Gate::Perf => "perf",
             Gate::Size => "size",
+            Gate::Worker => "worker",
             Gate::Fixtures => "fixtures",
             Gate::Harness => "harness",
         }
@@ -87,6 +90,7 @@ impl Gate {
             Gate::Harness => plain(harness::run_gate(root)),
             Gate::Perf => plain(perf::run_gate(root, args)),
             Gate::Size => plain(size::run_gate(root, args)),
+            Gate::Worker => worker::run_gate(root, args),
         }
     }
 }
