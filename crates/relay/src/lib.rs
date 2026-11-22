@@ -19,6 +19,7 @@
 #![warn(missing_docs)]
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
+pub mod codec;
 mod config;
 mod images;
 mod lifecycle;

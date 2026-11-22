@@ -20,7 +20,9 @@ use drafftink_relay::{
     BlobInfo, BlobStats, BlobStore, CasOutcome, LogCounts, RelayStore, RoomMeta, Segment, StoreError, StoredSnapshot,
 };
 
-use super::codec::{decode_meta, decode_records, decode_snapshot, encode_meta, encode_records, encode_snapshot};
+use drafftink_relay::codec::{
+    decode_meta, decode_records, decode_snapshot, encode_meta, encode_records, encode_snapshot,
+};
 
 const META: &str = "meta";
 const SNAPSHOT: &str = "snapshot";

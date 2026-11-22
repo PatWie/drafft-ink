@@ -5,7 +5,6 @@
 //! sealed image). The room id is in the path so that the membership check can happen before any room is loaded.
 
 mod actor;
-mod codec;
 mod conn;
 mod fs;
 mod images;
