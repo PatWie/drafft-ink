@@ -261,17 +261,18 @@ impl RoomCore {
         self.driver.member_of(conn).map(|(_, order)| num(order))
     }
 
-    /// Answers a picture request. `token` is the base64url token of the `Authorization` header, `name` the path
-    /// segment. `body` is read only for `Put`.
+    /// Answers a picture request. `authorization` is the `Authorization` header (`Drafft-Member <token>`), `name`
+    /// the path segment. `body` is read only for `Put`.
     pub fn image(
         &mut self,
         now_ms: f64,
         call: JsImageCall,
-        token: &str,
+        authorization: Option<String>,
         name: Option<String>,
         body: &[u8],
     ) -> JsImageReply {
-        let (reply, effects) = self.driver.image(ms(now_ms), call.into(), token, name.as_deref(), body);
+        let (reply, effects) =
+            self.driver.image(ms(now_ms), call.into(), authorization.as_deref(), name.as_deref(), body);
         JsImageReply { reply, effects }
     }
 }

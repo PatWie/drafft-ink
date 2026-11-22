@@ -26,8 +26,9 @@ fn frame(name: &str) -> Vec<u8> {
     unhex(fixtures()["frames"][name].as_str().unwrap())
 }
 
+/// The `Authorization` header of a member.
 fn token() -> String {
-    fixtures()["room"]["token"]["base64urlNoPad"].as_str().unwrap().to_owned()
+    format!("{} {}", crate::edge::AUTH_SCHEME, fixtures()["room"]["token"]["base64urlNoPad"].as_str().unwrap())
 }
 
 fn room() -> RoomId {
@@ -152,17 +153,17 @@ fn pictures_are_stored_listed_and_read_back_through_the_core() {
     let image = fixtures()["image"].clone();
     let name = image["name"].as_str().unwrap();
     let sealed = unhex(image["sealedHex"].as_str().unwrap());
-    let (put, _) = driver.image(T0, ImageCall::Put, &token(), Some(name), &sealed);
+    let (put, _) = driver.image(T0, ImageCall::Put, Some(&token()), Some(name), &sealed);
     assert_eq!((put.status, put.code), (201, "created"));
-    let (get, _) = driver.image(T0, ImageCall::Get, &token(), Some(name), &[]);
+    let (get, _) = driver.image(T0, ImageCall::Get, Some(&token()), Some(name), &[]);
     assert_eq!((get.status, get.body), (200, sealed.clone()));
-    let (list, _) = driver.image(T0, ImageCall::List, &token(), None, &[]);
+    let (list, _) = driver.image(T0, ImageCall::List, Some(&token()), None, &[]);
     let listed: Value = serde_json::from_slice(&list.body).unwrap();
     assert_eq!(listed[0]["name"], name);
     assert_eq!(listed[0]["size"], sealed.len());
-    let (bad, _) = driver.image(T0, ImageCall::Get, &token(), Some("not a name"), &[]);
+    let (bad, _) = driver.image(T0, ImageCall::Get, Some(&token()), Some("not a name"), &[]);
     assert_eq!(bad.status, 400);
-    let (stranger, _) = driver.image(T0, ImageCall::List, "AAAA", None, &[]);
+    let (stranger, _) = driver.image(T0, ImageCall::List, Some("Drafft-Member AAAA"), None, &[]);
     assert_eq!(stranger.status, 401);
 }
 
@@ -181,7 +182,7 @@ fn a_used_up_daily_limit_is_an_error_frame_and_a_503() {
     let (code, retry) = error.unwrap();
     assert_eq!(code, ErrorCode::DailyLimit);
     assert_eq!(retry.unwrap(), drafftink_relay::ms_until_utc_midnight(T0));
-    let (reply, effects) = driver.image(T0, ImageCall::List, &token(), None, &[]);
+    let (reply, effects) = driver.image(T0, ImageCall::List, Some(&token()), None, &[]);
     assert_eq!((reply.status, reply.code), (503, "daily_limit"));
     assert!(reply.retry_after_ms.is_some());
     assert!(effects.quota_hit());

@@ -10,7 +10,7 @@ use drafftink_relay::{
 };
 use serde_json::json;
 
-use crate::edge::{EdgeError, decode_token, parse_name};
+use crate::edge::{EdgeError, parse_name, parse_proof};
 
 /// One thing for the shell to do.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -280,18 +280,19 @@ impl<S: RelayStore, B: BlobStore> Driver<S, B> {
         self.relay.member_of(ConnId(u64::from(conn)))
     }
 
-    /// Answers a picture request. `token` is the base64url membership token of the `Authorization` header, `name`
+    /// Answers a picture request. `authorization` is the `Authorization` header (`Drafft-Member <token>`), `name`
     /// the path segment of the picture. The edge has checked both already, and the core checks them again.
     pub fn image(
         &mut self,
         now_ms: u64,
         call: ImageCall,
-        token: &str,
+        authorization: Option<&str>,
         name: Option<&str>,
         body: &[u8],
     ) -> (ImageReply, Effects) {
-        let Some(proof) = decode_token(token) else {
-            return (ImageReply::refusal(EdgeError::NoToken), Effects::default());
+        let proof = match parse_proof(authorization) {
+            Ok(proof) => proof,
+            Err(error) => return (ImageReply::refusal(error), Effects::default()),
         };
         let name = match (call, name.map(parse_name)) {
             (ImageCall::List, _) => None,
