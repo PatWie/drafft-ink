@@ -295,3 +295,4 @@ What the suites cannot cover is listed in `docs/review/e2e-findings.md` with the
 | `cargo xtask fixtures` | the fixture facts |
 | `cargo xtask ci` | all gates in order |
 | `cargo xtask e2e` | the browser and native e2e suites (needs a display and a GPU; not part of `ci`) |
+| `cargo xtask worker` | the Cloudflare Worker host of the relay (`apps/drafftink-worker`): checks Node 22 or newer, the pinned `wasm-bindgen` and the wasm target, runs `npm ci`, `npm run typecheck` and `npm test` there, then the server's `parity` tests against a local `wrangler dev` (fails if one skips). In `ci`, and its own CI job because it needs Node and takes minutes. `--check-tools` runs only the tool checks |
