@@ -225,6 +225,8 @@ Nobody sees the refusal in normal use:
 - the UI keeps the call in `UiState::waiting`, shows "Drawing the picture..." and runs it again each frame until it works (the export dialog
   stays open until then).
 
+`images_pending` (an export in an encrypted room that waits for pictures to download, `commands.md` `doc.export`) is kept and run again the same way: `Refusal::is_pending` is true for both codes, `UiState::waiting` shows "Loading the pictures of the room...", and the bridge parks the request. It becomes `images_unavailable` after 30 seconds, so the wait ends. A batch step refused with it fails the batch (only `render_pending` is waited for in a batch).
+
 A `batch` with an export step is applied as a whole: the engine commits it and lists the export as a waiting step with a token
 (`commands.md` §1.7), the bridge keeps the answer back and calls `Session::finish_render` on each wake, and the caller gets the
 finished result, picture included. The batch runs once. A batch in which a later step changes what the picture shows is still

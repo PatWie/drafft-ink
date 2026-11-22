@@ -16,7 +16,7 @@ mod address;
 mod connection;
 pub mod fake_server;
 #[cfg(test)]
-mod fake_relay;
+pub(crate) mod fake_relay;
 pub(crate) mod images;
 mod join_check;
 mod pictures;

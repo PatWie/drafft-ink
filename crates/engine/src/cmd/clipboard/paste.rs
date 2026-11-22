@@ -23,6 +23,7 @@ use serde_json::{Value, json};
 use super::common::{At, edit_with, resolve_at, select_only};
 use super::CopyBuffer;
 use crate::cmd::bytes::{Bytes, Loaded};
+use crate::cmd::image::room::{self, Oversize};
 use crate::cmd::image::{DEFAULT_FIT, DEFAULT_OFFSET, Placement, insert_pictures, load_picture};
 use crate::ports::{ClipKind, ClipPayload};
 use crate::refusal::{Refusal, echo};
@@ -328,7 +329,14 @@ pub(super) fn paste(s: &mut Session, a: PasteArgs) -> Result<PasteOut, Refusal> 
         Found::Elements { doc, kind } => put_elements(s, &doc, kind, at, a.select),
         Found::Mermaid(text) => put_mermaid(s, &text, at, a.select),
         Found::Image(pic) => {
-            let place = Placement { at, fit: DEFAULT_FIT, offset: DEFAULT_OFFSET, select: a.select, downscale: true };
+            let place = Placement {
+                at,
+                fit: DEFAULT_FIT,
+                offset: DEFAULT_OFFSET,
+                select: a.select,
+                downscale: true,
+                oversize: Oversize::Refuse,
+            };
             let done = insert_pictures(s, vec![pic], &place)?;
             Ok(PasteOut { kind: Kind::Image, ids: done.iter().map(|i| i.id.clone()).collect(), count: done.len() })
         }
@@ -338,6 +346,8 @@ pub(super) fn paste(s: &mut Session, a: PasteArgs) -> Result<PasteOut, Refusal> 
 
 fn put_elements(s: &mut Session, doc: &Document, kind: Kind, at: Point, select: bool) -> Result<PasteOut, Refusal> {
     let cmd = s.cmd();
+    // Pictures that come with the elements are stored too: in a room they meet the room's limits.
+    room::admit(s, &room::pictures_of(doc), Oversize::Refuse)?;
     let opts = drafftink_edit::paste::PasteOpts { center: Some(at) };
     let report = edit_with::<_, drafftink_edit::paste::PasteError>(s, |tx, ids, _| {
         drafftink_edit::paste::insert_elements(tx, &doc.elements, &doc.files, &opts, ids)

@@ -368,7 +368,12 @@ pub const COMMANDS: &[CommandSpec] = &[
         &Typed::new(paste::paste),
         Facts { needs_selection: Selection::No, ..WRITE },
     )
-    .refusals(&["clipboard_empty", "mermaid_unsupported"])
+    .refusals(&[
+        "clipboard_empty",
+        "mermaid_unsupported",
+        crate::cmd::image::room::IMAGE_TOO_LARGE,
+        crate::cmd::image::room::ROOM_IMAGES_FULL,
+    ])
     .shortcuts(PASTE_KEYS)
     .example(r#"{"source":{"text":"hello"},"at":[0,0]}"#),
     CommandSpec::new(

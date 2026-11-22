@@ -99,7 +99,15 @@ pub const COMMANDS: &[CommandSpec] = &[
         &Typed::new(open::open),
         Facts { undo: Undo::Undoable, ..REPLACES },
     )
-    .refusals(&["is_library", "newer_version", "in_room", "no_save_target", "too_many_tabs"])
+    .refusals(&[
+        "is_library",
+        "newer_version",
+        "in_room",
+        "no_save_target",
+        "too_many_tabs",
+        crate::cmd::image::room::IMAGE_TOO_LARGE,
+        crate::cmd::image::room::ROOM_IMAGES_FULL,
+    ])
     .allowed_when_blocked()
     .example(r#"{"source":{"path":"/home/me/plan.json"},"mode":"new_tab"}"#),
     CommandSpec::new(
@@ -158,7 +166,11 @@ pub const COMMANDS: &[CommandSpec] = &[
     .host(Host::effect(HostEffect::CompletesExport))
     .available(export_loaded)
     .shortcuts(EXPORT_KEYS)
-    .refusals(&["room_loading"])
+    .refusals(&[
+        "room_loading",
+        crate::cmd::image::room::IMAGES_PENDING,
+        crate::cmd::image::room::IMAGES_UNAVAILABLE,
+    ])
     .example(r#"{"format":"svg","scope":"all"}"#),
     CommandSpec::new(
         "doc.clear",

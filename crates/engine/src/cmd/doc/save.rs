@@ -8,6 +8,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::files;
+use crate::cmd::image::room;
 use crate::cmd::tab::normalize_name;
 use crate::ports::{FileRef, PortKind, PortWrite, SaveDone, SaveWrite};
 use crate::refusal::Refusal;
@@ -55,6 +56,15 @@ pub struct SaveOut {
     pub format: SaveFormat,
     /// Size of the file in bytes.
     pub bytes: usize,
+    /// Pictures of an encrypted room that are not in the file because this device does not hold them yet. The
+    /// file opens with empty frames for them. Absent when none; the pictures are asked for, so a later save has
+    /// them.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub images_missing: u32,
+}
+
+fn is_zero(n: &u32) -> bool {
+    *n == 0
 }
 
 fn no_save_target(id: &str) -> Refusal {
@@ -87,6 +97,14 @@ fn prepare(s: &mut Session, id: &str, req: &SaveReq) -> Result<(SaveWrite, SaveO
         ));
     }
     files::require_writable(s, id, &target)?;
+    // In a room the file embeds the pictures this device holds (the view, else the blob cache). It never refuses
+    // for the others: the file opens with empty frames for them (docs/design/collab-e2e.md section 9.6).
+    let images_missing = room::embeddable_pictures(s);
+    if images_missing > 0 {
+        s.warn(format!(
+            "{images_missing} picture(s) of this room are not on this device yet, so the file does not hold them and shows empty frames. Save again once they have downloaded."
+        ));
+    }
     let doc = s.tab().doc.snapshot();
     let (bytes, mime) = match req.format {
         SaveFormat::Drafftink => {
@@ -111,7 +129,7 @@ fn prepare(s: &mut Session, id: &str, req: &SaveReq) -> Result<(SaveWrite, SaveO
         target: target.clone(),
         remember: req.remember,
     };
-    let out = SaveOut { changed: true, saved_to: target, format: req.format, bytes: size };
+    let out = SaveOut { changed: true, saved_to: target, format: req.format, bytes: size, images_missing };
     Ok((SaveWrite::new(done, bytes.into_bytes(), mime), out))
 }
 
