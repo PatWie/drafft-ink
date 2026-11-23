@@ -45,6 +45,11 @@ impl Net for WebNet {
         same_origin_ws_url(&self.protocol, &self.host, path)
     }
 
+    fn default_server(&self) -> Option<String> {
+        // The page's own server, wherever the page is (a `file:` page has none).
+        self.same_origin_url("/ws").map(|_| "/ws".to_owned())
+    }
+
     fn allow_insecure(&self) -> bool {
         // A page served from this machine may use plain ws:// to its own server. Everything else needs wss://.
         self.loopback

@@ -32,6 +32,18 @@ impl Host for WebHost {
             .is_some_and(|w| js_sys::Reflect::has(&w, &JsValue::from_str("EyeDropper")).unwrap_or(false))
     }
 
+    /// `history.replaceState`: the address shows the room link, or loses its fragment, and the history gets no new entry.
+    fn set_location_fragment(&mut self, fragment: Option<&str>) {
+        let Ok(window) = super::dom::window() else { return };
+        let location = window.location();
+        let (path, search) = (location.pathname().unwrap_or_default(), location.search().unwrap_or_default());
+        let Some(address) = super::pure::address_with_fragment(&path, &search, fragment) else { return };
+        if let Ok(history) = window.history() {
+            // A browser that refuses (a sandboxed frame) leaves the address as it was; the invite button still works.
+            let _ = history.replace_state_with_url(&JsValue::NULL, "", Some(&address));
+        }
+    }
+
     fn start(&mut self, job: HostJob, reply: Inbox) {
         match job {
             HostJob::PickScreenColor => spawn_local(async move {

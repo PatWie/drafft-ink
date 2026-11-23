@@ -41,6 +41,7 @@ pub use limits::{
     ROOM_PRESENCE_BUDGET, ROOM_RECHECK, ROOM_TTL, SEAL_OVERHEAD, SELF_HOST_ROOM_STATE_BYTES, reconnect_delay_ms,
 };
 pub use message::{
-    AwarenessState, ClientMessage, ErrorCode, PeerInfo, Point, ServerMessage, SyncKind, UserInfo, Viewport,
+    AwarenessState, ClientMessage, ENCRYPTED_ONLY_MESSAGE, ErrorCode, PeerInfo, Point, ServerMessage, SyncKind,
+    UserInfo, Viewport,
 };
 pub use version::{JoinVersions, negotiate_version, negotiate_version_within};

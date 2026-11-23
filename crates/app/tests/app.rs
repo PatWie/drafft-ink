@@ -306,3 +306,24 @@ fn a_swatch_is_the_colour_the_canvas_draws_for_what_its_pick_stores() {
     let white = offer_as_seen("#ffffff", true).unwrap();
     assert!(white.shown.r().min(white.shown.g()).min(white.shown.b()) >= 236, "{white:?}");
 }
+
+#[test]
+fn the_page_server_of_a_web_shell_is_the_default_of_the_setting_and_a_chosen_server_wins() {
+    let fakes = Fakes::new();
+    fakes.net.set_origin("wss://canvas.example.com");
+    let mut app = App::new(platform(&fakes), AppConfig::default());
+    let server = |app: &mut App| app.session_mut().settings.get("collab.server_url").cloned();
+    assert_eq!(server(&mut app), Some(json!("/ws")), "the page's server");
+    app.session_mut()
+        .execute("settings.set", json!({"key": "collab.server_url", "value": "wss://relay.example.org/ws"}))
+        .unwrap();
+    drop(app);
+    let mut again = App::new(platform(&fakes), AppConfig::default());
+    assert_eq!(
+        server(&mut again),
+        Some(json!("wss://relay.example.org/ws")),
+        "the person's choice wins after a restart"
+    );
+    let mut native = App::new(platform(&Fakes::new()), AppConfig::default());
+    assert_eq!(server(&mut native), Some(json!("ws://localhost:3030/ws")), "native keeps localhost");
+}

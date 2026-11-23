@@ -12,6 +12,7 @@ import {
   checkMember,
   checkSettings,
   dailyLimitFrame,
+  encryptedOnlyFrame,
   isImageName,
   isRoomId,
   MemberCheck,
@@ -29,6 +30,7 @@ const quota = new QuotaGate();
 const checkedSettings = new Set<string>();
 
 const CLOSE_TRY_AGAIN_LATER = 1013;
+const CLOSE_NORMAL = 1000;
 
 /** The Rust side of the Access check (claims and refusal texts); the signature is checked with Web Crypto. */
 const accessCore = coreFromWasm({ access_parse, access_check_claims, access_refusal });
@@ -86,6 +88,8 @@ async function handle(incoming: Request, env: Env): Promise<Response> {
       return status(request, env);
     case "unknown":
       return failure(404, "not_found", "There is nothing at this address.");
+    case "legacy_socket":
+      return legacySocket(request, env, url);
     case "socket":
       return socket(request, env, url, route.room);
     case "images":
@@ -139,6 +143,30 @@ async function socket(request: Request, env: Env, url: URL, room: string): Promi
   const wait = quota.retryAfterSeconds(Date.now());
   if (wait !== null) return refuseSocket();
   return callRoom(env, room, request);
+}
+
+/**
+ * `/ws` is the plaintext (v1) route of the app. This server has no plaintext rooms, so the Worker answers the first
+ * frame (the v1 `Join`) with the `UnsupportedVersion` error whose text says so, and closes. It is here and not in the
+ * static assets, because the assets would answer the upgrade with the app's page and the app would wait for a
+ * handshake that never comes. No object is called: it costs one Worker request.
+ */
+function legacySocket(request: Request, env: Env, url: URL): Response {
+  if (request.method !== "GET") return methodNotAllowed("GET");
+  if (!originAllowed(request.headers.get("origin"), url, typeof env.ALLOWED_ORIGINS === "string" ? env.ALLOWED_ORIGINS : "")) {
+    return failure(403, "origin_not_allowed", "This page may not open rooms on this server.");
+  }
+  if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
+    return failure(426, "upgrade_required", "This address speaks WebSocket. Open it with a room link.");
+  }
+  const pair = new WebSocketPair();
+  const [client, server] = [pair[0], pair[1]];
+  server.accept();
+  server.addEventListener("message", () => {
+    server.send(encryptedOnlyFrame());
+    server.close(CLOSE_NORMAL, "encrypted rooms only");
+  });
+  return new Response(null, { status: 101, webSocket: client });
 }
 
 /** Accepts the upgrade only to say why and close with 1013 ("try again later"): the client shows the reset time. */

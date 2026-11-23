@@ -28,6 +28,9 @@ mod blobs;
 mod client;
 #[cfg(not(target_arch = "wasm32"))]
 mod native;
+// Read by the web transport; native builds only test it.
+#[cfg(any(test, target_arch = "wasm32"))]
+mod probe;
 mod room_client;
 mod sealed;
 mod session;
@@ -65,7 +68,9 @@ pub use sealed::{
 };
 pub use session::{CollabSession, Pump};
 pub use status::{ConnState, Problem, ProblemAction, Status, StopReason, explain, explain_access};
-pub use transport::{LoopbackServer, LoopbackTransport, Transport, TransportError, TransportEvent, WakeFn, loopback};
+pub use transport::{
+    LoopbackServer, LoopbackTransport, Transport, TransportError, TransportEvent, Unavailable, WakeFn, loopback,
+};
 pub use url::{ServerUrl, UrlError, UrlPolicy};
 #[cfg(target_arch = "wasm32")]
 pub use web::WebTransport;

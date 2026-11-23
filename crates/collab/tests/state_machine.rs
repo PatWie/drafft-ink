@@ -508,6 +508,26 @@ fn a_server_that_turns_the_connection_away_stops_the_client_and_names_the_server
 }
 
 #[test]
+fn a_server_that_hosts_only_encrypted_rooms_is_told_so_in_plain_words_and_not_as_a_version_problem() {
+    let mut h = Harness::new();
+    h.start();
+    h.event(TransportEvent::Opened);
+    h.feed(&ServerMessage::encrypted_rooms_only());
+    let st = h.client.status().clone();
+    assert_eq!((st.state, st.stopped), (ConnState::Stopped, Some(StopReason::EncryptedOnly)));
+    assert!(
+        st.text.starts_with("This server only hosts end-to-end encrypted rooms. Use a room link that has a key"),
+        "{}",
+        st.text
+    );
+    assert!(!st.text.contains("version") && !st.text.contains("Update"), "{}", st.text);
+    assert_eq!(st.problem.as_ref().map(|p| (p.action, p.fatal)), Some((ProblemAction::NewLink, true)));
+    let connects = h.connects;
+    h.run_for(120_000, 10_000);
+    assert_eq!(h.connects, connects, "asking again would get the same answer");
+}
+
+#[test]
 fn fatal_errors_stop_the_client_and_say_what_to_do() {
     let cases = [
         (ErrorCode::Unauthorized, StopReason::Unauthorized, ProblemAction::NewToken),
@@ -892,4 +912,18 @@ fn debug_output_never_contains_the_token() {
     let text = format!("{:?} {:?} {:?}", h.client, h.client.config(), h.client.status());
     assert!(!text.contains("s3cret-token"), "{text}");
     assert!(text.contains("hidden"));
+}
+
+#[test]
+fn a_page_without_a_relay_stops_the_plaintext_client_with_plain_words_too() {
+    use drafftink_collab::Unavailable;
+    let mut h = Harness::new();
+    h.start();
+    h.event(TransportEvent::Unavailable(Unavailable::NoRelay));
+    let st = h.client.status().clone();
+    assert_eq!((st.state, st.stopped), (ConnState::Stopped, Some(StopReason::NoRelay)));
+    assert!(st.text.contains("only serves the app and does not host shared rooms"), "{}", st.text);
+    let connects = h.connects;
+    h.run_for(120_000, 10_000);
+    assert_eq!(h.connects, connects);
 }

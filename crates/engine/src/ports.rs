@@ -258,6 +258,13 @@ pub trait Net {
         None
     }
 
+    /// The server the collaboration setting (`collab.server_url`) defaults to in this shell, when it is not the
+    /// built-in native address: the web shell answers `/ws`, the server that delivered the page. Read once, when the
+    /// settings load. A person's own choice still wins.
+    fn default_server(&self) -> Option<String> {
+        None
+    }
+
     /// True when plain `ws://` to another machine is allowed. Off by default: the drawing would travel
     /// unencrypted.
     fn allow_insecure(&self) -> bool {
@@ -877,6 +884,10 @@ pub mod fake {
 
         fn same_origin_url(&self, path: &str) -> Option<String> {
             lock(&self.state).origin.as_ref().map(|o| format!("{o}{path}"))
+        }
+
+        fn default_server(&self) -> Option<String> {
+            lock(&self.state).origin.as_ref().map(|_| "/ws".to_owned())
         }
     }
 

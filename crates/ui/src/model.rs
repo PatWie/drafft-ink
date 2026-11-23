@@ -463,6 +463,11 @@ pub struct CollabView {
     pub server_chosen: bool,
     /// Why the room is not usable yet, until its content is in.
     pub loading: Option<RoomLoading>,
+    /// The room is end-to-end encrypted: it has an invite link with a key.
+    pub e2e: bool,
+    /// The invite link of that room, `https://<server>/#room=<id>,<key>`. It holds the key, so the app fills it in only
+    /// while the collaboration dialog is open.
+    pub invite_link: Option<String>,
 }
 
 impl CollabView {
@@ -490,6 +495,8 @@ impl CollabView {
             peers,
             loading,
             server_chosen: text("state") == Some("ready"),
+            e2e: out.get("e2e").and_then(Value::as_bool).unwrap_or(false),
+            invite_link: None,
         }
     }
 }
@@ -599,6 +606,8 @@ pub struct Model {
     pub style: StyleView,
     /// Settings by key.
     pub settings: BTreeMap<String, Value>,
+    /// The WebSocket address of the server that delivered the page (`wss://host/ws`), on the web; `None` elsewhere.
+    pub page_server: Option<String>,
     /// The tabs.
     pub tabs: Vec<TabView>,
     /// Undo and redo labels.
@@ -658,6 +667,7 @@ impl Default for Model {
             thumbnails: Thumbnails::default(),
             style: StyleView::default(),
             settings: BTreeMap::new(),
+            page_server: None,
             tabs: Vec::new(),
             history: HistoryView::default(),
             zoom_percent: 100.0,
@@ -843,6 +853,7 @@ impl Model {
         self.text_editing = s.text_edit.is_some();
         self.gesture_running = s.gesture_running();
         self.settings = s.settings.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        self.page_server = s.page_server_url();
         let read = read_selection(s);
         self.selection_bounds = read.bounds;
         self.selection_link = match read.items.as_slice() {

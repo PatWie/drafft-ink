@@ -18,7 +18,7 @@ use crate::surfaces::dialogs::{Close, enter_pressed, secret_field, show_modal, t
 use crate::theme::{self, MARGIN, TextSize};
 use crate::widgets::{Ctl, Cx, panel_frame, section_label, separator};
 
-/// The server the settings default to, shown when the setting is missing.
+/// The server a native app starts with, shown when the setting is missing and the page has no server of its own.
 const DEFAULT_SERVER: &str = "ws://localhost:3030/ws";
 /// The colour choices of the cursor, with the names the controls carry.
 pub(crate) const USER_COLORS: [(&str, &str); 9] = [
@@ -67,6 +67,67 @@ pub(crate) fn join_call(room: &str, token: &str) -> Call {
         args.insert("token".to_owned(), json!(token));
     }
     call("collab.join_room", Value::Object(args))
+}
+
+/// What the room field holds, for the hint under it. Only the look of the dialog: the engine reads the text and
+/// decides (a bare room id, a damaged link and a bad name are its refusals).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RoomEntry {
+    /// Empty: the button starts a new private (end-to-end encrypted) room.
+    New,
+    /// An invite link, or `<id>,<key>`: joins that private room.
+    Link,
+    /// Anything else: a plain, unencrypted room by name.
+    PlainName,
+}
+
+impl RoomEntry {
+    /// Reads the text of the field.
+    pub(crate) fn of(text: &str) -> Self {
+        let t = text.trim();
+        if t.is_empty() {
+            Self::New
+        } else if t.contains(',') || t.contains("room=") || t.contains('#') || t.contains("://") {
+            Self::Link
+        } else {
+            Self::PlainName
+        }
+    }
+
+    /// The text of the button.
+    pub(crate) fn button(self) -> &'static str {
+        match self {
+            Self::New => "Start a private room",
+            Self::Link | Self::PlainName => "Join room",
+        }
+    }
+
+    /// One sentence under the field that says what the button will do.
+    pub(crate) fn hint(self) -> &'static str {
+        match self {
+            Self::New => "Empty starts a private room, end-to-end encrypted. To join one, paste its invite link here.",
+            Self::Link => "Joins the private room of this invite link.",
+            Self::PlainName => {
+                "A name makes a plain room that is not encrypted, and some servers do not host those. To join a private room, paste its whole invite link."
+            }
+        }
+    }
+}
+
+/// The server as the field shows it: the page's own server in full when the setting is the relative `/ws`, so the
+/// dialog never says `localhost` on a page that has a server of its own.
+pub(crate) fn shown_server(setting: Option<&str>, page: Option<&str>) -> String {
+    match (setting, page) {
+        (Some("/ws"), Some(page)) => page.to_owned(),
+        (Some(text), _) => text.to_owned(),
+        (None, Some(page)) => page.to_owned(),
+        (None, None) => DEFAULT_SERVER.to_owned(),
+    }
+}
+
+/// `collab.share_link`: puts the invite link of the room on the clipboard.
+pub(crate) fn copy_link_call() -> Call {
+    call("collab.share_link", json!({}))
 }
 
 /// `collab.leave_room`.
@@ -176,7 +237,7 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
     let mut draft: Draft = ctx.data_mut(|d| d.get_temp(key)).unwrap_or_default();
     if !draft.loaded {
         draft.loaded = true;
-        draft.url = cx.model.setting_str("collab.server_url").unwrap_or(DEFAULT_SERVER).to_owned();
+        draft.url = shown_server(cx.model.setting_str("collab.server_url"), cx.model.page_server.as_deref());
         draft.name = cx.model.setting_str("collab.user_name").unwrap_or_default().to_owned();
         draft.name_sent = draft.name.clone();
     }
@@ -205,7 +266,11 @@ fn body(ui: &mut Ui, cx: &mut Cx<'_>, draft: &mut Draft) {
     // Server.
     section_label(ui, &pal, "Server URL");
     let reason = cx.refusal("collab.connect");
-    text_field(ui, &mut draft.url, DEFAULT_SERVER, reason, None, "Server URL");
+    let placeholder = cx.model.page_server.as_deref().unwrap_or(DEFAULT_SERVER);
+    text_field(ui, &mut draft.url, placeholder, reason, None, "Server URL");
+    if cx.model.page_server.as_deref() == Some(draft.url.trim()) {
+        ui.label(RichText::new("This is the server of this page.").size(TextSize::Small.points()).color(pal.muted));
+    }
     ui.add_space(6.0);
     if linked {
         let c = disconnect_call();
@@ -225,20 +290,32 @@ fn body(ui: &mut Ui, cx: &mut Cx<'_>, draft: &mut Draft) {
             draft.room.clone_from(room);
             // The token did its work when the room was joined; do not keep it.
             draft.token.clear();
-            text_field(ui, &mut draft.room, "", cx.refusal("collab.join_room"), None, "Room");
+            if collab.e2e {
+                invite(ui, cx, &collab);
+            } else {
+                text_field(ui, &mut draft.room, "", cx.refusal("collab.join_room"), None, "Room");
+            }
             ui.add_space(6.0);
             let c = leave_call();
             cx.text_button(ui, &Ctl::new(&c.id).args(c.args.clone()), "Leave room", false);
         } else {
             let reason = cx.refusal("collab.join_room");
-            text_field(ui, &mut draft.room, "Room name (empty makes a new room)", reason.clone(), None, "Room");
+            let entry = RoomEntry::of(&draft.room);
+            text_field(
+                ui,
+                &mut draft.room,
+                "Invite link, or empty for a new private room",
+                reason.clone(),
+                None,
+                "Room",
+            );
+            ui.label(RichText::new(entry.hint()).size(TextSize::Small.points()).color(pal.muted));
             ui.add_space(6.0);
             section_label(ui, &pal, "Access token");
             secret_field(ui, &mut draft.token, "Only if the server asks for one", reason, None, "Access token");
             ui.add_space(6.0);
             let c = join_call(&draft.room, &draft.token);
-            let text = if draft.room.trim().is_empty() { "Create room" } else { "Join room" };
-            cx.text_button(ui, &Ctl::new(&c.id).args(c.args.clone()), text, true);
+            cx.text_button(ui, &Ctl::new(&c.id).args(c.args.clone()), entry.button(), true);
         }
     }
 
@@ -248,6 +325,27 @@ fn body(ui: &mut Ui, cx: &mut Cx<'_>, draft: &mut Draft) {
     ui.add_space(10.0);
     section_label(ui, &pal, "Your profile");
     profile(ui, cx, &mut draft.name, &mut draft.name_sent);
+}
+
+/// The invite link of a private room and the button that copies it. The link holds the key: it is shown only here, to
+/// the person who is in the room.
+fn invite(ui: &mut Ui, cx: &mut Cx<'_>, collab: &CollabView) {
+    let pal = cx.pal;
+    section_label(ui, &pal, "Invite link");
+    if let Some(link) = &collab.invite_link {
+        let mut shown = link.clone();
+        text_field(ui, &mut shown, "", None, None, "Invite link");
+    } else if let Some(room) = &collab.room {
+        ui.label(RichText::new(format!("Private room {room}")).size(TextSize::Small.points()).color(pal.muted));
+    }
+    ui.label(
+        RichText::new("Anyone with the whole link can join and read the room. The server cannot.")
+            .size(TextSize::Small.points())
+            .color(pal.muted),
+    );
+    ui.add_space(6.0);
+    let c = copy_link_call();
+    cx.text_button(ui, &Ctl::new(&c.id).args(c.args.clone()), "Copy invite link", true);
 }
 
 /// The display name field and the nine cursor colours: `collab.set_user`. `name` is the text in the field,
@@ -339,6 +437,28 @@ mod tests {
             has_cursor: false,
             followed: false,
         }
+    }
+
+    #[test]
+    fn the_room_field_reads_empty_links_and_names() {
+        assert_eq!(RoomEntry::of(""), RoomEntry::New);
+        assert_eq!(RoomEntry::of("  "), RoomEntry::New);
+        assert_eq!(RoomEntry::of("https://canvas.example.com/#room=abc,key"), RoomEntry::Link);
+        assert_eq!(RoomEntry::of("#room=abc,key"), RoomEntry::Link);
+        assert_eq!(RoomEntry::of("abc,key"), RoomEntry::Link);
+        assert_eq!(RoomEntry::of("Test"), RoomEntry::PlainName);
+        assert_eq!(RoomEntry::New.button(), "Start a private room");
+        assert_eq!(RoomEntry::Link.button(), "Join room");
+    }
+
+    #[test]
+    fn the_server_shown_is_the_page_for_the_relative_default_and_the_setting_otherwise() {
+        let page = Some("wss://canvas.example.com/ws");
+        assert_eq!(shown_server(Some("/ws"), page), "wss://canvas.example.com/ws");
+        assert_eq!(shown_server(None, page), "wss://canvas.example.com/ws");
+        assert_eq!(shown_server(Some("wss://relay.example.org/ws"), page), "wss://relay.example.org/ws");
+        assert_eq!(shown_server(Some("ws://localhost:3030/ws"), None), "ws://localhost:3030/ws");
+        assert_eq!(shown_server(None, None), "ws://localhost:3030/ws");
     }
 
     #[test]

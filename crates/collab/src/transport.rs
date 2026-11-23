@@ -15,6 +15,19 @@ use crate::url::ServerUrl;
 /// back into the transport.
 pub type WakeFn = Arc<dyn Fn() + Send + Sync>;
 
+/// Why a server that never opened a socket cannot be used, as a probe of the server's own address found out (the
+/// browser's `WebSocket` reports a failed upgrade only as a close, so the web transport asks `GET /api/status`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Unavailable {
+    /// The address answers like a plain web host: it serves the app and has no relay (GitHub Pages, for one).
+    NoRelay,
+    /// The relay is up and has used up its quota for the day.
+    DailyLimit {
+        /// When to try again, in milliseconds, when the server said.
+        retry_after_ms: Option<u32>,
+    },
+}
+
 /// What a transport reports.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TransportEvent {
@@ -28,6 +41,8 @@ pub enum TransportEvent {
     /// ended). It ends the connection like `Closed`, with a reason the client can act on: retrying with the same
     /// token would only be refused again. After this event the transport emits nothing for that connection.
     Denied(AccessDenial),
+    /// The socket never opened and the server's status address says why. It ends the connection like `Closed`.
+    Unavailable(Unavailable),
     /// The connection is gone, or never opened. `error` says why when it was not a clean close. After this event
     /// the transport emits nothing for that connection.
     Closed {
@@ -201,6 +216,12 @@ impl LoopbackServer {
     pub fn deny(&self, denial: AccessDenial) {
         lock(&self.link).open = false;
         self.queue(TransportEvent::Denied(denial));
+    }
+
+    /// The socket never opened and the server's status address says why, as the web transport reports it.
+    pub fn unavailable(&self, why: Unavailable) {
+        lock(&self.link).open = false;
+        self.queue(TransportEvent::Unavailable(why));
     }
 
     /// How many times the client closed the connection.

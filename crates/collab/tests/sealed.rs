@@ -13,7 +13,7 @@ use common::live::{PATIENCE, Server, Waker};
 use common::{ids, rect};
 use drafftink_collab::{
     AccessDenial, CollabEvent, CollabSession, ConnState, LoopbackServer, NativeTransport, Resume, SealedClient,
-    SealedConfig, ServerUrl, StopReason, Transport, TransportEvent, UrlPolicy, loopback,
+    SealedConfig, ServerUrl, StopReason, Transport, TransportEvent, Unavailable, UrlPolicy, loopback,
 };
 use drafftink_doc::LoroStore;
 use drafftink_protocol::ClientId;
@@ -677,6 +677,67 @@ fn a_private_server_that_turns_the_connection_away_stops_the_client_and_says_wha
         session.pump(120_000, &mut store);
         assert_eq!(server.opens(), opens);
     }
+}
+
+#[test]
+fn a_page_without_a_relay_ends_the_connect_with_plain_words_and_no_retry() {
+    let (transport, server) = loopback();
+    server.set_auto_accept(true);
+    let cfg = SealedConfig {
+        url: ServerUrl::parse("wss://drafft.ink/ws", UrlPolicy::default()).unwrap(),
+        key: key(),
+        client_id: ClientId::from_bytes([1; 16]),
+        user: None,
+        mode: JoinMode::Create,
+        resume: Resume::default(),
+        jitter_seed: 1,
+        replace_when_trimmed: false,
+    };
+    let mut session = CollabSession::new(SealedClient::new(cfg).unwrap(), transport);
+    let mut store = LoroStore::new();
+    session.client_mut().start(1_000);
+    session.pump(1_000, &mut store);
+    server.unavailable(Unavailable::NoRelay);
+    let out = session.pump(1_040, &mut store);
+    let client = session.client().sealed().unwrap();
+    assert_eq!(client.status().stopped, Some(StopReason::NoRelay));
+    let text = client.status().text.clone();
+    assert!(text.starts_with("drafft.ink only serves the app and does not host shared rooms."), "{text}");
+    assert!(text.contains("saved on this device") && !text.contains("1006"), "{text}");
+    assert_eq!(out.events.iter().filter(|e| matches!(e, CollabEvent::Problem(p) if p.fatal)).count(), 1);
+    let opens = server.opens();
+    session.pump(120_000, &mut store);
+    assert_eq!(server.opens(), opens, "asking again would get the same answer");
+}
+
+#[test]
+fn a_relay_over_its_daily_limit_says_so_and_tries_again_later() {
+    let (transport, server) = loopback();
+    server.set_auto_accept(true);
+    let cfg = SealedConfig {
+        url: ServerUrl::parse("wss://canvas.example.com/ws", UrlPolicy::default()).unwrap(),
+        key: key(),
+        client_id: ClientId::from_bytes([1; 16]),
+        user: None,
+        mode: JoinMode::Create,
+        resume: Resume::default(),
+        jitter_seed: 1,
+        replace_when_trimmed: false,
+    };
+    let mut session = CollabSession::new(SealedClient::new(cfg).unwrap(), transport);
+    let mut store = LoroStore::new();
+    session.client_mut().start(1_000);
+    session.pump(1_000, &mut store);
+    server.unavailable(Unavailable::DailyLimit { retry_after_ms: Some(60_000) });
+    session.pump(1_040, &mut store);
+    let client = session.client().sealed().unwrap();
+    assert_eq!(client.status().state, ConnState::Reconnecting);
+    assert!(client.status().text.starts_with("The server has reached its daily limit"), "{}", client.status().text);
+    let opens = server.opens();
+    session.pump(30_000, &mut store);
+    assert_eq!(server.opens(), opens, "it waits as long as the server said");
+    session.pump(70_000, &mut store);
+    assert!(server.opens() > opens, "and then tries again");
 }
 
 #[test]

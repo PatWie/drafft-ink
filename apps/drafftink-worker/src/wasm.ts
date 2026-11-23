@@ -18,6 +18,7 @@ export {
   checkMember,
   checkSettings,
   dailyLimitFrame,
+  encryptedOnlyFrame,
   isImageName,
   isRoomId,
   nextUtcMidnightMs,

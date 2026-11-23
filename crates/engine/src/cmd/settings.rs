@@ -62,7 +62,7 @@ struct Stored {
 /// Checks `value` for `def`, stores it and applies it. The caller persists once after its last write.
 fn store_checked(s: &mut Session, def: &'static KeyDef, value: &Value) -> Result<Stored, Refusal> {
     let normal = def.normalize(value).map_err(|m| wrong_value(s.cmd(), def.name, &m.expected, &m.got))?;
-    let previous = s.settings.get(def.name).cloned().unwrap_or_else(|| def.default_value());
+    let previous = s.settings.get(def.name).cloned().unwrap_or_else(|| s.settings.default_of(def));
     let changed = s.settings.set_raw(def.name, normal.clone());
     if changed {
         apply_live(s, def.name);
@@ -80,6 +80,20 @@ pub fn set_internal(s: &mut Session, key: &str, value: &Value) -> Result<bool, R
         store::persist(s);
     }
     Ok(stored.changed)
+}
+
+impl Session {
+    /// Makes the shell's own defaults the defaults of their settings: today the server of the page (`/ws`) for
+    /// `collab.server_url`, which the web shell supplies through [`crate::ports::Net::default_server`]. A person's own
+    /// choice still wins: only a key that holds its default follows, `settings.reset` returns to this value, and the
+    /// stored record keeps only values that differ from it. A default the table refuses is ignored.
+    pub(crate) fn apply_platform_defaults(&mut self) {
+        let Some(server) = self.ports.net.as_deref().and_then(crate::ports::Net::default_server) else { return };
+        let Some(def) = keys::find("collab.server_url") else { return };
+        if let Ok(normal) = def.normalize(&Value::String(server)) {
+            self.settings.override_default(def.name, normal);
+        }
+    }
 }
 
 // ---- settings.get ----
@@ -115,11 +129,11 @@ fn get(s: &mut Session, a: GetArgs) -> Result<GetOut, Refusal> {
     match a.key {
         Some(k) => {
             let def = key_def(id, &k)?;
-            let value = s.settings.get(def.name).cloned().unwrap_or_else(|| def.default_value());
+            let value = s.settings.get(def.name).cloned().unwrap_or_else(|| s.settings.default_of(def));
             Ok(GetOut {
                 changed: false,
                 settings: BTreeMap::from([(def.name.to_owned(), value)]),
-                default: Some(def.default_value()),
+                default: Some(s.settings.default_of(def)),
                 accepts: Some(def.expected()),
                 summary: Some(def.summary.to_owned()),
             })
@@ -192,7 +206,7 @@ fn finish_one(s: &mut Session, def: &'static KeyDef, st: Stored) -> SetOut {
         key: def.name.to_owned(),
         value: st.value,
         previous: st.previous,
-        default: def.default_value(),
+        default: s.settings.default_of(def),
     }
 }
 
@@ -222,7 +236,7 @@ fn toggle(s: &mut Session, a: ToggleArgs) -> Result<SetOut, Refusal> {
             format!("Setting `{}` is not an on/off setting. Use `settings.set` or `settings.cycle`.", def.name),
         ));
     }
-    let current = s.settings.get(def.name).and_then(Value::as_bool).unwrap_or_else(|| def.default_value() == Value::Bool(true));
+    let current = s.settings.get(def.name).and_then(Value::as_bool).unwrap_or_else(|| s.settings.default_of(def) == Value::Bool(true));
     let st = store_checked(s, def, &Value::Bool(!current))?;
     Ok(finish_one(s, def, st))
 }
@@ -295,7 +309,8 @@ fn reset(s: &mut Session, a: ResetArgs) -> Result<ResetOut, Refusal> {
     };
     let mut done = Vec::new();
     for def in defs {
-        let st = store_checked(s, def, &def.default_value())?;
+        let default = s.settings.default_of(def);
+        let st = store_checked(s, def, &default)?;
         if st.changed {
             done.push(def.name.to_owned());
         }

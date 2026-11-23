@@ -33,7 +33,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use self::address::{AddressError, RoomSpec, RoomSpecError, encode_server, resolve_server, room_link};
+use self::address::{AddressError, RoomSpec, RoomSpecError, resolve_server, room_link};
 use self::connection::{Target, has_content, leave, user_from_settings};
 use self::state::CollabState;
 use self::token::TokenArg;
@@ -255,9 +255,10 @@ fn connect(s: &mut Session, a: ConnectArgs) -> Result<ConnectOut, Refusal> {
 
 /// The room argument as a room, or the refusal that says how to write it.
 fn parse_room(id: &str, text: &str) -> Result<RoomSpec, Refusal> {
-    RoomSpec::parse(text).map_err(|e| match e {
+    RoomSpec::parse(text).map_err(|e| match &e {
         RoomSpecError::Name(e) => Refusal::bad_arg(id, "room", e.to_string()),
         RoomSpecError::Link(_) => bad_room_link(id),
+        RoomSpecError::BareId => Refusal::custom("bare_room_id", id, e.to_string()),
     })
 }
 
@@ -265,7 +266,7 @@ fn bad_room_link(id: &str) -> Refusal {
     Refusal::custom(
         "bad_room_link",
         id,
-        "The room link is damaged or incomplete. A private room link looks like `https://drafft.ink/#room=<id>,<key>` and must include the key after the comma. Ask for the link again.",
+        "The room link is damaged or incomplete. A private room link looks like `https://<server>/#room=<id>,<key>` and must include the key after the comma. Ask for the link again.",
     )
 }
 
@@ -642,8 +643,6 @@ impl Session {
 
 // ---- collab.share_link ----
 
-/// The page that opens a room link.
-const LINK_ORIGIN: &str = "https://drafft.ink";
 
 /// Arguments of `collab.share_link`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -683,15 +682,7 @@ fn share_link(s: &mut Session, a: ShareLinkArgs) -> Result<ShareLinkOut, Refusal
             _ => not_in_room(id),
         });
     };
-    let link = drafftink_seal::RoomLink::new(room.key);
-    let mut text = link.url(LINK_ORIGIN).to_string();
-    // A self-hosted server goes into the link, so that whoever opens it finds the room there.
-    if let Ok(server) = drafftink_collab::ServerUrl::parse(&room.server, drafftink_collab::UrlPolicy { allow_insecure: true })
-        && server.host() != "drafft.ink"
-    {
-        text.push_str("&server=");
-        text.push_str(&encode_server(&server));
-    }
+    let text = invite_text(s, room);
     if a.copy {
         s.require_port(PortKind::Clipboard, "the clipboard", "Pass copy=false and reveal=true to get the link in the output.")?;
     }
@@ -705,6 +696,42 @@ fn share_link(s: &mut Session, a: ShareLinkArgs) -> Result<ShareLinkOut, Refusal
         copied = true;
     }
     Ok(ShareLinkOut { changed: false, copied, link: a.reveal.then_some(text) })
+}
+
+/// The invite link of `room`, as the person sends it: see [`address::invite_link`] for where it points. The page's
+/// own server comes from the `Net` port (the web shell), so nothing here names a host.
+fn invite_text(s: &Session, room: crate::cmd::tab::SealedRoom) -> String {
+    let policy = drafftink_collab::UrlPolicy { allow_insecure: true };
+    let page = s
+        .ports
+        .net
+        .as_deref()
+        .and_then(|n| n.same_origin_url("/ws"))
+        .and_then(|url| drafftink_collab::ServerUrl::parse(&url, policy).ok());
+    let server = drafftink_collab::ServerUrl::parse(&room.server, policy).ok();
+    let link = drafftink_seal::RoomLink::new(room.key);
+    address::invite_link(&link, page.as_ref(), server.as_ref())
+}
+
+impl Session {
+    /// The WebSocket address of the server that delivered the app (`wss://host/ws`), in a web shell; `None` elsewhere.
+    pub fn page_server_url(&self) -> Option<String> {
+        self.ports.net.as_deref().and_then(|n| n.same_origin_url("/ws"))
+    }
+
+    /// The id of the encrypted room the active tab is in (never its key), or `None`. A shell watches it to know when
+    /// to put the room's link in the address bar or take it out.
+    pub fn sealed_room_id(&self) -> Option<String> {
+        let room = self.tab().ext.get::<SealedBinding>().and_then(|b| b.0.as_ref())?;
+        Some(room.key.room_id().to_string())
+    }
+
+    /// The fragment `#room=<id>,<key>` of the active tab's encrypted room, for the address bar. It holds the room
+    /// key: the caller hands it to the page's address and nowhere else. Wiped when dropped.
+    pub fn invite_fragment(&self) -> Option<impl AsRef<str> + use<>> {
+        let room = self.tab().ext.get::<SealedBinding>().and_then(|b| b.0.as_ref()).map(crate::cmd::tab::SealedRoom::duplicate)?;
+        Some(drafftink_seal::RoomLink::new(room.key).fragment())
+    }
 }
 
 // ---- collab.delete_room ----
@@ -983,3 +1010,6 @@ mod pictures_tests;
 #[cfg(test)]
 #[path = "collab_access_tests.rs"]
 mod access_tests;
+#[cfg(test)]
+#[path = "collab_web_tests.rs"]
+mod web_tests;

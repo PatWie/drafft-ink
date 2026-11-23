@@ -708,3 +708,49 @@ fn arrow_type_still_takes_the_old_word_auto_elbow_from_a_script_and_from_a_store
     assert!(load.ignored.is_empty(), "{:?}", load.ignored);
     assert_eq!(fresh.get("arrow.type"), Some(&json!("auto_route")));
 }
+
+// ---- the platform's own default of the collaboration server ----
+
+const NATIVE_SERVER: &str = "ws://localhost:3030/ws";
+
+/// A session as the web shell starts it: the page's own server (`/ws`) is the default, before the stored settings load.
+fn web_session(fakes: &Fakes) -> Session {
+    fakes.net.set_origin("wss://canvas.example.com");
+    let mut s = Session::with_services(fakes.ports(), crate::services::Services::fake());
+    s.load_settings().unwrap();
+    s
+}
+
+#[test]
+fn the_web_default_of_the_server_is_the_page_and_native_keeps_localhost() {
+    let native = testing::headless_session();
+    assert_eq!(value(&native, "collab.server_url"), json!(NATIVE_SERVER));
+    let fakes = Fakes::new();
+    let mut web = web_session(&fakes);
+    assert_eq!(value(&web, "collab.server_url"), json!("/ws"));
+    let out = run(&mut web, "settings.get", json!({"key": "collab.server_url"}));
+    assert_eq!(out["default"], json!("/ws"), "the default that `settings.get` reports is the platform's");
+    assert_eq!(stored(&fakes), None, "a default is not a stored choice");
+    // A shell that offers nothing changes nothing, also after the settings load.
+    let (mut native, _) = testing::session();
+    native.load_settings().unwrap();
+    assert_eq!(value(&native, "collab.server_url"), json!(NATIVE_SERVER));
+}
+
+#[test]
+fn a_server_the_person_chose_wins_over_the_platform_default_and_survives_a_reload() {
+    let fakes = Fakes::new();
+    let mut web = web_session(&fakes);
+    run(&mut web, "settings.set", json!({"key": "collab.server_url", "value": "wss://relay.example.com/ws"}));
+    assert_eq!(stored(&fakes).unwrap()["values"]["collab.server_url"], json!("wss://relay.example.com/ws"));
+    // Choosing the native address on the web is a choice too: it differs from the web default.
+    run(&mut web, "settings.set", json!({"key": "collab.server_url", "value": NATIVE_SERVER}));
+    assert_eq!(stored(&fakes).unwrap()["values"]["collab.server_url"], json!(NATIVE_SERVER));
+    let reloaded = web_session(&fakes);
+    assert_eq!(value(&reloaded, "collab.server_url"), json!(NATIVE_SERVER));
+    // Reset goes back to the page's server, and the record forgets the choice.
+    let mut again = reloaded;
+    run(&mut again, "settings.reset", json!({"key": "collab.server_url"}));
+    assert_eq!(value(&again, "collab.server_url"), json!("/ws"));
+    assert_eq!(stored(&fakes), None);
+}

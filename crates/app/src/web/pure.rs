@@ -20,6 +20,20 @@ pub(crate) fn same_origin_ws_url(protocol: &str, host: &str, path: &str) -> Opti
     Some(format!("{scheme}://{host}{path}"))
 }
 
+/// The address for `history.replaceState` that shows `fragment` (`#room=<id>,<key>`) on this page: the path and the
+/// query stay as they are, and the fragment replaces the old one. `None` removes the fragment. Only the fragment ever
+/// carries the room key: it is never sent to a server, and the query (which is) is left as the page had it. `None`
+/// when `fragment` is not a room fragment, so a value from elsewhere cannot rewrite the address.
+pub(crate) fn address_with_fragment(pathname: &str, search: &str, fragment: Option<&str>) -> Option<String> {
+    let fragment = match fragment {
+        Some(f) if f.starts_with("#room=") && f.bytes().all(|b| b.is_ascii_graphic()) && !f[1..].contains('#') => f,
+        Some(_) => return None,
+        None => "",
+    };
+    let path = if pathname.is_empty() { "/" } else { pathname };
+    Some(format!("{path}{search}{fragment}"))
+}
+
 /// True when `hostname` (`location.hostname`, IPv6 in brackets) names this machine. Only then may the page
 /// talk plain `ws://` to its own server without the user's say-so.
 pub(crate) fn is_loopback_host(hostname: &str) -> bool {
@@ -145,6 +159,25 @@ mod tests {
         assert_eq!(same_origin_ws_url("file:", "", "/ws"), None);
         assert_eq!(same_origin_ws_url("https:", "a.b", "ws"), None);
         assert_eq!(same_origin_ws_url("https:", "", "/ws"), None);
+    }
+
+    #[test]
+    fn the_room_link_goes_into_the_fragment_and_never_into_the_query() {
+        let f = "#room=abc,KEY_1-x";
+        assert_eq!(address_with_fragment("/app/", "", Some(f)).as_deref(), Some("/app/#room=abc,KEY_1-x"));
+        assert_eq!(address_with_fragment("/", "?perf=1", Some(f)).as_deref(), Some("/?perf=1#room=abc,KEY_1-x"));
+        assert_eq!(address_with_fragment("/", "?perf=1", None).as_deref(), Some("/?perf=1"), "leaving removes it");
+        assert_eq!(address_with_fragment("", "", None).as_deref(), Some("/"));
+        for bad in ["room=abc,k", "#other=1", "#room=a b", "#room=a#b", "#room=\u{e9}"] {
+            assert_eq!(address_with_fragment("/", "", Some(bad)), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn the_page_asks_browsers_to_send_no_referrer() {
+        // The address carries the room key in its fragment (design collab-e2e 5.1, defence in depth).
+        let page = include_str!("../../../../web/index.html");
+        assert!(page.contains(r#"<meta name="referrer" content="no-referrer">"#));
     }
 
     #[test]

@@ -284,6 +284,10 @@ impl ToolState {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Settings {
     values: BTreeMap<String, Value>,
+    /// What each key is when nobody chose a value: the built-in default, except where the platform supplies its own
+    /// ([`Settings::override_default`]).
+    #[serde(skip)]
+    defaults: BTreeMap<String, Value>,
     /// Raised by every change.
     pub revision: u64,
 }
@@ -291,11 +295,33 @@ pub struct Settings {
 impl Default for Settings {
     /// Every key at its default (the table of keys is in `cmd/settings/keys.rs`).
     fn default() -> Self {
-        Self { values: crate::cmd::settings::keys::defaults(), revision: 0 }
+        let defaults = crate::cmd::settings::keys::defaults();
+        Self { values: defaults.clone(), defaults, revision: 0 }
     }
 }
 
 impl Settings {
+    /// A set with the same defaults as this one and every key at its default. Loading a stored record starts from it,
+    /// so a platform's own defaults survive the load.
+    pub fn fresh(&self) -> Self {
+        Self { values: self.defaults.clone(), defaults: self.defaults.clone(), revision: 0 }
+    }
+
+    /// What `key` is when nobody chose a value here: the platform's default if it supplied one, else the built-in.
+    pub fn default_of(&self, def: &crate::cmd::settings::keys::KeyDef) -> Value {
+        self.defaults.get(def.name).cloned().unwrap_or_else(|| def.default_value())
+    }
+
+    /// Makes `value` the default of `key` on this platform (already checked by the caller). A key that still holds its
+    /// old default follows; one a person chose keeps its value.
+    pub(crate) fn override_default(&mut self, key: &str, value: Value) {
+        let follows = self.values.get(key) == self.defaults.get(key);
+        self.defaults.insert(key.to_owned(), value.clone());
+        if follows {
+            self.set_raw(key, value);
+        }
+    }
+
     /// The value of a key.
     pub fn get(&self, key: &str) -> Option<&Value> {
         self.values.get(key)

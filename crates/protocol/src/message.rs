@@ -323,7 +323,18 @@ pub enum ServerMessage {
     },
 }
 
+/// What a relay that hosts only end-to-end encrypted rooms says to a plaintext (v1) `Join`: the text of an
+/// `UnsupportedVersion` error. The client knows this text and turns it into advice for the person; the servers that
+/// refuse plaintext rooms send exactly this.
+pub const ENCRYPTED_ONLY_MESSAGE: &str =
+    "This server only hosts end-to-end encrypted rooms. Use a room link that has a key.";
+
 impl ServerMessage {
+    /// The `Error` of a server that hosts only encrypted rooms, for a plaintext `Join`.
+    pub fn encrypted_rooms_only() -> Self {
+        ServerMessage::error(ErrorCode::UnsupportedVersion, ENCRYPTED_ONLY_MESSAGE)
+    }
+
     /// Builds an `Error`, cutting the message to the size limit on a character boundary.
     pub fn error(code: ErrorCode, message: impl Into<String>) -> Self {
         let mut message = message.into();

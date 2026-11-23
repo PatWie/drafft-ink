@@ -34,6 +34,8 @@ fn view(status: CollabStatus, room: Option<&str>, peers: usize) -> CollabView {
             .collect(),
         server_chosen: false,
         loading: None,
+        e2e: false,
+        invite_link: None,
     }
 }
 
@@ -149,7 +151,7 @@ fn connected_without_a_room_can_join_or_create_one() {
     h.get_by_label("Connected (no room)");
     assert!(h.query_by_label("Leave room").is_none());
     // An empty name asks for a new room.
-    h.get_by_label("Create room").click();
+    h.get_by_label("Start a private room").click();
     h.run();
     assert_eq!(calls(&h), [call("collab.join_room", json!({}))]);
     h.state_mut().clear();
@@ -279,14 +281,14 @@ fn a_refusal_greys_the_controls_with_its_text() {
     let text = f.model.refusal_text("collab.join_room").expect("refuses in a view-only document");
     assert!(!text.contains("not available in this build"), "{text}");
     let mut h = open(f, view(CollabStatus::Connected, None, 0));
-    let create = h.get_by_label("Create room");
+    let create = h.get_by_label("Start a private room");
     assert!(create.accesskit_node().is_disabled());
     create.hover();
     for _ in 0..10 {
         h.step();
     }
     h.get_by_label_contains(&text);
-    h.get_by_label("Create room").click();
+    h.get_by_label("Start a private room").click();
     h.run();
     assert!(h.state().calls().is_empty());
 }
@@ -419,7 +421,7 @@ fn the_token_field_is_masked_and_gone_once_in_a_room() {
 fn a_new_room_with_a_token_needs_no_name() {
     let mut h = open(dialog::connected(None), view(CollabStatus::Connected, None, 0));
     type_into(&mut h, "Access token", TOKEN);
-    h.get_by_label("Create room").click();
+    h.get_by_label("Start a private room").click();
     h.run();
     assert_eq!(calls(&h), [call("collab.join_room", json!({"token": TOKEN}))]);
 }
@@ -444,4 +446,78 @@ fn once_connect_has_chosen_the_server_the_dialog_offers_the_room_and_the_token()
     let report = h.state_mut().dispatch();
     assert_eq!(report.refusals().count(), 0, "{:?}", report.ran);
     assert_eq!(status(h.state_mut())["room"], json!("plans"));
+}
+
+// ---- the server of the page, and the invite link ----
+
+fn web_fixture() -> Fixture {
+    let mut f = dialog::fixture();
+    f.fakes.net.set_origin("wss://canvas.example.com");
+    assert!(f.session.load_settings().is_ok());
+    f.refresh();
+    f
+}
+
+#[test]
+fn on_the_web_the_dialog_shows_the_server_of_the_page_and_never_localhost() {
+    let h = open(web_fixture(), CollabView::default());
+    assert_eq!(dialog::field(&h, "Server URL").value().as_deref(), Some("wss://canvas.example.com/ws"));
+    h.get_by_label("This is the server of this page.");
+    assert!(h.query_by_label_contains("localhost").is_none());
+}
+
+#[test]
+fn on_native_the_dialog_shows_localhost_and_no_page_server() {
+    let h = open(dialog::fixture(), CollabView::default());
+    assert_eq!(dialog::field(&h, "Server URL").value().as_deref(), Some("ws://localhost:3030/ws"));
+    assert!(h.query_by_label("This is the server of this page.").is_none());
+}
+
+#[test]
+fn a_server_the_person_chose_is_shown_and_connected_to_instead_of_the_page() {
+    let mut f = web_fixture();
+    dialog::run(&mut f, "settings.set", json!({"key": "collab.server_url", "value": "wss://relay.example.org/ws"}));
+    let mut h = open(f, CollabView::default());
+    assert_eq!(dialog::field(&h, "Server URL").value().as_deref(), Some("wss://relay.example.org/ws"));
+    assert!(h.query_by_label("This is the server of this page.").is_none());
+    h.get_by_label("Connect").click();
+    h.run();
+    assert_eq!(calls(&h), [call("collab.connect", json!({"url": "wss://relay.example.org/ws"}))]);
+}
+
+#[test]
+fn the_page_server_connects_through_the_real_command_to_the_page() {
+    let mut h = open(web_fixture(), CollabView::default());
+    h.get_by_label("Connect").click();
+    h.run();
+    let report = h.state_mut().dispatch();
+    assert_eq!(report.refusals().count(), 0, "{:?}", report.ran);
+    assert_eq!(status(h.state_mut())["url"], json!("wss://canvas.example.com/ws"));
+}
+
+#[test]
+fn the_room_field_says_what_each_kind_of_entry_does() {
+    let mut h = open(dialog::connected(None), view(CollabStatus::Connected, None, 0));
+    h.get_by_label_contains("Empty starts a private room");
+    type_into(&mut h, "Room", "Test");
+    h.get_by_label_contains("A name makes a plain room");
+    h.get_by_label("Join room");
+    dialog::field(&h, "Room").focus();
+    h.run();
+    dialog::field(&h, "Room").type_text(",key");
+    h.run();
+    h.get_by_label_contains("Joins the private room of this invite link");
+}
+
+#[test]
+fn a_private_room_shows_its_whole_invite_link_and_a_copy_button() {
+    let link = "https://canvas.example.com/#room=abc,KEY";
+    let mut c = view(CollabStatus::Connected, Some("abc"), 1);
+    c.e2e = true;
+    c.invite_link = Some(link.to_owned());
+    let mut h = open(dialog::connected(Some("abc")), c);
+    assert_eq!(dialog::field(&h, "Invite link").value().as_deref(), Some(link));
+    h.get_by_label("Copy invite link").click();
+    h.run();
+    assert_eq!(calls(&h), [call("collab.share_link", json!({}))]);
 }

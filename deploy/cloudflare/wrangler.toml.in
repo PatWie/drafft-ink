@@ -24,7 +24,7 @@ directory = "@ASSETS_DIR@"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
 # The app still loads when the Worker quota is spent: only these paths wake the Worker.
-run_worker_first = ["/r/*", "/api/*"]
+run_worker_first = ["/r/*", "/api/*", "/ws"]
 
 [[durable_objects.bindings]]
 name = "ROOM"
@@ -71,7 +71,7 @@ routes = [{ pattern = "@DEMO_DOMAIN@", custom_domain = true }]
 directory = "@ASSETS_DIR@"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
-run_worker_first = ["/r/*", "/api/*"]
+run_worker_first = ["/r/*", "/api/*", "/ws"]
 
 [[env.demo.durable_objects.bindings]]
 name = "ROOM"
@@ -113,7 +113,7 @@ routes = [{ pattern = "@PRIVATE_DOMAIN@", custom_domain = true }]
 directory = "@ASSETS_DIR@"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
-run_worker_first = ["/r/*", "/api/*"]
+run_worker_first = ["/r/*", "/api/*", "/ws"]
 
 [[env.private.durable_objects.bindings]]
 name = "ROOM"

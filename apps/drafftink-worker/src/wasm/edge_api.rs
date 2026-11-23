@@ -81,6 +81,12 @@ pub fn daily_limit_frame(now_ms: f64) -> Result<Vec<u8>, JsError> {
     message.encode().map_err(|e| js_error(&e))
 }
 
+/// The frame that answers a plaintext `Join` on `/ws`: "This server only hosts end-to-end encrypted rooms."
+#[wasm_bindgen(js_name = encryptedOnlyFrame)]
+pub fn encrypted_only_frame() -> Result<Vec<u8>, JsError> {
+    edge::encrypted_only_frame().map_err(|e| js_error(&e))
+}
+
 /// The R2 key prefix of a room (`r/<room hex>/`), or `undefined` for a bad room id.
 #[wasm_bindgen(js_name = r2Prefix)]
 pub fn r2_prefix(room: &str) -> Option<String> {

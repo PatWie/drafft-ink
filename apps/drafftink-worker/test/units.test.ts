@@ -8,6 +8,7 @@ import { legalCloseCode } from "../src/sockets";
 describe("routes", () => {
   it("reads the paths of the relay", () => {
     expect(parseRoute("/api/status")).toEqual({ kind: "status" });
+    expect(parseRoute("/ws")).toEqual({ kind: "legacy_socket" });
     expect(parseRoute("/r/abc/ws")).toEqual({ kind: "socket", room: "abc" });
     expect(parseRoute("/r/abc/f")).toEqual({ kind: "images", room: "abc" });
     expect(parseRoute("/r/abc/f/xyz")).toEqual({ kind: "image", room: "abc", name: "xyz" });
