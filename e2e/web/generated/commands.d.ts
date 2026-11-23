@@ -701,7 +701,7 @@ export namespace ClipboardCopyStyle {
   type O_FontWeight = "light" | "regular" | "heavy";
   /** The kind tag without data. */
   type O_Kind = "rectangle" | "diamond" | "ellipse" | "line" | "arrow" | "freehand" | "text" | "math" | "image" | "frame";
-  /** A highlight colour: `<family>-<shade>`, a palette family and shade 300, 400 or 500 (`yellow-400`). The old names yellow, green, pink, blue and orange mean the 400 shade. */
+  /** A highlight colour: `<family>-<shade>`, a palette family and any palette shade (`yellow-400`), or `#rrggbb`. The old names yellow, green, pink, blue and orange mean the 400 shade. */
   type O_MarkerColor = string;
   /** How pen pressure shapes a freehand stroke. */
   type O_PressureMode = "uniform" | "simulated" | "device";
@@ -726,8 +726,8 @@ export namespace ClipboardCopyStyle {
     /** Freehand brush: normal or calligraphy. */
     freehand_style?: O_Brush | null;
     /**
-     * The marker band behind the element: a palette family in shade 300, 400 or 500 (`yellow-400`; the old names
-     * `yellow`, `green`, `pink`, `blue` and `orange` mean the 400 shade). `null` removes it. For text this
+     * The marker band behind the element: a palette family in any palette shade (`yellow-400`, `blue-100`) or `#rrggbb`
+     * (the old names `yellow`, `green`, `pink`, `blue` and `orange` mean the 400 shade). `null` removes it. For text this
      * is the whole text; a part of a text is highlighted with `text.format`.
      */
     highlight?: O_MarkerColor | null;
@@ -2645,7 +2645,7 @@ export namespace ElementConnect {
   type A_FontWeight = "light" | "regular" | "heavy";
   /** What is drawn at an end of a line or arrow. */
   type A_Head = "none" | "arrow" | "bar" | "circle" | "circle_outline" | "triangle" | "triangle_outline" | "diamond" | "diamond_outline" | "cardinality_one" | "cardinality_many" | "cardinality_one_or_many" | "cardinality_exactly_one" | "cardinality_zero_or_one" | "cardinality_zero_or_many";
-  /** A highlight colour: `<family>-<shade>`, a palette family and shade 300, 400 or 500 (`yellow-400`). The old names yellow, green, pink, blue and orange mean the 400 shade. */
+  /** A highlight colour: `<family>-<shade>`, a palette family and any palette shade (`yellow-400`), or `#rrggbb`. The old names yellow, green, pink, blue and orange mean the 400 shade. */
   type A_MarkerColor = string;
   /** How the points of a line or arrow are joined. */
   type A_PathType = "sharp" | "round" | "elbow" | "auto_route";
@@ -2674,8 +2674,8 @@ export namespace ElementConnect {
     /** Freehand brush: normal or calligraphy. */
     freehand_style?: A_Brush | null;
     /**
-     * The marker band behind the element: a palette family in shade 300, 400 or 500 (`yellow-400`; the old names
-     * `yellow`, `green`, `pink`, `blue` and `orange` mean the 400 shade). `null` removes it. For text this
+     * The marker band behind the element: a palette family in any palette shade (`yellow-400`, `blue-100`) or `#rrggbb`
+     * (the old names `yellow`, `green`, `pink`, `blue` and `orange` mean the 400 shade). `null` removes it. For text this
      * is the whole text; a part of a text is highlighted with `text.format`.
      */
     highlight?: A_MarkerColor | null;
@@ -2835,7 +2835,7 @@ export namespace ElementCreate {
   type A_Head = "none" | "arrow" | "bar" | "circle" | "circle_outline" | "triangle" | "triangle_outline" | "diamond" | "diamond_outline" | "cardinality_one" | "cardinality_many" | "cardinality_one_or_many" | "cardinality_exactly_one" | "cardinality_zero_or_one" | "cardinality_zero_or_many";
   /** The kind tag without data. */
   type A_Kind = "rectangle" | "diamond" | "ellipse" | "line" | "arrow" | "freehand" | "text" | "math" | "image" | "frame";
-  /** A highlight colour: `<family>-<shade>`, a palette family and shade 300, 400 or 500 (`yellow-400`). The old names yellow, green, pink, blue and orange mean the 400 shade. */
+  /** A highlight colour: `<family>-<shade>`, a palette family and any palette shade (`yellow-400`), or `#rrggbb`. The old names yellow, green, pink, blue and orange mean the 400 shade. */
   type A_MarkerColor = string;
   /** How the points of a line or arrow are joined. */
   type A_PathType = "sharp" | "round" | "elbow" | "auto_route";
@@ -2875,8 +2875,8 @@ export namespace ElementCreate {
     /** Freehand brush: normal or calligraphy. */
     freehand_style?: A_Brush | null;
     /**
-     * The marker band behind the element: a palette family in shade 300, 400 or 500 (`yellow-400`; the old names
-     * `yellow`, `green`, `pink`, `blue` and `orange` mean the 400 shade). `null` removes it. For text this
+     * The marker band behind the element: a palette family in any palette shade (`yellow-400`, `blue-100`) or `#rrggbb`
+     * (the old names `yellow`, `green`, `pink`, `blue` and `orange` mean the 400 shade). `null` removes it. For text this
      * is the whole text; a part of a text is highlighted with `text.format`.
      */
     highlight?: A_MarkerColor | null;
@@ -4572,7 +4572,7 @@ export namespace GroupUngroup {
 
 /** Puts a marker band behind elements, or behind ranges of characters of texts, or takes it off. Elements and ranges in one call are one undo step. */
 export namespace HighlightApply {
-  /** A highlight colour: `<family>-<shade>`, a palette family and shade 300, 400 or 500 (`yellow-400`). The old names yellow, green, pink, blue and orange mean the 400 shade. */
+  /** A highlight colour: `<family>-<shade>`, a palette family and any palette shade (`yellow-400`), or `#rrggbb`. The old names yellow, green, pink, blue and orange mean the 400 shade. */
   type A_MarkerColor = string;
   /** A range of characters of one text. */
   type A_RangeArg = {
@@ -4588,8 +4588,8 @@ export namespace HighlightApply {
   /** Arguments of `highlight.apply`. */
   export type Args = {
     /**
-     * The marker colour: `<family>-<shade>` with a palette family and shade 300, 400 or 500 (`yellow-400`); the old
-     * names `yellow`, `green`, `pink`, `blue` and `orange` mean the 400 shade. `null` (or absent) takes the highlight
+     * The marker colour: `<family>-<shade>` with a palette family and any palette shade (`yellow-400`, `blue-100`), or
+     * `#rrggbb`; the old names `yellow`, `green`, `pink`, `blue` and `orange` mean the 400 shade. `null` (or absent) takes the highlight
      * off.
      */
     color?: A_MarkerColor | null;
@@ -6665,7 +6665,7 @@ export namespace StyleListThemes {
   type O_FontFamily = "gelpen" | "noto_sans" | "gelpen_serif" | "vanilla_extract" | "plex_sans";
   /** Font weight. */
   type O_FontWeight = "light" | "regular" | "heavy";
-  /** A highlight colour: `<family>-<shade>`, a palette family and shade 300, 400 or 500 (`yellow-400`). The old names yellow, green, pink, blue and orange mean the 400 shade. */
+  /** A highlight colour: `<family>-<shade>`, a palette family and any palette shade (`yellow-400`), or `#rrggbb`. The old names yellow, green, pink, blue and orange mean the 400 shade. */
   type O_MarkerColor = string;
   /** How pen pressure shapes a freehand stroke. */
   type O_PressureMode = "uniform" | "simulated" | "device";
@@ -6690,8 +6690,8 @@ export namespace StyleListThemes {
     /** Freehand brush: normal or calligraphy. */
     freehand_style?: O_Brush | null;
     /**
-     * The marker band behind the element: a palette family in shade 300, 400 or 500 (`yellow-400`; the old names
-     * `yellow`, `green`, `pink`, `blue` and `orange` mean the 400 shade). `null` removes it. For text this
+     * The marker band behind the element: a palette family in any palette shade (`yellow-400`, `blue-100`) or `#rrggbb`
+     * (the old names `yellow`, `green`, `pink`, `blue` and `orange` mean the 400 shade). `null` removes it. For text this
      * is the whole text; a part of a text is highlighted with `text.format`.
      */
     highlight?: O_MarkerColor | null;
@@ -6765,7 +6765,7 @@ export namespace StyleSet {
   type A_FontFamily = "gelpen" | "noto_sans" | "gelpen_serif" | "vanilla_extract" | "plex_sans";
   /** Font weight. */
   type A_FontWeight = "light" | "regular" | "heavy";
-  /** A highlight colour: `<family>-<shade>`, a palette family and shade 300, 400 or 500 (`yellow-400`). The old names yellow, green, pink, blue and orange mean the 400 shade. */
+  /** A highlight colour: `<family>-<shade>`, a palette family and any palette shade (`yellow-400`), or `#rrggbb`. The old names yellow, green, pink, blue and orange mean the 400 shade. */
   type A_MarkerColor = string;
   /** How pen pressure shapes a freehand stroke. */
   type A_PressureMode = "uniform" | "simulated" | "device";
@@ -6794,8 +6794,8 @@ export namespace StyleSet {
     /** Freehand brush: normal or calligraphy. */
     freehand_style?: A_Brush | null;
     /**
-     * The marker band behind the element: a palette family in shade 300, 400 or 500 (`yellow-400`; the old names
-     * `yellow`, `green`, `pink`, `blue` and `orange` mean the 400 shade). `null` removes it. For text this
+     * The marker band behind the element: a palette family in any palette shade (`yellow-400`, `blue-100`) or `#rrggbb`
+     * (the old names `yellow`, `green`, `pink`, `blue` and `orange` mean the 400 shade). `null` removes it. For text this
      * is the whole text; a part of a text is highlighted with `text.format`.
      */
     highlight?: A_MarkerColor | null;
@@ -7250,7 +7250,7 @@ export namespace TextEditEnd {
    * the text is drawn and measured (`docs/model.md` section 4, "Inline math").
    */
   type A_InlineMath = "auto" | "off";
-  /** A highlight colour: `<family>-<shade>`, a palette family and shade 300, 400 or 500 (`yellow-400`). The old names yellow, green, pink, blue and orange mean the 400 shade. */
+  /** A highlight colour: `<family>-<shade>`, a palette family and any palette shade (`yellow-400`), or `#rrggbb`. The old names yellow, green, pink, blue and orange mean the 400 shade. */
   type A_MarkerColor = string;
   /** How pen pressure shapes a freehand stroke. */
   type A_PressureMode = "uniform" | "simulated" | "device";
@@ -7294,8 +7294,8 @@ export namespace TextEditEnd {
     /** Freehand brush: normal or calligraphy. */
     freehand_style?: A_Brush | null;
     /**
-     * The marker band behind the element: a palette family in shade 300, 400 or 500 (`yellow-400`; the old names
-     * `yellow`, `green`, `pink`, `blue` and `orange` mean the 400 shade). `null` removes it. For text this
+     * The marker band behind the element: a palette family in any palette shade (`yellow-400`, `blue-100`) or `#rrggbb`
+     * (the old names `yellow`, `green`, `pink`, `blue` and `orange` mean the 400 shade). `null` removes it. For text this
      * is the whole text; a part of a text is highlighted with `text.format`.
      */
     highlight?: A_MarkerColor | null;
@@ -7886,17 +7886,19 @@ export namespace ToolSetArrow {
   };
 }
 
-/** Sets the colour of the highlighter tool: a palette family in shade 300, 400 or 500, such as yellow-400. null is none: the tool then removes highlights. */
+/** Sets the colour of the highlighter tool: a palette colour such as yellow-400 (any shade) or a #rrggbb colour, used exactly as given. null is none: the tool then removes highlights. */
 export namespace ToolSetMarker {
+  /** A highlight colour: `<family>-<shade>`, a palette family and any palette shade (`yellow-400`), or `#rrggbb`. The old names yellow, green, pink, blue and orange mean the 400 shade. */
+  type A_MarkerColor = string;
   /** Arguments of `tool.set_marker`. */
   export type Args = {
     /**
-     * A marker (`yellow-400`; shades 300, 400, 500) or any colour (`blue-100`, `#ef4444`), mapped to the nearest
-     * marker. `null` is none: the highlighter then removes highlights.
+     * The marker colour, taken exactly as given: `<family>-<shade>` with any palette shade (`yellow-400`,
+     * `blue-100`) or `#rrggbb`. `null` is none: the highlighter then removes highlights.
      */
-    color?: string | null;
+    color?: A_MarkerColor | null;
   };
-  /** A highlight colour: `<family>-<shade>`, a palette family and shade 300, 400 or 500 (`yellow-400`). The old names yellow, green, pink, blue and orange mean the 400 shade. */
+  /** A highlight colour: `<family>-<shade>`, a palette family and any palette shade (`yellow-400`), or `#rrggbb`. The old names yellow, green, pink, blue and orange mean the 400 shade. */
   type O_MarkerColor = string;
   /** Result of `tool.set_marker`. */
   export type Output = {

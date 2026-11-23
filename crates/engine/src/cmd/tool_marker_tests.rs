@@ -31,22 +31,34 @@ fn it_is_tool_state_and_makes_no_undo_step_and_an_unknown_colour_is_refused() {
 }
 
 #[test]
-fn any_palette_or_custom_colour_becomes_the_nearest_marker_and_the_answer_says_which() {
+fn the_picked_colour_is_stored_exactly_and_the_answer_says_it() {
     let mut s = testing::headless_session();
     for (given, want) in [
-        ("blue-50", "blue-300"),
+        ("blue-25", "blue-25"),
+        ("blue-50", "blue-50"),
         ("blue-300", "blue-300"),
         ("rose-400", "rose-400"),
-        ("emerald-900", "emerald-500"),
-        ("#ef4444", "red-500"),
+        ("emerald-900", "emerald-900"),
+        ("slate-950", "slate-950"),
+        ("#ef4444", "#ef4444"),
+        ("#EF4444", "#ef4444"),
+        ("#fa0", "#ffaa00"),
+        ("#12abef80", "#12abef"),
+        ("#ffffff", "#ffffff"),
+        ("#000000", "#000000"),
     ] {
         let out = s.execute_from(Origin::Test, "tool.set_marker", json!({ "color": given })).unwrap();
         assert_eq!(out["color"], json!(want), "{given}");
         assert_eq!(s.tool.marker, MarkerColor::from_name(want), "{given}");
     }
-    let r = s.execute_from(Origin::Test, "tool.set_marker", json!({ "color": "#12" })).unwrap_err();
-    assert_eq!(r.code, "bad_args", "{}", r.message);
-    assert_eq!(s.tool.marker, MarkerColor::from_name("red-500"), "a refused pick changes nothing");
+    // A custom colour that equals a palette ink is not turned into the palette marker.
+    s.execute_from(Origin::Test, "tool.set_marker", json!({ "color": "#ef4444" })).unwrap();
+    assert!(matches!(s.tool.marker, Some(MarkerColor::Custom(_))));
+    for bad in ["#12", "#gg0000", "red-5", "blue-1000", "banana", ""] {
+        let r = s.execute_from(Origin::Test, "tool.set_marker", json!({ "color": bad })).unwrap_err();
+        assert_eq!(r.code, "bad_args", "{bad}: {}", r.message);
+    }
+    assert_eq!(s.tool.marker, MarkerColor::from_name("#ef4444"), "a refused pick changes nothing");
 }
 
 #[test]

@@ -252,25 +252,34 @@ fn the_old_names_work_in_every_command_that_takes_a_marker_and_come_back_as_the_
 }
 
 #[test]
-fn a_palette_marker_is_a_family_and_a_marker_shade_and_other_shades_are_refused_with_the_choices() {
+fn every_palette_shade_and_a_custom_colour_is_taken_exactly_and_a_malformed_one_is_refused_with_the_choices() {
     let mut f = fixture();
-    for name in ["slate-300", "emerald-400", "rose-500", "Amber-400"] {
+    for name in ["slate-300", "emerald-25", "rose-950", "Amber-400", "blue-100", "yellow-600", "#facc15", "#FACC15"] {
         run(&mut f.s, "highlight.apply", json!({"color": name}));
         let got = run(&mut f.s, "style.get", json!({"props": ["highlight"]}));
-        assert_eq!(got["props"]["highlight"]["value"], name.to_lowercase(), "{name}");
+        assert_eq!(got["props"]["highlight"]["value"], name.to_lowercase(), "{name}: stored as picked, not clamped");
     }
-    for bad in ["blue-100", "blue-600", "#facc15", "mauve-400", "blue"] {
+    run(&mut f.s, "style.set", json!({"props": {"highlight": "#12abef"}, "scope": "selection"}));
+    let got = run(&mut f.s, "style.get", json!({"props": ["highlight"]}));
+    assert_eq!(got["props"]["highlight"]["value"], "#12abef", "style.set takes the same set");
+    for bad in ["blue-150", "blue-1000", "#12", "#gg0000", "mauve-400", "banana", "none"] {
         let before = f.s.fingerprint();
-        let r = match f.s.execute_from(Origin::Test, "highlight.apply", json!({"color": bad})) {
-            Ok(v) if bad == "blue" => {
-                assert_eq!(v["changed"], true, "`blue` is the old name of blue-400");
-                continue;
-            }
-            Ok(v) => panic!("{bad} should be refused, got {v}"),
-            Err(r) => r,
-        };
+        let r = f.s.execute_from(Origin::Test, "highlight.apply", json!({"color": bad})).unwrap_err();
         assert_eq!(r.code, "bad_args", "{bad}");
-        assert!(r.message.contains("shade 300, 400 or 500"), "{}", r.message);
+        assert!(r.message.contains("950") && r.message.contains("#rrggbb"), "{}", r.message);
         assert_eq!(f.s.fingerprint(), before, "{bad}");
+        assert_eq!(refuse_clean(&mut f.s, "style.set", json!({"props": {"highlight": bad}})).code, "bad_args", "{bad}");
     }
+    let out = run(&mut f.s, "highlight.apply", json!({"color": "blue"}));
+    assert_eq!(out["changed"], true, "`blue` is the old name of blue-400");
+}
+
+#[test]
+fn a_custom_colour_and_a_pale_shade_mark_ranges_of_a_text() {
+    let mut f = fixture();
+    run(&mut f.s, "highlight.apply", json!({"color": "#12abef", "ranges": [{"id": f.text.as_str(), "start": 0, "end": 2}]}));
+    let custom = MarkerColor::from_name("#12abef").unwrap();
+    assert_eq!(runs(&f.s, &f.text)[0].highlight, SpanHighlight::On(custom));
+    run(&mut f.s, "highlight.apply", json!({"color": "blue-25", "ranges": [{"id": f.text.as_str(), "start": 3, "end": 4}]}));
+    assert!(runs(&f.s, &f.text).iter().any(|r| r.highlight == SpanHighlight::On(MarkerColor::from_name("blue-25").unwrap())));
 }

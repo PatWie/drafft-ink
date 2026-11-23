@@ -1,11 +1,12 @@
 //! Highlight: the text-marker band behind an element.
 //!
-//! A highlight is a palette token ([`MarkerColor`]: a family and a marker shade, `yellow-400`), not a raw colour,
-//! because the same marker has to read well on a white canvas and on the dark one. The stored colours of strokes and
-//! fills are theme independent and the dark canvas derives its look from them with a filter
-//! (`Color::for_dark_theme`); a marker has its own pair of values instead, because that filter turns a pale yellow
-//! into a muddy olive. [`MarkerColor::rgb`] gives the value for a [`Tone`]; every band is drawn at [`MARKER_ALPHA`]
-//! as one layer, so overlaps do not get darker.
+//! A highlight is a palette token or a custom colour ([`MarkerColor`]: a family and a palette shade, `yellow-400`, or
+//! `#rrggbb`). A palette token is not a raw colour, because the same marker has to read well on a white canvas and
+//! on the dark one. The stored colours of strokes and fills are theme independent and the dark canvas derives its
+//! look from them with a filter (`Color::for_dark_theme`); a palette marker has its own pair of values instead,
+//! because that filter turns a pale yellow into a muddy olive. A custom colour is exactly what the person picked, on
+//! both canvases. [`MarkerColor::rgb`] gives the value for a [`Tone`]; every band is drawn at [`MARKER_ALPHA`] as one
+//! layer, so overlaps do not get darker.
 
 use std::fmt;
 
@@ -55,169 +56,216 @@ pub enum Tone {
     Dark,
 }
 
-/// The shades of a marker, as palette shades. Three of the twelve: the lightest wash, the standard marker, and a
-/// strong one. Lighter shades (200 and below) make a band that hardly shows on a white page (yellow-200 at the
-/// marker's opacity is 1.08 to 1 against white); darker ones (600 and above) cost the text on them its contrast.
-/// `tests/highlight.rs` holds the numbers for every family.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum MarkerShade {
-    /// Palette shade 300: a pale wash.
-    Soft,
-    /// Palette shade 400: the marker. The default, and what the old yellow, green, pink, blue and orange map to.
-    Standard,
-    /// Palette shade 500: a strong marker.
-    Strong,
-}
-
-impl MarkerShade {
-    /// Every marker shade, from the lightest.
-    pub const ALL: [MarkerShade; 3] = [MarkerShade::Soft, MarkerShade::Standard, MarkerShade::Strong];
-
-    /// The palette shade (`"yellow-400"` has 400).
-    pub const fn number(self) -> u16 {
-        match self {
-            MarkerShade::Soft => 300,
-            MarkerShade::Standard => 400,
-            MarkerShade::Strong => 500,
-        }
-    }
-
-    /// The marker shade with this palette shade, `None` for the other nine.
-    pub fn of_number(n: u16) -> Option<MarkerShade> {
-        MarkerShade::ALL.into_iter().find(|s| s.number() == n)
-    }
-
-    /// The palette shade this marker shade has on the dark canvas: the mirror (`1000 - shade`: 300 is 700, 400 is 600,
-    /// 500 stays), because a wash that is pale on white is deep on a dark page. A family that is nearly grey (slate,
-    /// gray, zinc, neutral, stone) takes the next lighter shade (600, 500, 400): at 700 its band is only 1.3 to 1
-    /// against the page, where the coloured families have 1.4 or more.
-    fn dark_number(self, grey: bool) -> u16 {
-        let mirrored = 1000 - self.number();
-        if grey { mirrored - 100 } else { mirrored }
-    }
-}
-
-/// A marker colour: a palette family and a marker shade, written like a palette colour (`"yellow-400"`).
+/// A palette shade of a marker: one of the twelve of [`palette::SHADES`] (25, 50, 100 … 900, 950).
 ///
-/// It is a token, not a `#rrggbb`: the same marker has a value on the light canvas and another on the dark one
-/// ([`MarkerColor::rgb`]), because the dark filter that maps stored colours would turn a pale yellow into olive.
-/// Every band is drawn at [`MARKER_ALPHA`] as one layer, so overlaps do not get darker.
-///
-/// The five names of the first builds (`yellow`, `green`, `pink`, `blue`, `orange`) still read, each as the same family
-/// at the standard shade ([`MarkerColor::from_name`]); they are written as `yellow-400` and so on.
+/// A palette marker has two values, one for each canvas. The dark one is the same family at the mirror shade
+/// ([`Shade::dark`]), so a wash that is pale on white is deep on a dark page.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct MarkerColor {
-    /// Index into [`palette::FAMILIES`].
-    family: u8,
-    shade: MarkerShade,
+pub struct Shade(u8);
+
+impl Shade {
+    /// Every shade, from the lightest (25) to the deepest (950).
+    pub const ALL: [Shade; 12] = [
+        Shade(0),
+        Shade(1),
+        Shade(2),
+        Shade(3),
+        Shade(4),
+        Shade(5),
+        Shade(6),
+        Shade(7),
+        Shade(8),
+        Shade(9),
+        Shade(10),
+        Shade(11),
+    ];
+
+    /// The shade of the default marker and of the old names: 400.
+    pub const DEFAULT: Shade = Shade(5);
+
+    /// The shades the pickers offer first: 300 (a pale wash), 400 (the marker) and 500 (a strong one). Lighter
+    /// shades make a band that hardly shows on a white page (yellow-200 at the marker's opacity is 1.08 to 1 against
+    /// white) and darker ones cost the text on them its contrast, but both are allowed.
+    pub const MARKER: [Shade; 3] = [Shade(4), Shade(5), Shade(6)];
+
+    /// The label (`400` for yellow-400).
+    pub fn number(self) -> u16 {
+        palette::SHADES.get(usize::from(self.0)).copied().unwrap_or(400)
+    }
+
+    /// The shade labelled `n`, `None` for a number that is no palette shade.
+    pub fn from_number(n: u16) -> Option<Shade> {
+        let index = palette::SHADES.iter().position(|s| *s == n)?;
+        u8::try_from(index).ok().map(Shade)
+    }
+
+    /// The position in [`palette::SHADES`] and in a family's `shades`.
+    pub fn index(self) -> usize {
+        usize::from(self.0)
+    }
+
+    /// The shade a palette marker has on the dark canvas: the mirror, `1000 - shade`, rounded to the nearest shade
+    /// the palette has.
+    ///
+    /// | light | 25 | 50 | 100 | 200 | 300 | 400 | 500 | 600 | 700 | 800 | 900 | 950 |
+    /// |---|---|---|---|---|---|---|---|---|---|---|---|---|
+    /// | dark | 950 | 950 | 900 | 800 | 700 | 600 | 500 | 400 | 300 | 200 | 100 | 50 |
+    ///
+    /// 1000 − 25 is 975, which the palette lacks, so 25 takes 950 as well and 950 takes 50: that is the one place
+    /// the mapping is not its own inverse. 300 to 500 keep the values they had when they were the only marker shades.
+    pub fn dark(self) -> Shade {
+        let wanted = 1000 - self.number();
+        Shade::ALL.into_iter().min_by_key(|s| s.number().abs_diff(wanted)).unwrap_or(self)
+    }
+
+    /// The next lighter shade (25 stays 25).
+    fn lighter(self) -> Shade {
+        Shade(self.0.saturating_sub(1))
+    }
 }
 
-/// The families the old five names were, and what they were called: bare names map to the standard shade.
+impl fmt::Display for Shade {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.number())
+    }
+}
+
+/// A marker colour: a palette colour or a custom one.
+///
+/// * [`MarkerColor::Palette`] is a family and any of the twelve palette shades, written like a palette colour
+///   (`"yellow-400"`). It is a token, not a `#rrggbb`: the same marker has a value on the light canvas and another
+///   on the dark one ([`MarkerColor::rgb`]), because the dark filter that maps stored colours would turn a pale
+///   yellow into olive. The dark value is the same family at the mirror shade, see [`Shade::dark`].
+/// * [`MarkerColor::Custom`] is a colour of the person's choice, written `#rrggbb`. It is the same on both canvases.
+///   Build it with [`MarkerColor::custom`], which drops the alpha.
+///
+/// Every band is drawn at [`MARKER_ALPHA`] as one layer, so overlaps do not get darker. The five names of the first
+/// builds (`yellow`, `green`, `pink`, `blue`, `orange`) still read, each as the same family at shade 400
+/// ([`MarkerColor::from_name`]); they are written as `yellow-400` and so on.
+///
+/// No colour is refused for its contrast: readability is the person's choice. The shades 300, 400 and 500 are the
+/// ones the pickers offer first ([`Shade::MARKER`]), and `tests/highlight.rs` holds their contrast numbers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MarkerColor {
+    /// A palette family in a palette shade; the dark canvas shows the mirror shade.
+    Palette {
+        /// Index into [`palette::FAMILIES`].
+        family: u8,
+        /// The shade.
+        shade: Shade,
+    },
+    /// An opaque colour, the same on both canvases.
+    Custom(Color),
+}
+
+/// The families the old five names were, and what they were called: bare names map to shade 400.
 const LEGACY: [&str; 5] = ["yellow", "green", "pink", "blue", "orange"];
 
 impl MarkerColor {
-    /// The default marker: yellow at the standard shade.
-    pub const YELLOW: MarkerColor = MarkerColor { family: 3, shade: MarkerShade::Standard };
+    /// The default marker: yellow-400.
+    pub const YELLOW: MarkerColor = MarkerColor::Palette { family: 3, shade: Shade::DEFAULT };
 
     /// The marker of a palette family (`"amber"`, ignoring case) in a shade.
-    pub fn new(family: &str, shade: MarkerShade) -> Option<MarkerColor> {
+    pub fn new(family: &str, shade: Shade) -> Option<MarkerColor> {
         let family = palette::FAMILIES.iter().position(|f| f.name.eq_ignore_ascii_case(family.trim()))?;
-        Some(MarkerColor { family: u8::try_from(family).ok()?, shade })
+        Some(MarkerColor::Palette { family: u8::try_from(family).ok()?, shade })
     }
 
-    /// Every marker: each family of the palette in each marker shade, families in palette order.
-    pub fn all() -> impl Iterator<Item = MarkerColor> {
+    /// The custom marker of `color`: its red, green and blue, with the alpha dropped (the band's opacity is
+    /// [`MARKER_ALPHA`], whatever the colour says).
+    pub fn custom(color: Color) -> MarkerColor {
+        MarkerColor::Custom(Color::rgb(color.r, color.g, color.b))
+    }
+
+    /// Every palette marker: each family in each of the twelve shades, families in palette order.
+    pub fn palette() -> impl Iterator<Item = MarkerColor> {
         (0..palette::FAMILIES.len())
             .filter_map(|f| u8::try_from(f).ok())
-            .flat_map(|family| MarkerShade::ALL.into_iter().map(move |shade| MarkerColor { family, shade }))
+            .flat_map(|family| Shade::ALL.into_iter().map(move |shade| MarkerColor::Palette { family, shade }))
     }
 
-    /// The palette family.
-    pub fn family(self) -> &'static palette::Family {
-        // The index comes from `new`, `all` or `YELLOW`, which keep it inside the table (`marker_names` tests it).
-        &palette::FAMILIES[usize::from(self.family)]
+    /// The palette family, `None` for a custom colour.
+    pub fn family(self) -> Option<&'static palette::Family> {
+        match self {
+            // The index comes from `new` or `palette()`, which keep it inside the table (`marker_names` tests it).
+            MarkerColor::Palette { family, .. } => palette::FAMILIES.get(usize::from(family)),
+            MarkerColor::Custom(_) => None,
+        }
     }
 
-    /// The name of the family (`"yellow"`).
-    pub fn family_name(self) -> &'static str {
-        self.family().name
+    /// The name of the palette family (`"yellow"`), `None` for a custom colour.
+    pub fn family_name(self) -> Option<&'static str> {
+        self.family().map(|f| f.name)
     }
 
-    /// The marker shade.
-    pub fn shade(self) -> MarkerShade {
-        self.shade
+    /// The palette shade, `None` for a custom colour.
+    pub fn shade(self) -> Option<Shade> {
+        match self {
+            MarkerColor::Palette { shade, .. } => Some(shade),
+            MarkerColor::Custom(_) => None,
+        }
     }
 
-    /// The name used in files and commands: `<family>-<shade>`, for example `yellow-400`.
+    /// The name used in files and commands: `<family>-<shade>` (`yellow-400`) for a palette colour, `#rrggbb` for a
+    /// custom one.
     pub fn name(self) -> String {
-        format!("{}-{}", self.family_name(), self.shade.number())
+        self.to_string()
     }
 
-    /// The marker called `name`: `<family>-<shade>` with a family of the palette and a marker shade, ignoring case, or
-    /// one of the five old names (`yellow`, `green`, `pink`, `blue`, `orange`), which mean the standard shade of that
-    /// family.
+    /// The marker called `name`, ignoring case and surrounding space:
+    ///
+    /// * `<family>-<shade>` with a family of the palette and one of the twelve shades;
+    /// * `#rgb`, `#rrggbb` or `#rrggbbaa`, a custom colour (the alpha is dropped);
+    /// * one of the five old names (`yellow`, `green`, `pink`, `blue`, `orange`): that family at shade 400.
+    ///
+    /// `None` for anything else.
     pub fn from_name(name: &str) -> Option<MarkerColor> {
         let name = name.trim();
+        if name.starts_with('#') {
+            return Color::parse(name).ok().map(MarkerColor::custom);
+        }
         if let Some((family, shade)) = name.rsplit_once('-') {
-            return MarkerColor::new(family, MarkerShade::of_number(shade.parse().ok()?)?);
+            return MarkerColor::new(family, Shade::from_number(shade.parse().ok()?)?);
         }
-        LEGACY.iter().find(|l| l.eq_ignore_ascii_case(name)).and_then(|l| MarkerColor::new(l, MarkerShade::Standard))
-    }
-
-    /// The marker that a colour stands for, for a tool that takes any colour the stroke picker offers.
-    ///
-    /// * A marker name (`yellow-400`, or one of the five old names) is that marker.
-    /// * Another palette colour `<family>-<shade>` is the marker of that family at the nearest marker shade: the
-    ///   shades below 300 (25 to 200) become 300, the shades above 500 (600 to 950) become 500.
-    /// * Any other colour (`#rrggbb`, `#rgb`, an alpha is ignored) is the marker, of every family in every marker
-    ///   shade, whose ink on the light canvas is nearest in RGB.
-    ///
-    /// `None` when the text is no colour at all.
-    pub fn nearest(text: &str) -> Option<MarkerColor> {
-        let text = text.trim();
-        if let Some(marker) = MarkerColor::from_name(text) {
-            return Some(marker);
-        }
-        if let Some((family, shade)) = text.rsplit_once('-')
-            && let Ok(number) = shade.parse::<u16>()
-            && palette::SHADES.contains(&number)
-        {
-            let marker_shade = MarkerShade::ALL.into_iter().find(|s| s.number() == number.clamp(300, 500))?;
-            return MarkerColor::new(family, marker_shade);
-        }
-        let wanted = Color::parse(text).ok()?;
-        let distance = |m: &MarkerColor| {
-            let c = m.rgb(Tone::Light);
-            let d = |a: u8, b: u8| u32::from(a.abs_diff(b)).pow(2);
-            d(c.r, wanted.r) + d(c.g, wanted.g) + d(c.b, wanted.b)
-        };
-        MarkerColor::all().min_by_key(distance)
+        LEGACY.iter().find(|l| l.eq_ignore_ascii_case(name)).and_then(|l| MarkerColor::new(l, Shade::DEFAULT))
     }
 
     /// True for a family that is nearly grey (slate, gray, zinc, neutral, stone).
     fn is_grey(self) -> bool {
-        matches!(self.family_name(), "slate" | "gray" | "zinc" | "neutral" | "stone")
+        matches!(self.family_name(), Some("slate" | "gray" | "zinc" | "neutral" | "stone"))
     }
 
     /// The opaque ink of the marker on a canvas of `tone`. The band is drawn with it at [`MARKER_ALPHA`].
     ///
-    /// On the light canvas it is the palette colour of the marker's shade. On the dark canvas it is the same family at
-    /// the mirrored shade (see [`MarkerShade`]); the dark palette shades are deep, so the band shows against the page
-    /// and the light text on it stays readable. `tests/highlight.rs` holds both contrasts for every marker.
+    /// A palette marker is the palette colour of its shade on the light canvas and of [`Shade::dark`] on the dark
+    /// one. A family that is nearly grey (slate, gray, zinc, neutral, stone) takes the next lighter shade on the dark
+    /// canvas: at the mirror of 300, 700, its band is only 1.3 to 1 against the page, where the coloured families
+    /// have 1.4 or more. A custom marker is the same on both canvases.
     pub fn rgb(self, tone: Tone) -> Color {
-        let number = match tone {
-            Tone::Light => self.shade.number(),
-            Tone::Dark => self.shade.dark_number(self.is_grey()),
-        };
-        let column = palette::SHADES.iter().position(|s| *s == number);
-        let (r, g, b) = column.and_then(|c| self.family().shades.get(c)).copied().unwrap_or((128, 128, 128));
-        Color::rgb(r, g, b)
+        match self {
+            MarkerColor::Custom(c) => Color::rgb(c.r, c.g, c.b),
+            MarkerColor::Palette { shade, .. } => {
+                let shade = match tone {
+                    Tone::Light => shade,
+                    Tone::Dark if self.is_grey() => shade.dark().lighter(),
+                    Tone::Dark => shade.dark(),
+                };
+                let (r, g, b) =
+                    self.family().and_then(|f| f.shades.get(shade.index())).copied().unwrap_or((128, 128, 128));
+                Color::rgb(r, g, b)
+            }
+        }
     }
 }
 
 impl fmt::Display for MarkerColor {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}-{}", self.family_name(), self.shade.number())
+        match self {
+            MarkerColor::Palette { shade, .. } => {
+                write!(f, "{}-{}", self.family_name().unwrap_or_default(), shade.number())
+            }
+            MarkerColor::Custom(c) => f.write_str(&c.to_hex()),
+        }
     }
 }
 
@@ -238,8 +286,8 @@ impl<'de> Deserialize<'de> for MarkerColor {
 fn not_a_marker(text: &str) -> String {
     let shown: String = text.chars().take(40).collect();
     format!(
-        "{shown:?} is not a highlight colour. Use `<family>-<shade>` with shade 300, 400 or 500, for example `yellow-400`, \
-         and a palette family: {}",
+        "{shown:?} is not a highlight colour. Use `<family>-<shade>` with a shade of 25, 50, 100, 200, 300, 400, 500, \
+         600, 700, 800, 900 or 950 (for example `yellow-400`), or a `#rrggbb` colour. The families are: {}",
         palette::family_names().join(", ")
     )
 }
@@ -250,11 +298,14 @@ impl JsonSchema for MarkerColor {
     }
     fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
         let families = palette::family_names().join("|");
-        let pattern = format!("^(({families})-(300|400|500)|yellow|green|pink|blue|orange)$");
+        let shades = palette::SHADES.map(|s| s.to_string()).join("|");
+        let pattern = format!(
+            "^(({families})-({shades})|yellow|green|pink|blue|orange|#[0-9a-fA-F]{{3}}|#[0-9a-fA-F]{{6}}|#[0-9a-fA-F]{{8}})$"
+        );
         schemars::json_schema!({
             "type": "string",
             "pattern": pattern,
-            "description": "A highlight colour: `<family>-<shade>`, a palette family and shade 300, 400 or 500 (`yellow-400`). The old names yellow, green, pink, blue and orange mean the 400 shade."
+            "description": "A highlight colour: `<family>-<shade>`, a palette family and any palette shade (`yellow-400`), or `#rrggbb`. The old names yellow, green, pink, blue and orange mean the 400 shade."
         })
     }
 }

@@ -226,7 +226,7 @@ fn marker_row(ui: &mut egui::Ui, cx: &mut Cx<'_>, st: &UiState) {
     for marker in colors::quick_markers() {
         let ctl = Ctl::new("tool.set_marker")
             .args(json!({ "color": marker.name() }))
-            .label(format!("Highlight {}", marker.family_name()))
+            .label(format!("Highlight {}", marker.family_name().unwrap_or("colour")))
             .selected(now == Some(marker));
         cx.swatch(ui, &ctl, Some(colors::marker_offer(marker, dark).shown), swatch);
     }

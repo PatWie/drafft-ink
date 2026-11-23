@@ -98,8 +98,9 @@ impl UiState {
                 ("image.paint_brush", json!({ "color": hex }))
             }
             ColorTarget::Marker => {
-                // The engine maps any colour to the nearest marker; the stored colour is what the canvas shows, undone.
-                let stored = colors::stored(seen, self.dark).to_hex();
+                // The marker is exactly the colour under the pointer, a custom colour that is the same on both canvases
+                // (it is not mapped for the dark theme).
+                let stored = seen.to_hex();
                 self.last_picked.remember(target, stored.clone());
                 ("tool.set_marker", json!({ "color": stored }))
             }
@@ -173,6 +174,19 @@ mod tests {
             let call = st.finish_eyedropper(ColorTarget::Brush, [0x3b, 0x82, 0xf6]).unwrap();
             assert_eq!((call.id.as_str(), call.args), ("image.paint_brush", json!({ "color": "#3b82f6" })), "{dark}");
             assert_eq!(st.last_picked.of(ColorTarget::Brush), Some("#3b82f6"));
+            assert_eq!(st.last_picked.of(ColorTarget::Stroke), None, "the stroke is not touched");
+        }
+    }
+
+    #[test]
+    fn a_marker_pick_is_exactly_the_pixel_in_both_themes() {
+        for dark in [false, true] {
+            let mut st = UiState::new();
+            st.dark = dark;
+            st.toggle_eyedropper(ColorTarget::Marker);
+            let call = st.finish_eyedropper(ColorTarget::Marker, [0x3b, 0x82, 0xf6]).unwrap();
+            assert_eq!((call.id.as_str(), call.args), ("tool.set_marker", json!({ "color": "#3b82f6" })), "{dark}");
+            assert_eq!(st.last_picked.of(ColorTarget::Marker), Some("#3b82f6"));
             assert_eq!(st.last_picked.of(ColorTarget::Stroke), None, "the stroke is not touched");
         }
     }
