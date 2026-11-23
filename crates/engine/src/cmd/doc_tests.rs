@@ -2099,3 +2099,21 @@ mod room {
         assert_eq!(out["images_missing"], 1, "{out}");
     }
 }
+
+#[test]
+fn holds_document_tells_documents_from_pictures_and_libraries_by_content() {
+    use super::holds_document;
+    let (mut s, _fakes) = testing::session();
+    testing::add(&mut s, ElementKind::Rectangle, 0.0, 0.0, 10.0, 10.0).unwrap();
+    let export = |s: &mut Session, args: Value| {
+        let out = s.execute("doc.export", args).expect("an export");
+        base64::engine::general_purpose::STANDARD.decode(out["bytes"]["base64"].as_str().expect("inline bytes")).expect("base64")
+    };
+    assert!(holds_document(&export(&mut s, json!({"format": "json", "scope": "all"}))), "a drafft.ink file");
+    assert!(holds_document(include_bytes!("../../../../tests/fixtures/excalidraw/basic_shapes.excalidraw")), "an Excalidraw file");
+    assert!(holds_document(include_bytes!("../../../../tests/fixtures/excalidraw/smiley_embedded_v2.png")), "a PNG with a scene");
+    let plain = base64::engine::general_purpose::STANDARD.decode(PNG_1X1).unwrap();
+    assert!(!holds_document(&plain), "a PNG without a scene is a picture");
+    assert!(!holds_document(include_bytes!("../../../../tests/fixtures/excalidraw/fixture_library.excalidrawlib")), "a library");
+    assert!(!holds_document(b"not a file"));
+}

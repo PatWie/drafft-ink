@@ -28,6 +28,7 @@ pub mod naming;
 pub mod palette;
 pub mod preferences;
 pub mod ribbon;
+pub mod room_choice;
 pub mod shortcuts;
 pub mod strip;
 pub mod tabs;
@@ -57,6 +58,7 @@ pub fn show_all(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
     debug::show(ctx, cx, st);
     dialogs::show(ctx, cx, st);
     collab::show(ctx, cx, st);
+    room_choice::show(ctx, cx, st);
     equation::show(ctx, cx, st);
     link::show(ctx, cx, st);
     naming::show(ctx, cx, st);

@@ -1,5 +1,6 @@
 //! The collaboration dialog and the presence panel.
 
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod common;
 mod dialog;
 
@@ -520,4 +521,249 @@ fn a_private_room_shows_its_whole_invite_link_and_a_copy_button() {
     h.get_by_label("Copy invite link").click();
     h.run();
     assert_eq!(calls(&h), [call("collab.share_link", json!({}))]);
+}
+
+// ---- sharing the canvas of a tab that has content ----
+
+const SHARE_BUTTON: &str = "Share this canvas";
+const EMPTY_ROOM_BUTTON: &str = "Start a new empty room in a new tab";
+
+/// A rectangle on the active tab, so that the tab has content.
+fn with_content(mut f: Fixture) -> Fixture {
+    dialog::run(&mut f, "element.create", json!({"kind": "rectangle", "bounds": {"x": 0, "y": 0, "w": 50, "h": 40}}));
+    f
+}
+
+/// The invite link of a private room that another session made (the id is derived from the key).
+fn room_link() -> String {
+    let mut other = dialog::connected(None);
+    dialog::run(&mut other, "collab.join_room", json!({}));
+    let shared = dialog::run(&mut other, "collab.share_link", json!({"copy": false, "reveal": true}));
+    shared["link"].as_str().expect("the link").to_owned()
+}
+
+fn tab_count(h: &mut Harness<'static, Fixture>) -> usize {
+    dialog::run(h.state_mut(), "tab.list", json!({}))["tabs"].as_array().map_or(0, Vec::len)
+}
+
+#[test]
+fn a_tab_with_content_offers_to_share_it_and_to_start_empty_in_a_new_tab() {
+    let h = open(with_content(dialog::connected(None)), view(CollabStatus::Connected, None, 0));
+    h.get_by_label(SHARE_BUTTON);
+    h.get_by_label(EMPTY_ROOM_BUTTON);
+    h.get_by_label_contains("The undo history of this tab is cleared");
+    assert!(h.query_by_label("Start a private room").is_none(), "the plain start is replaced");
+}
+
+#[test]
+fn an_empty_tab_keeps_the_plain_start_button() {
+    let h = open(dialog::connected(None), view(CollabStatus::Connected, None, 0));
+    h.get_by_label("Start a private room");
+    assert!(h.query_by_label(SHARE_BUTTON).is_none());
+    assert!(h.query_by_label(EMPTY_ROOM_BUTTON).is_none());
+}
+
+#[test]
+fn share_this_canvas_joins_a_new_room_with_the_content_merged_and_no_room_given() {
+    let mut h = open(with_content(dialog::connected(None)), view(CollabStatus::Connected, None, 0));
+    h.get_by_label(SHARE_BUTTON).click();
+    h.run();
+    assert_eq!(calls(&h), [call("collab.join_room", json!({"on_local": "merge"}))]);
+    let report = h.state_mut().dispatch();
+    assert_eq!(report.refusals().count(), 0, "{:?}", report.ran);
+    let status = status(h.state_mut());
+    assert_eq!((status["e2e"].clone(), status["room"].is_string()), (json!(true), true), "{status}");
+    assert_eq!(dialog::element_count(h.state_mut()), 1, "the canvas is still there");
+}
+
+#[test]
+fn share_this_canvas_sends_the_token_the_person_typed() {
+    let mut h = open(with_content(dialog::connected(None)), view(CollabStatus::Connected, None, 0));
+    type_into(&mut h, "Access token", TOKEN);
+    h.get_by_label(SHARE_BUTTON).click();
+    h.run();
+    assert_eq!(calls(&h), [call("collab.join_room", json!({"token": TOKEN, "on_local": "merge"}))]);
+}
+
+#[test]
+fn a_new_empty_room_opens_a_new_tab_first_and_leaves_the_canvas_alone() {
+    let mut h = open(with_content(dialog::connected(None)), view(CollabStatus::Connected, None, 0));
+    h.get_by_label(EMPTY_ROOM_BUTTON).click();
+    h.run();
+    assert_eq!(calls(&h), [call("tab.new", json!({})), call("collab.join_room", json!({}))]);
+    let report = h.state_mut().dispatch();
+    assert_eq!(report.refusals().count(), 0, "{:?}", report.ran);
+    assert_eq!(tab_count(&mut h), 2);
+    assert_eq!(dialog::element_count(h.state_mut()), 0, "the room starts empty in the new tab");
+    assert_eq!(status(h.state_mut())["e2e"], json!(true));
+}
+
+#[test]
+fn a_room_link_on_a_tab_with_content_asks_before_anything_is_merged() {
+    let mut h = open(with_content(dialog::connected(None)), view(CollabStatus::Connected, None, 0));
+    let link = room_link();
+    type_into(&mut h, "Room", &link);
+    h.get_by_label("Join room").click();
+    h.run();
+    let report = h.state_mut().dispatch();
+    assert!(h.state().state.room_choice.is_some(), "{:?}", report.ran);
+    assert_eq!(report.refusals().count(), 1, "the engine refused the silent merge");
+    assert!(h.state().state.toasts.is_empty(), "the question is the answer, not a toast");
+    assert_eq!(status(h.state_mut())["room"], Value::Null, "nothing joined yet");
+    h.run();
+    h.get_by_label("Add this canvas to the room, or open the room in a new tab?");
+    h.get_by_label("Add this canvas to the room");
+    h.get_by_label("Open in a new tab");
+    assert!(
+        !h.state().state.room_choice.as_ref().is_some_and(|c| c.kind.adds_by_default()),
+        "a new tab is the default"
+    );
+}
+
+#[test]
+fn the_answer_open_in_a_new_tab_joins_from_an_empty_tab_and_keeps_the_canvas_apart() {
+    let mut h = open(with_content(dialog::connected(None)), view(CollabStatus::Connected, None, 0));
+    let link = room_link();
+    type_into(&mut h, "Room", &link);
+    h.get_by_label("Join room").click();
+    h.run();
+    h.state_mut().dispatch();
+    h.run();
+    h.state_mut().clear();
+    h.get_by_label("Open in a new tab").click();
+    h.run();
+    let ids: Vec<String> = h.state().calls().iter().map(|c| c.id.clone()).collect();
+    assert_eq!(ids, ["tab.new", "collab.join_room"]);
+    assert_eq!(h.state().calls()[1].args["room"], json!(link));
+    assert!(h.state().calls()[1].args.get("on_local").is_none(), "nothing is merged");
+    assert!(h.state().state.room_choice.is_none(), "the question is answered");
+}
+
+#[test]
+fn the_answer_add_this_canvas_merges_it_into_the_room() {
+    let mut h = open(with_content(dialog::connected(None)), view(CollabStatus::Connected, None, 0));
+    let link = room_link();
+    type_into(&mut h, "Room", &link);
+    h.get_by_label("Join room").click();
+    h.run();
+    h.state_mut().dispatch();
+    h.run();
+    h.state_mut().clear();
+    h.get_by_label("Add this canvas to the room").click();
+    h.run();
+    assert_eq!(calls(&h), [call("collab.join_room", json!({"room": link, "on_local": "merge"}))]);
+}
+
+#[test]
+fn cancel_closes_the_question_and_runs_nothing() {
+    let mut h = open(with_content(dialog::connected(None)), view(CollabStatus::Connected, None, 0));
+    let link = room_link();
+    type_into(&mut h, "Room", &link);
+    h.get_by_label("Join room").click();
+    h.run();
+    h.state_mut().dispatch();
+    h.run();
+    h.state_mut().clear();
+    h.get_by_label("Cancel").click();
+    h.run();
+    assert!(h.state().calls().is_empty());
+    assert!(h.state().state.room_choice.is_none());
+}
+
+#[test]
+fn the_palette_row_of_the_same_action_is_called_share_this_canvas() {
+    let f = dialog::fixture();
+    let rows = drafftink_ui::surfaces::palette::rows(&f.model);
+    let row = rows.iter().find(|r| r.title == SHARE_BUTTON).expect("a palette row");
+    assert_eq!(row.id, "collab.join_room");
+}
+
+// ---- a document dropped on a tab in a room ----
+
+/// A drafft.ink document with one rectangle, as a file.
+fn document_file() -> Value {
+    use base64::Engine as _;
+    let mut other = dialog::fixture();
+    dialog::run(
+        &mut other,
+        "element.create",
+        json!({"kind": "rectangle", "bounds": {"x": 0, "y": 0, "w": 30, "h": 30}}),
+    );
+    let out = dialog::run(&mut other, "doc.export", json!({"format": "json", "scope": "all"}));
+    let text = out["bytes"]["base64"].as_str().expect("inline bytes").to_owned();
+    assert!(base64::engine::general_purpose::STANDARD.decode(&text).is_ok());
+    json!({"items": [{"name": "plan.drafftink", "bytes": {"base64": text, "name": "plan.drafftink"}}], "at": [400.0, 300.0]})
+}
+
+fn asking_about_a_drop() -> Harness<'static, Fixture> {
+    let mut f = with_content(dialog::connected(Some("plans")));
+    f.state.ask_drop_in_room(
+        drafftink_ui::Call::new(Origin::Ui, "doc.drop", document_file()),
+        vec!["plan.drafftink".to_owned()],
+    );
+    let mut h = dialog::harness(f);
+    h.run();
+    h
+}
+
+#[test]
+fn a_document_dropped_on_a_room_tab_asks_and_adding_is_the_default() {
+    let h = asking_about_a_drop();
+    h.get_by_label("Add `plan.drafftink` to this room, or open it in a new tab?");
+    h.get_by_label("Add to this room");
+    h.get_by_label("Open in a new tab");
+    assert!(h.state().state.room_choice.as_ref().is_some_and(|c| c.kind.adds_by_default()));
+}
+
+#[test]
+fn adding_the_dropped_document_runs_doc_drop_with_merge_at_the_drop_point_in_one_undo_step() {
+    let mut h = asking_about_a_drop();
+    let before = dialog::element_count(h.state_mut());
+    h.get_by_label("Add to this room").click();
+    h.run();
+    let calls = h.state().calls();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].id, "doc.drop");
+    assert_eq!(calls[0].args["documents"], json!("merge"));
+    assert_eq!(calls[0].args["at"], json!([400.0, 300.0]));
+    let report = h.state_mut().dispatch();
+    assert_eq!(report.refusals().count(), 0, "{:?}", report.ran);
+    assert_eq!(dialog::element_count(h.state_mut()), before + 1);
+    assert_eq!(tab_count(&mut h), 1, "no new tab");
+    dialog::run(h.state_mut(), "history.undo", json!({}));
+    assert_eq!(dialog::element_count(h.state_mut()), before, "one undo step takes the whole file back");
+}
+
+#[test]
+fn opening_the_dropped_document_in_a_new_tab_leaves_the_room_alone() {
+    let mut h = asking_about_a_drop();
+    h.get_by_label("Open in a new tab").click();
+    h.run();
+    assert_eq!(h.state().calls()[0].args["documents"], json!("new_tab"));
+    let report = h.state_mut().dispatch();
+    assert_eq!(report.refusals().count(), 0, "{:?}", report.ran);
+    assert_eq!(tab_count(&mut h), 2);
+}
+
+#[test]
+fn opening_a_file_in_a_room_tab_asks_instead_of_a_refusal_toast() {
+    let mut f = dialog::connected(Some("plans"));
+    dialog::store_document(&f, "plan", 2);
+    f.state.collab_open = false;
+    let mut h = dialog::harness(f);
+    let open =
+        drafftink_ui::Call::new(Origin::Ui, "doc.open", json!({"source": {"stored": "plan"}, "mode": "replace"}));
+    h.state_mut().actions.push(drafftink_ui::UiAction::Command(open));
+    let report = h.state_mut().dispatch();
+    assert_eq!(report.refusals().count(), 1);
+    assert!(h.state().state.room_choice.is_some());
+    assert!(h.state().state.toasts.is_empty());
+    h.run();
+    h.get_by_label("Add this file to this room, or open it in a new tab?");
+    h.get_by_label("Add to this room").click();
+    h.run();
+    assert_eq!(h.state().calls()[0].args["mode"], json!("merge"));
+    let report = h.state_mut().dispatch();
+    assert_eq!(report.refusals().count(), 0, "{:?}", report.ran);
+    assert_eq!(dialog::element_count(h.state_mut()), 2);
 }

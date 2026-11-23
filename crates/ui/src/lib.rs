@@ -43,4 +43,4 @@ pub use model::{
 };
 pub use scrub::ScrubControl;
 pub use shell::{FrameInput, FrameResult, UiShell, draw};
-pub use state::{ColorTarget, LastPicked, Toast, UiState};
+pub use state::{ColorTarget, LastPicked, RoomChoice, RoomChoiceKind, Toast, UiState};
