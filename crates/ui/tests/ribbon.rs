@@ -1319,25 +1319,24 @@ fn the_swatches_show_the_ink_of_the_marker_in_both_themes() {
 }
 
 #[test]
-fn the_popover_offers_every_family_in_the_three_marker_shades_and_a_pick_is_that_marker() {
+fn the_popover_offers_the_whole_palette_grid_and_a_pick_is_exactly_that_colour() {
     let mut h = desk(with_tool("highlighter"));
     open(&mut h, "Pick the highlight colour");
     h.get_by_label("Highlight colour");
-    for shade in [300, 400, 500] {
+    // The same grid as the stroke and fill picker: every family in the shades 50 to 950 (25 is too pale for a cell).
+    for shade in [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950] {
         assert!(has(&h, &format!("Rose {shade}")), "rose {shade}");
     }
-    for shade in [50, 100, 200, 600, 900] {
-        assert!(!has(&h, &format!("Rose {shade}")), "rose {shade} is not a marker shade");
+    assert!(has(&h, "Colour picker: Custom"), "the custom view is there for a colour that is not in the grid");
+    for (label, want) in [("Rose 100", "rose-100"), ("Slate 950", "slate-950"), ("Amber 500", "amber-500")] {
+        let calls = click_and_apply(&mut h, label);
+        assert_eq!(
+            calls.last().map(|c| (c.id.as_str(), c.args.clone())),
+            Some(("tool.set_marker", json!({ "color": want }))),
+            "{label}"
+        );
+        open(&mut h, "Pick the highlight colour");
     }
-    assert!(
-        !has(&h, "Colour picker: Custom"),
-        "no custom view: a colour that is no marker would only be mapped to one"
-    );
-    let calls = click_and_apply(&mut h, "Rose 300");
-    assert_eq!(
-        calls.last().map(|c| (c.id.as_str(), c.args.clone())),
-        Some(("tool.set_marker", json!({ "color": "rose-300" })))
-    );
 }
 
 #[test]

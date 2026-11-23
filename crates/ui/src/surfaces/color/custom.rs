@@ -295,7 +295,7 @@ pub(super) fn show(
         }
     });
     // A brush has a colour; "none" would paint nothing (erasing is the other mode).
-    if target.is_themed()
+    if target != ColorTarget::Brush
         && let Some(none) = quick_column(dark).first()
         && cell(ui, cx, target, now, none).is_some()
     {

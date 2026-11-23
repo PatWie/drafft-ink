@@ -5,7 +5,7 @@
 //! pick stores the colour whose display is the swatch (`Color::from_dark_theme`, the inverse of the same function).
 //! This module is the only place the UI applies either direction. In the light theme both are the identity.
 
-use drafftink_scene::{Color, MarkerColor, MarkerShade, Tone, palette};
+use drafftink_scene::{Color, MarkerColor, Shade, Tone, palette};
 use egui::Color32;
 
 /// The families of the quick swatches in the top bar (the old app's choice).
@@ -15,8 +15,8 @@ pub const QUICK_STROKE_SHADE: u16 = 500;
 /// Shade of a quick fill swatch.
 pub const QUICK_FILL_SHADE: u16 = 100;
 
-/// Shade of a quick marker swatch: the marker shade that the old five markers became, and the one the button puts on.
-pub const QUICK_MARKER_SHADE: MarkerShade = MarkerShade::Standard;
+/// Shade of a quick marker swatch: the shade that the old five markers became (400).
+pub const QUICK_MARKER_SHADE: Shade = Shade::DEFAULT;
 
 /// The markers of the quick column of the highlight popover: yellow, the default marker, then the families of the
 /// quick stroke and fill swatches, all in [`QUICK_MARKER_SHADE`].
@@ -27,13 +27,25 @@ pub fn quick_markers() -> Vec<MarkerColor> {
         .collect()
 }
 
-/// A marker as the popover offers it: a pick stores its name (`yellow-400`, a token that each theme resolves), and
-/// the swatch shows the ink the canvas of this theme draws the band with (the band itself is that ink at half
-/// opacity, too pale to tell apart in a 16 px cell), not the palette colour of the name, which the dark theme would
-/// filter.
+/// A marker as the popover offers it: a pick stores its name (`yellow-400`, a token that each theme resolves, or
+/// `#rrggbb` for a custom colour, which is the same on both), and the swatch shows the ink the canvas of this theme
+/// draws the band with (the band itself is that ink at half opacity, too pale to tell apart in a 16 px cell), not the
+/// palette colour of the name, which the dark theme would filter.
 pub fn marker_offer(marker: MarkerColor, dark: bool) -> Offer {
     let tone = if dark { Tone::Dark } else { Tone::Light };
     Offer { stored: marker.name(), shown: to_egui(marker.rgb(tone)) }
+}
+
+/// What a cell or a button for a marker is called: `Blue 400` for a palette marker, `#rrggbb` for a custom one.
+pub fn marker_title(marker: MarkerColor) -> String {
+    match (marker.family_name(), marker.shade()) {
+        (Some(family), Some(shade)) => {
+            let mut chars = family.chars();
+            let head: String = chars.next().map(|f| f.to_uppercase().chain(chars).collect()).unwrap_or_default();
+            format!("{head} {shade}")
+        }
+        _ => marker.name(),
+    }
 }
 
 /// A scene colour as an egui colour.
@@ -120,7 +132,7 @@ mod marker_tests {
 
     #[test]
     fn a_marker_cell_stores_the_name_and_shows_the_ink_of_the_theme() {
-        let m = MarkerColor::new("blue", MarkerShade::Soft).unwrap();
+        let m = MarkerColor::new("blue", Shade::MARKER[0]).unwrap();
         let light = marker_offer(m, false);
         let dark = marker_offer(m, true);
         assert_eq!((light.stored.as_str(), dark.stored.as_str()), ("blue-300", "blue-300"), "one token, both themes");
@@ -132,6 +144,27 @@ mod marker_tests {
             Some(palette_blue_300()),
             "the light swatch is the palette colour of the name"
         );
+    }
+
+    #[test]
+    fn a_custom_marker_cell_stores_the_hex_and_shows_it_in_both_themes() {
+        let m = MarkerColor::custom(Color::rgb(0x12, 0xab, 0xef));
+        let (light, dark) = (marker_offer(m, false), marker_offer(m, true));
+        assert_eq!((light.stored.as_str(), dark.stored.as_str()), ("#12abef", "#12abef"));
+        assert_eq!(light.shown, dark.shown, "the same on both canvases");
+        assert_eq!(light.shown, Color32::from_rgb(0x12, 0xab, 0xef));
+        assert_eq!(marker_title(m), "#12abef");
+        assert_eq!(marker_title(MarkerColor::YELLOW), "Yellow 400");
+    }
+
+    #[test]
+    fn every_palette_marker_cell_shows_its_ink_for_the_theme() {
+        for m in MarkerColor::palette() {
+            let (light, dark) = (marker_offer(m, false), marker_offer(m, true));
+            assert_eq!(light.shown, to_egui(m.rgb(Tone::Light)), "{m}");
+            assert_eq!(dark.shown, to_egui(m.rgb(Tone::Dark)), "{m}");
+            assert_eq!(MarkerColor::from_name(&light.stored), Some(m), "{m}");
+        }
     }
 
     fn palette_blue_300() -> Color {

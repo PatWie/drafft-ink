@@ -867,3 +867,53 @@ fn a_brush_colour_from_the_custom_picker_is_stored_as_shown_in_the_dark_theme() 
     assert!(last.1["color"].is_string(), "{last:?}");
     assert!(h.state().calls().iter().all(|c| c.id != "style.set"));
 }
+
+// ---- the highlighter's colour ----
+
+#[test]
+fn the_marker_hex_field_sets_the_exact_colour_without_its_alpha_and_in_both_themes() {
+    for theme in [egui::Theme::Light, egui::Theme::Dark] {
+        let mut h = dialog::sized(dialog::fixture(), egui::vec2(1280.0, 800.0), theme);
+        h.state_mut().state.color_popover = Some(ColorTarget::Marker);
+        h.run();
+        h.get_by_label("Hex colour").focus();
+        h.run();
+        h.get_by_label("Hex colour").type_text("#12abef");
+        h.run();
+        h.key_press(Key::Enter);
+        h.run();
+        assert_eq!(calls(&h), [("tool.set_marker".to_owned(), json!({"color": "#12abef"}), Origin::Ui)], "{theme:?}");
+        h.state_mut().dispatch();
+        assert_eq!(
+            h.state().model.tool_marker,
+            Some(drafftink_scene::MarkerColor::custom(Color::rgb(0x12, 0xab, 0xef))),
+            "stored as typed: not mapped for the dark theme, not snapped to a palette colour ({theme:?})"
+        );
+        assert_eq!(h.state().state.last_picked.of(ColorTarget::Marker), Some("#12abef"));
+    }
+}
+
+#[test]
+fn the_marker_popover_has_the_custom_view_with_no_alpha_bar_and_a_none_cell() {
+    let mut h = open_custom(dialog::fixture(), ColorTarget::Marker);
+    assert_eq!(sliders(&h), ["Saturation and value", "Hue"], "a marker is opaque; its band has the layer's opacity");
+    h.get_by_label("Hex colour");
+    h.get_by_label("None").click();
+    h.run();
+    assert_eq!(calls(&h), [("tool.set_marker".to_owned(), json!({"color": null}), Origin::Ui)]);
+}
+
+#[test]
+fn the_marker_grid_marks_the_cell_of_the_current_colour_and_a_custom_colour_marks_none() {
+    let mut f = dialog::fixture();
+    f.session.execute("tool.set_marker", json!({"color": "rose-100"})).unwrap();
+    f.refresh();
+    let h = open(f, ColorTarget::Marker);
+    assert!(on(&h, "Rose 100"));
+    assert!(!on(&h, "Rose 200"));
+    let mut f = dialog::fixture();
+    f.session.execute("tool.set_marker", json!({"color": "#12abef"})).unwrap();
+    f.refresh();
+    let h = open(f, ColorTarget::Marker);
+    assert!(!on(&h, "Rose 100") && !on(&h, "Blue 500"), "no cell of the grid is a custom colour");
+}

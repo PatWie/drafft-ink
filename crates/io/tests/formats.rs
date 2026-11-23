@@ -1192,3 +1192,22 @@ fn a_highlight_is_a_faded_group_of_wide_flat_strokes_under_the_shape_and_has_a_v
     d.elements[0].style.highlight = None;
     assert!(!export_svg(&d, &SvgOptions::default(), &EstimateMeasure, None).unwrap().contains("<g opacity=\"0.5\">"));
 }
+
+#[test]
+fn a_custom_highlight_is_exported_as_the_colour_picked_in_both_themes_and_a_pale_shade_as_its_own() {
+    use drafftink_scene::{MarkerColor, Tone};
+    let mut r = Element::new(eid("r"), ElementKind::Rectangle, ZIndex::first()).with_bounds(0.0, 0.0, 100.0, 60.0);
+    r.style.highlight = Some(MarkerColor::from_name("#12abef").unwrap());
+    let mut d = Document::new();
+    d.elements = vec![r];
+    for dark in [false, true] {
+        let svg = export_svg(&d, &SvgOptions { dark, ..SvgOptions::default() }, &EstimateMeasure, None).unwrap();
+        assert!(svg.contains("#12abef"), "dark={dark}: the same colour on both: {svg}");
+    }
+    let pale = MarkerColor::from_name("blue-100").unwrap();
+    d.elements[0].style.highlight = Some(pale);
+    let light = export_svg(&d, &SvgOptions::default(), &EstimateMeasure, None).unwrap();
+    assert!(light.contains(&pale.rgb(Tone::Light).to_hex()), "{light}");
+    let dark = export_svg(&d, &SvgOptions { dark: true, ..SvgOptions::default() }, &EstimateMeasure, None).unwrap();
+    assert!(dark.contains(&pale.rgb(Tone::Dark).to_hex()), "{dark}");
+}

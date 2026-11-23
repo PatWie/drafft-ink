@@ -13,7 +13,7 @@ mod custom;
 
 use drafftink_engine::state::Tool;
 use drafftink_scene::palette::{FAMILIES, SHADES};
-use drafftink_scene::{Color, MarkerColor, MarkerShade};
+use drafftink_scene::{Color, MarkerColor, Shade, Tone};
 use egui::{
     Align2, Area, Color32, Context, FontFamily, FontId, Id, Order, Pos2, Rect, RichText, ScrollArea, Ui, pos2, vec2,
 };
@@ -156,7 +156,7 @@ pub(crate) fn pick_command(target: ColorTarget, pick: &Pick) -> (&'static str, V
         }
         ColorTarget::Background => ("doc.set_background", json!({ "color": text })),
         ColorTarget::Brush => ("image.paint_brush", json!({ "color": text })),
-        // Any colour is taken: the engine maps it to the nearest marker (`MarkerColor::nearest`), and none is null.
+        // The colour is taken exactly as it is (a palette name or `#rrggbb`), and none is null.
         ColorTarget::Marker => {
             ("tool.set_marker", json!({ "color": if *pick == Pick::Clear { Value::Null } else { Value::from(text) } }))
         }
@@ -179,12 +179,19 @@ fn pick_value(target: ColorTarget, pick: &Pick) -> Option<Color> {
     }
 }
 
-/// Whether a cell of the marker grid is the highlighter's colour now: a marker by name, "None" for no colour.
+/// Whether a cell of the marker grid is the highlighter's colour now: the same marker, "None" for no colour.
 fn marker_selected(model: &Model, pick: &Pick) -> bool {
     match pick {
         Pick::Clear => model.tool_marker.is_none(),
-        Pick::Color(name) => model.tool_marker.is_some_and(|m| m.name() == *name),
+        Pick::Color(name) => model.tool_marker.is_some() && model.tool_marker == MarkerColor::from_name(name),
     }
+}
+
+/// The marker colour as the custom view starts from it: the ink the canvas draws it with on this theme. The outer
+/// `None` cannot happen; no marker is the choice of no colour, like no fill.
+fn marker_now(model: &Model, dark: bool) -> Option<Option<Color>> {
+    let tone = if dark { Tone::Dark } else { Tone::Light };
+    Some(model.tool_marker.map(|m| m.rgb(tone)))
 }
 
 /// The colour the target has now. The outer `None` means the model does not know (mixed, not applicable);
@@ -360,11 +367,10 @@ fn mode_switch(ui: &mut Ui, cx: &mut Cx<'_>, mode: PickerMode) {
 fn color_popover(ctx: &Context, cx: &mut Cx<'_>, chrome: &ChromeRects, target: ColorTarget) -> Option<Pick> {
     let pal = cx.pal;
     let key = PopoverKey::of(target);
-    let now = current(cx.model, target);
+    let now = if target == ColorTarget::Marker { marker_now(cx.model, pal.dark) } else { current(cx.model, target) };
     // The colours of the picture are not mapped for the dark theme: the brush's swatches are what they say.
     let dark = pal.dark && target.is_themed();
-    // The marker has no custom view: a colour that is not a marker would only be mapped to one.
-    let mode = if target == ColorTarget::Marker { PickerMode::Swatches } else { PickerMode::of_model(cx.model) };
+    let mode = PickerMode::of_model(cx.model);
     let mut quick = if target == ColorTarget::Marker { quick_markers(pal.dark) } else { quick_column(dark) };
     if target == ColorTarget::Brush {
         // A brush has a colour; "none" would paint nothing (erasing is the other mode).
@@ -391,23 +397,17 @@ fn color_popover(ctx: &Context, cx: &mut Cx<'_>, chrome: &ChromeRects, target: C
             };
             ui.label(RichText::new(title).font(TextSize::Label.hand()).color(pal.muted));
             ui.add_space(4.0);
-            if target != ColorTarget::Marker {
-                mode_switch(ui, cx, mode);
-                ui.add_space(6.0);
-            }
+            mode_switch(ui, cx, mode);
+            ui.add_space(6.0);
             match mode {
                 PickerMode::Swatches => {
                     ScrollArea::both().max_width(max_w).max_height(max_h).auto_shrink([true, true]).show(ui, |ui| {
                         // Shade 25 is too close to white to tell apart in a 16 px cell: the grid starts at 50. The
-                        // marker has three shades, and each cell shows the ink of the marker that a pick stores.
+                        // marker has the same grid, and each cell shows the ink of the marker that a pick stores.
                         let marker = target == ColorTarget::Marker;
-                        let shades: Vec<u16> = if marker {
-                            MarkerShade::ALL.into_iter().map(MarkerShade::number).collect()
-                        } else {
-                            SHADES.iter().copied().skip(1).collect()
-                        };
+                        let shades: Vec<u16> = SHADES.iter().copied().skip(1).collect();
                         let make = |family: &str, shade: u16| {
-                            let wanted = MarkerShade::of_number(shade).and_then(|s| MarkerColor::new(family, s));
+                            let wanted = Shade::from_number(shade).and_then(|s| MarkerColor::new(family, s));
                             match wanted.filter(|_| marker) {
                                 Some(m) => marker_choice(m, pal.dark),
                                 None => choice(
@@ -507,11 +507,7 @@ fn quick_markers(dark: bool) -> Vec<Choice> {
 /// A cell for a marker: a pick stores its name, the swatch shows its ink on this theme (`colors::marker_offer`).
 fn marker_choice(marker: MarkerColor, dark: bool) -> Choice {
     let offer = colors::marker_offer(marker, dark);
-    Choice {
-        label: format!("{} {}", capitalised(marker.family_name()), marker.shade().number()),
-        pick: Pick::Color(offer.stored),
-        shown: Some(offer.shown),
-    }
+    Choice { label: colors::marker_title(marker), pick: Pick::Color(offer.stored), shown: Some(offer.shown) }
 }
 
 // ---- fonts ----
@@ -583,9 +579,9 @@ pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
                     target
                 };
             if let Some(Pick::Color(color)) = color_popover(ctx, cx, &st.chrome, target) {
-                // A typed colour is remembered as the marker it became, so that the slot shows what was set.
+                // A marker is remembered by its name (a typed colour without its alpha), as the slot shows it.
                 let color = if target == ColorTarget::Marker {
-                    MarkerColor::nearest(&color).map_or(color, |m| m.name())
+                    MarkerColor::from_name(&color).map_or(color, |m| m.name())
                 } else {
                     color
                 };

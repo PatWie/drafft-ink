@@ -90,6 +90,46 @@ fn the_highlight_of_a_run_is_a_mark_that_syncs_and_moves_with_its_characters() {
 }
 
 #[test]
+fn every_palette_shade_and_a_custom_colour_sync_on_an_element_and_as_a_text_mark() {
+    let (mut a, mut b) = (peer(1), peer(2));
+    add(&mut a, vec![rect("r", &zs(1)[0]), text("t", &zs(2)[1], "one two three")]);
+    sync(&mut a, &mut b);
+    let colours = ["blue-25", "slate-950", "rose-100", "#12abef"].map(|n| MarkerColor::from_name(n).unwrap());
+    edit(&mut a, "r", |e| e.style.highlight = Some(colours[0]));
+    push(&a, &mut b);
+    assert_eq!(b.get(&eid("r")).unwrap().style.highlight, Some(colours[0]));
+    assert_view_matches_loro(&b);
+    let json = a.debug_json().to_string();
+    assert!(json.contains("blue-25"), "stored under its name: {json}");
+    // Each of the other colours as a text mark; a custom one is the mark's value `#12abef`.
+    let runs = vec![
+        TextRun::new(0, 3, CharStyle { highlight: SpanHighlight::On(colours[1]), ..CharStyle::default() }),
+        TextRun::new(4, 7, CharStyle { highlight: SpanHighlight::On(colours[2]), ..CharStyle::default() }),
+        TextRun::new(8, 13, CharStyle { highlight: SpanHighlight::On(colours[3]), bold: true, ..CharStyle::default() }),
+    ];
+    edit(&mut a, "t", |e| {
+        if let ElementKind::Text(t) = &mut e.kind {
+            t.runs = runs.clone();
+        }
+    });
+    push(&a, &mut b);
+    let ElementKind::Text(t) = &b.get(&eid("t")).unwrap().kind else { panic!("text") };
+    assert_eq!(t.runs, runs);
+    // A peer that joins later from a snapshot gets the marks too.
+    let mut c = peer(3);
+    c.apply_remote(&a.export_snapshot().unwrap()).unwrap();
+    let ElementKind::Text(t) = &c.get(&eid("t")).unwrap().kind else { panic!("text") };
+    assert_eq!(t.runs, runs);
+    // A custom colour set by one peer on the element is cleared by another.
+    edit(&mut a, "r", |e| e.style.highlight = Some(colours[3]));
+    push(&a, &mut b);
+    assert_eq!(b.get(&eid("r")).unwrap().style.highlight, Some(colours[3]));
+    edit(&mut b, "r", |e| e.style.highlight = None);
+    push(&b, &mut a);
+    assert_eq!(a.get(&eid("r")).unwrap().style.highlight, None);
+}
+
+#[test]
 fn an_element_with_fields_of_a_newer_build_is_shown_and_its_fields_survive_an_edit() {
     let mut s = peer(1);
     add(&mut s, vec![rect("fine", &zs(1)[0])]);

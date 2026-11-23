@@ -38,8 +38,8 @@ pub struct RangeArg {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ApplyArgs {
-    /// The marker colour: `<family>-<shade>` with a palette family and shade 300, 400 or 500 (`yellow-400`); the old
-    /// names `yellow`, `green`, `pink`, `blue` and `orange` mean the 400 shade. `null` (or absent) takes the highlight
+    /// The marker colour: `<family>-<shade>` with a palette family and any palette shade (`yellow-400`, `blue-100`), or
+    /// `#rrggbb`; the old names `yellow`, `green`, `pink`, `blue` and `orange` mean the 400 shade. `null` (or absent) takes the highlight
     /// off.
     #[serde(default)]
     pub color: Option<MarkerColor>,
