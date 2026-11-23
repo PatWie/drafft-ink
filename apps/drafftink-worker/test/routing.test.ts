@@ -62,6 +62,35 @@ describe("the Worker answers what it can without an object", () => {
   });
 });
 
+describe("the plaintext route of the app answers instead of hanging", () => {
+  it("tells a v1 Join on /ws that this server only hosts encrypted rooms, without an object", async () => {
+    const { result, calls } = await objectCallsOf(() => request("/ws", { headers: { upgrade: "websocket" } }));
+    expect(result.status).toBe(101);
+    const ws = result.webSocket;
+    if (ws === null) throw new Error("no WebSocket");
+    ws.accept();
+    ws.binaryType = "arraybuffer";
+    const answer = await new Promise<{ data: Uint8Array; code: number }>((resolve) => {
+      let data = new Uint8Array();
+      ws.addEventListener("message", (event) => {
+        data = new Uint8Array(event.data as ArrayBuffer);
+      });
+      ws.addEventListener("close", (event) => resolve({ data, code: event.code }));
+      ws.send(new Uint8Array([0x01, 1, 1]));
+    });
+    expect(new TextDecoder().decode(answer.data)).toContain("This server only hosts end-to-end encrypted rooms. Use a room link that has a key.");
+    expect(answer.code).toBe(1000);
+    expect(calls).toBe(0);
+  });
+
+  it("answers a plain GET of /ws with the reason, and refuses other methods", async () => {
+    const get = await request("/ws");
+    expect(get.status).toBe(426);
+    expect((await body(get))["error"]).toBe("upgrade_required");
+    expect((await request("/ws", { method: "POST" })).status).toBe(405);
+  });
+});
+
 describe("picture requests are checked before any object is called", () => {
   it("needs a membership token of this room", async () => {
     for (const [what, headers] of [

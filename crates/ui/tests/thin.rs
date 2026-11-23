@@ -192,6 +192,7 @@ const READS: &[&str] = &[
     "library_revision",
     "now_ms",
     "query",
+    "page_server_url",
 ];
 
 #[test]

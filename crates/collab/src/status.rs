@@ -51,6 +51,10 @@ pub enum StopReason {
     /// The server is private and turned the connection away: no access token, or one it did not accept
     /// ([`AccessDenial`]). Retrying with the same token would be refused again.
     AccessDenied,
+    /// The server hosts only end-to-end encrypted rooms and the app asked for a plain one by name.
+    EncryptedOnly,
+    /// The server's address serves the app and has no relay.
+    NoRelay,
     /// The room was deleted on request (`collab.delete_room`). The relay closed the connection and holds nothing of it.
     RoomDeleted,
 }
@@ -189,6 +193,38 @@ pub fn explain_access(denial: AccessDenial, host: &str, fatal: bool) -> Problem 
         ),
     };
     Problem { code: None, text, action, fatal }
+}
+
+/// What the probe of a server's status address found, in plain words. `host` is the server's name.
+pub(crate) fn explain_unavailable(why: crate::transport::Unavailable, host: &str) -> Problem {
+    use crate::transport::Unavailable;
+    match why {
+        Unavailable::NoRelay => Problem::local(
+            format!(
+                "{host} only serves the app and does not host shared rooms. Your drawing is saved on this device. To \
+                 work together, open the app at a server that hosts rooms, or run your own server and type its address \
+                 in the Collaborate dialog."
+            ),
+            ProblemAction::AskAdmin,
+            true,
+        ),
+        Unavailable::DailyLimit { .. } => Problem::local(
+            "The server has reached its daily limit and starts again later. Your drawing is saved on this device. You \
+             can keep working alone, run your own server, or try again later.",
+            ProblemAction::Wait,
+            false,
+        ),
+    }
+}
+
+/// What a server that hosts only encrypted rooms says to a plaintext `Join`, in plain words with the way on.
+pub(crate) fn encrypted_only() -> Problem {
+    Problem::local(
+        "This server only hosts end-to-end encrypted rooms. Use a room link that has a key, or leave the room name \
+         empty to start a private room.",
+        ProblemAction::NewLink,
+        true,
+    )
 }
 
 /// The stop reason a fatal server error maps to.

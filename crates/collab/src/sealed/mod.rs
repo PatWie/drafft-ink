@@ -661,6 +661,7 @@ impl SealedClient {
             TransportEvent::Message(bytes) => self.on_frame(now_ms, &bytes, store),
             TransportEvent::Text(_) => self.on_text(now_ms),
             TransportEvent::Denied(denial) => self.on_denied(denial),
+            TransportEvent::Unavailable(why) => self.on_unavailable(now_ms, why),
             TransportEvent::Closed { error } => self.on_closed(now_ms, error),
         }
         self.flush_events();
@@ -681,6 +682,23 @@ impl SealedClient {
         }
         let problem = explain_access(denial, self.endpoint.host(), true);
         self.enter_stopped(StopReason::AccessDenied, Some(problem));
+    }
+
+    /// The socket never opened, and the server's status address says why (the web transport asked).
+    fn on_unavailable(&mut self, now_ms: u64, why: crate::Unavailable) {
+        if matches!(self.phase, Phase::Idle | Phase::Stopped(_) | Phase::Backoff { .. }) {
+            return;
+        }
+        let problem = crate::status::explain_unavailable(why, self.endpoint.host());
+        match why {
+            crate::Unavailable::NoRelay => self.enter_stopped(StopReason::NoRelay, Some(problem)),
+            crate::Unavailable::DailyLimit { retry_after_ms } => {
+                self.server_retry_ms = retry_after_ms.map(u64::from);
+                self.problem = Some(problem.clone());
+                self.events.push(CollabEvent::Problem(problem.clone()));
+                self.drop_connection(now_ms, &problem.text, false);
+            }
+        }
     }
 
     fn on_closed(&mut self, now_ms: u64, error: Option<String>) {

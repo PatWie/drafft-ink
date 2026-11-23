@@ -5,19 +5,29 @@
 //!
 //! A browser behind Cloudflare Access sends its sign-in cookie with the upgrade, and a `WebSocket` cannot carry other
 //! headers, so `set_access` is ignored and a service token is never used here. The page cannot see the status of a
-//! failed upgrade either: it is a `Closed` event. Telling an ended sign-in from a server that is down needs the probe of
-//! `docs/design/collab-e2e.md` section 19.6 (`GET /api/status` with `X-Requested-With: XMLHttpRequest`), which is not
-//! built yet. This is the seam: the owner of the transport would answer a `Closed` before any `Opened` by calling the
-//! probe and, on a `401`, ending the connection as [`TransportEvent::Denied`] with `AccessDenial::SignInExpired`.
+//! failed upgrade either: it is a close with code 1006. Telling an ended sign-in, a host that has no relay and a relay
+//! over its daily limit from a server that is down needs the probe of `docs/design/collab-e2e.md` sections 11.6 and
+//! 19.6: `GET /api/status` on the server's own origin, with `X-Requested-With: XMLHttpRequest`. A close before any
+//! `Opened` is therefore answered by the probe: a `401` ends the connection as [`TransportEvent::Denied`] with
+//! `AccessDenial::SignInExpired`, a `404` as [`TransportEvent::Unavailable`] (`NoRelay`), a spent quota as
+//! `DailyLimit`. Any other answer, or none, leaves the plain close.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::rc::Rc;
 
-use js_sys::{ArrayBuffer, Uint8Array};
+use js_sys::{ArrayBuffer, Function, Promise, Reflect, Uint8Array};
 use wasm_bindgen::JsCast;
+use wasm_bindgen::JsValue;
 use wasm_bindgen::closure::Closure;
-use web_sys::{BinaryType, CloseEvent, Event, MessageEvent, WebSocket};
+use wasm_bindgen_futures::JsFuture;
+use web_sys::{
+    AbortSignal, BinaryType, CloseEvent, Event, Headers, MessageEvent, Request, RequestCache, RequestInit,
+    RequestRedirect, Response, WebSocket,
+};
+
+use crate::access::AccessDenial;
+use crate::probe::unavailable_of;
 
 use crate::transport::{Transport, TransportError, TransportEvent, WakeFn};
 use crate::url::ServerUrl;
@@ -77,9 +87,14 @@ impl Transport for WebTransport {
                 wake();
             }
         };
+        let opened = Rc::new(Cell::new(false));
         let open = {
             let push = push.clone();
-            Closure::<dyn FnMut(Event)>::new(move |_| push(TransportEvent::Opened))
+            let opened = Rc::clone(&opened);
+            Closure::<dyn FnMut(Event)>::new(move |_| {
+                opened.set(true);
+                push(TransportEvent::Opened);
+            })
         };
         let message = {
             let push = push.clone();
@@ -96,9 +111,19 @@ impl Transport for WebTransport {
         let error = Closure::<dyn FnMut(Event)>::new(|_| {});
         let close = {
             let push = push.clone();
+            let base = url.http_base();
             Closure::<dyn FnMut(CloseEvent)>::new(move |e: CloseEvent| {
                 let error = (!e.was_clean()).then(|| format!("closed with code {}", e.code()));
-                push(TransportEvent::Closed { error });
+                if opened.get() {
+                    push(TransportEvent::Closed { error });
+                    return;
+                }
+                // The socket never opened: the browser says nothing more, so ask the server's status address.
+                let (push, base) = (push.clone(), base.clone());
+                wasm_bindgen_futures::spawn_local(async move {
+                    let event = probe(&base).await.unwrap_or(TransportEvent::Closed { error });
+                    push(event);
+                });
             })
         };
         socket.set_onopen(Some(open.as_ref().unchecked_ref()));
@@ -141,4 +166,33 @@ impl Transport for WebTransport {
         }
         None
     }
+}
+
+/// How long the probe waits for the answer of the status address.
+const PROBE_TIMEOUT_MS: u32 = 5_000;
+
+/// Asks `GET <base>/api/status` why a socket did not open. `None`: the server answered nothing that explains it (it is
+/// up, or unreachable, or the answer is not one this client knows), and the plain close stands.
+async fn probe(base: &str) -> Option<TransportEvent> {
+    let fetch: Function = Reflect::get(&js_sys::global(), &JsValue::from_str("fetch")).ok()?.dyn_into().ok()?;
+    let headers = Headers::new().ok()?;
+    headers.append("x-requested-with", "XMLHttpRequest").ok()?;
+    let init = RequestInit::new();
+    init.set_method("GET");
+    init.set_headers(&headers);
+    init.set_cache(RequestCache::NoStore);
+    init.set_redirect(RequestRedirect::Error);
+    init.set_signal(Some(&AbortSignal::timeout_with_u32(PROBE_TIMEOUT_MS)));
+    let request = Request::new_with_str_and_init(&format!("{base}/api/status"), &init).ok()?;
+    let promise: Promise = fetch.call1(&js_sys::global(), &request).ok()?.dyn_into().ok()?;
+    let response: Response = JsFuture::from(promise).await.ok()?.dyn_into().ok()?;
+    let status = response.status();
+    let body = match response.array_buffer() {
+        Ok(buffer) => JsFuture::from(buffer).await.ok().map(|b| Uint8Array::new(&b).to_vec()).unwrap_or_default(),
+        Err(_) => Vec::new(),
+    };
+    if let Some(denial) = AccessDenial::of_reply(status, &body, false) {
+        return Some(TransportEvent::Denied(denial.in_browser()));
+    }
+    unavailable_of(status, &body).map(TransportEvent::Unavailable)
 }

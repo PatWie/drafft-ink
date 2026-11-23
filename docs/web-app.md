@@ -110,7 +110,10 @@ error page.
 2. reads the page address: `?room=..&server=..` (query or fragment) is the room to join, via `StartupLink::parse`;
 3. `drafftink_app::web::platform(..)` opens IndexedDB (awaited), then builds the ports and the bridge queue;
 4. installs `window.drafftink`, reads or resumes the agent pairing, builds `AppConfig { join, default_server: "/ws",
-   stored_default_target: true, .. }` and calls `drafftink_gpu::run`.
+   stored_default_target: true, .. }` and calls `drafftink_gpu::run`. The web `Net` port answers `/ws` to `Net::default_server`, which becomes the default of the setting
+   `collab.server_url` when the settings load: the page's own server, shown in the Collaborate dialog as
+   `wss://<page host>/ws`. A server the person chose still wins. The page's address
+   bar shows `#room=<id>,<key>` while the tab is in an encrypted room (`Host::set_location_fragment`, `history.replaceState`).
 
 ### Ports in the browser
 

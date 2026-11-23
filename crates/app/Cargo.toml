@@ -63,7 +63,7 @@ web-sys = { workspace = true, features = [
     "HtmlInputElement", "CssStyleDeclaration", "Event", "EventTarget", "File", "FileList", "Blob",
     "BlobPropertyBag", "Url", "Clipboard", "Crypto", "StorageManager", "DomException",
     "IdbFactory", "IdbDatabase", "IdbObjectStore", "IdbObjectStoreParameters", "IdbOpenDbRequest", "IdbRequest",
-    "IdbTransaction", "IdbTransactionMode", "IdbVersionChangeEvent", "VisibilityState", "Response",
+    "IdbTransaction", "IdbTransactionMode", "IdbVersionChangeEvent", "VisibilityState", "Response", "History",
 ] }
 
 [[example]]

@@ -213,6 +213,10 @@ pub trait Host {
     fn source_url(&self) -> Option<String> {
         None
     }
+
+    /// Puts `fragment` (`#room=<id>,<key>`) in the address bar of the page, without a new history entry, or removes
+    /// the fragment (`None`). Only the web has an address bar. The fragment holds a room key: do not log it.
+    fn set_location_fragment(&mut self, _fragment: Option<&str>) {}
 }
 
 /// `text` if it is an `http://` or `https://` address, else `None`. The About dialog opens what a host reports, so a

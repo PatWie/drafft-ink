@@ -305,10 +305,7 @@ impl Conn {
             return Flow::Close;
         };
         if !self.app.config.plaintext_rooms {
-            self.fail(
-                ErrorCode::UnsupportedVersion,
-                "This server only hosts end-to-end encrypted rooms. Use a room link that has a key.",
-            );
+            self.fail(ErrorCode::UnsupportedVersion, drafftink_protocol::ENCRYPTED_ONLY_MESSAGE);
             return Flow::Close;
         }
         // Sealed rooms are served on `/r/<id>/ws`; this route is the plaintext protocol.

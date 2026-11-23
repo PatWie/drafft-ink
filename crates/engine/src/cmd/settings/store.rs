@@ -65,7 +65,7 @@ pub fn encode(settings: &Settings) -> Option<Vec<u8>> {
     let mut values = Map::new();
     for (k, v) in settings.iter() {
         if let Some(def) = keys::find(k)
-            && def.default_value() != *v
+            && settings.default_of(def) != *v
         {
             values.insert(k.clone(), v.clone());
         }
@@ -117,6 +117,7 @@ impl Session {
     /// storage port keeps the defaults. A damaged record is reported in `unreadable` and replaced by
     /// the next change; it is not an error.
     pub fn load_settings(&mut self) -> Result<SettingsLoad, Refusal> {
+        self.apply_platform_defaults();
         let Some(storage) = self.ports.storage.as_ref() else {
             return Ok(SettingsLoad::default());
         };
@@ -127,7 +128,7 @@ impl Session {
             return Ok(SettingsLoad::default());
         };
         let before = self.settings.revision;
-        let mut fresh = Settings::default();
+        let mut fresh = self.settings.fresh();
         let out = match decode_into(&mut fresh, &bytes) {
             Ok(out) => out,
             Err(why) => {

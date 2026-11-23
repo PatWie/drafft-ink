@@ -623,6 +623,7 @@ impl CollabClient {
             // The plaintext protocol has no text frames.
             TransportEvent::Text(_) => {}
             TransportEvent::Denied(denial) => self.on_denied(denial),
+            TransportEvent::Unavailable(why) => self.on_unavailable(now_ms, why),
             TransportEvent::Closed { error } => self.on_closed(now_ms, error),
         }
         self.flush_events();
@@ -666,6 +667,23 @@ impl CollabClient {
         self.refresh_status();
     }
 
+    /// The socket never opened, and the server's status address says why (the web transport asked).
+    fn on_unavailable(&mut self, now_ms: u64, why: crate::Unavailable) {
+        if matches!(self.phase, Phase::Idle | Phase::Stopped(_) | Phase::Backoff { .. }) {
+            return;
+        }
+        let problem = crate::status::explain_unavailable(why, self.cfg.url.host());
+        match why {
+            crate::Unavailable::NoRelay => self.enter_stopped(StopReason::NoRelay, Some(problem)),
+            crate::Unavailable::DailyLimit { retry_after_ms } => {
+                self.health.server_retry_ms = retry_after_ms.map(u64::from);
+                self.problem = Some(problem.clone());
+                self.events.push(CollabEvent::Problem(problem.clone()));
+                self.drop_connection(now_ms, &problem.text, false);
+            }
+        }
+    }
+
     fn on_closed(&mut self, now_ms: u64, error: Option<String>) {
         if matches!(self.phase, Phase::Idle | Phase::Stopped(_) | Phase::Backoff { .. }) {
             return;
@@ -707,7 +725,9 @@ impl CollabClient {
             ServerMessage::PeerJoined { peer } => self.on_peer_joined(&peer),
             ServerMessage::PeerLeft { client_id } => self.on_peer_left(client_id),
             ServerMessage::PeerAwareness { from, state } => self.on_peer_awareness(now_ms, from, state),
-            ServerMessage::Error { code, retry_after_ms, .. } => self.on_server_error(now_ms, code, retry_after_ms),
+            ServerMessage::Error { code, message, retry_after_ms } => {
+                self.on_server_error(now_ms, code, &message, retry_after_ms);
+            }
             ServerMessage::Ping { nonce } => self.send(&ClientMessage::Pong { nonce }),
             ServerMessage::Pong { .. } => {}
         }
@@ -860,8 +880,14 @@ impl CollabClient {
         }
     }
 
-    fn on_server_error(&mut self, now_ms: u64, code: ErrorCode, retry_after_ms: Option<u32>) {
+    fn on_server_error(&mut self, now_ms: u64, code: ErrorCode, message: &str, retry_after_ms: Option<u32>) {
         let joining = !matches!(self.phase, Phase::Online);
+        if code == ErrorCode::UnsupportedVersion && message == drafftink_protocol::ENCRYPTED_ONLY_MESSAGE {
+            // Not a version mismatch: this server has no plaintext rooms. The words say what to do instead.
+            self.out.push_back(Output::Close);
+            self.enter_stopped(StopReason::EncryptedOnly, Some(crate::status::encrypted_only()));
+            return;
+        }
         let problem = explain(code, joining);
         let retry = retry_after_ms.map(u64::from);
         match code {

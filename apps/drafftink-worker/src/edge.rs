@@ -75,6 +75,13 @@ pub fn r2_key(room: &str, name: &str) -> Result<String, EdgeError> {
     Ok(format!("{}{}", r2_prefix(room)?, hex(parse_name(name)?.as_bytes())))
 }
 
+/// The frame that answers a plaintext (v1) `Join` on `/ws`: an `UnsupportedVersion` error whose text says that this
+/// server only hosts encrypted rooms. The Worker has no plaintext rooms, and a socket that nobody answers would leave
+/// the app waiting.
+pub fn encrypted_only_frame() -> Result<Vec<u8>, drafftink_protocol::EncodeError> {
+    drafftink_protocol::ServerMessage::encrypted_rooms_only().encode()
+}
+
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
@@ -89,6 +96,19 @@ mod tests {
 
     fn room_text() -> String {
         RoomId::from_token(&MembershipToken::from_bytes([9; 32])).to_string()
+    }
+
+    #[test]
+    fn a_plaintext_join_is_answered_with_the_encrypted_only_error_the_v1_client_reads() {
+        use drafftink_protocol::{ENCRYPTED_ONLY_MESSAGE, ErrorCode, ServerMessage};
+        let frame = encrypted_only_frame().unwrap();
+        match ServerMessage::decode(&frame).unwrap() {
+            ServerMessage::Error { code, message, .. } => {
+                assert_eq!(code, ErrorCode::UnsupportedVersion);
+                assert_eq!(message, ENCRYPTED_ONLY_MESSAGE);
+            }
+            other => panic!("not an error: {other:?}"),
+        }
     }
 
     #[test]

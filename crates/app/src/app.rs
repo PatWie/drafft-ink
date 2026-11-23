@@ -109,6 +109,8 @@ pub struct App {
     world_key: Option<WorldKey>,
     overlay_key: Option<OverlayKey>,
     in_room: bool,
+    /// The encrypted room whose link the address bar shows (the host was told), `None` when it shows none.
+    located_room: Option<String>,
     last_presence_ms: f64,
     collab_due_ms: Option<u64>,
     /// When the debug panel next refreshes its numbers (ms). Idle frames come from this while it is open.
@@ -190,6 +192,7 @@ impl App {
             world_key: None,
             overlay_key: None,
             in_room: false,
+            located_room: None,
             last_presence_ms: f64::NEG_INFINITY,
             collab_due_ms: Some(0),
             debug_due_ms: f64::NEG_INFINITY,
@@ -769,6 +772,25 @@ impl App {
         shown
     }
 
+    /// Keeps the address bar in step with the room of the active tab: the link of an encrypted room goes in when the
+    /// room is joined or created, and the fragment goes out when the room is left. A host without an address bar
+    /// ignores it. The room id is compared every frame (cheap); the key is read only when the room changes.
+    fn sync_location(&mut self) {
+        let room = self.session.sealed_room_id();
+        if room == self.located_room {
+            return;
+        }
+        match &room {
+            Some(_) => {
+                if let Some(fragment) = self.session.invite_fragment() {
+                    self.host.set_location_fragment(Some(fragment.as_ref()));
+                }
+            }
+            None => self.host.set_location_fragment(None),
+        }
+        self.located_room = room;
+    }
+
     /// Esc and Enter belong to the interaction layer while it has something running (a drag, a line draft).
     fn feed_keys(&mut self, ctx: &egui::Context, now: f64) -> bool {
         if ctx.egui_wants_keyboard_input() || self.editor.is_some() {
@@ -1207,7 +1229,8 @@ impl ShellApp for App {
 
         // The UI.
         self.refresh_about();
-        let collab = collab_view_of(&mut self.session);
+        self.sync_location();
+        let collab = collab_view_of(&mut self.session, self.ui.state.collab_open);
         self.ui.set_collab(collab);
         self.ui.set_editor_faces(self.editor.as_ref().map(TextEditor::faces));
         let view_ns = self.set_debug_panel(cx, now);
@@ -1259,9 +1282,19 @@ impl ShellApp for App {
     }
 }
 
-/// What the UI shows about collaboration: `collab.status`, read as a query so it leaves no ring entry.
-fn collab_view_of(s: &mut Session) -> drafftink_ui::CollabView {
-    s.query("collab.status", json!({})).map(|out| drafftink_ui::CollabView::from_status(&out)).unwrap_or_default()
+/// What the UI shows about collaboration: `collab.status`, read as a query so it leaves no ring entry. While the
+/// collaboration dialog is open (`with_link`), the invite link of an encrypted room comes along, for the dialog to show
+/// and copy. The link holds the room key, so it is read only then and never kept.
+fn collab_view_of(s: &mut Session, with_link: bool) -> drafftink_ui::CollabView {
+    let mut view =
+        s.query("collab.status", json!({})).map(|out| drafftink_ui::CollabView::from_status(&out)).unwrap_or_default();
+    if with_link && view.e2e {
+        view.invite_link = s
+            .query("collab.share_link", json!({ "copy": false, "reveal": true }))
+            .ok()
+            .and_then(|out| out.get("link").and_then(|l| l.as_str().map(str::to_owned)));
+    }
+    view
 }
 
 #[cfg(all(test, feature = "scenarios"))]
@@ -1273,6 +1306,10 @@ mod eyedropper;
 #[cfg(test)]
 #[path = "app/collab_poll_tests.rs"]
 mod collab_poll_tests;
+
+#[cfg(test)]
+#[path = "app/location_tests.rs"]
+mod location_tests;
 
 #[cfg(test)]
 #[path = "app/export_tests.rs"]
