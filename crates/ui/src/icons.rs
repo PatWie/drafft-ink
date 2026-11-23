@@ -21,6 +21,7 @@ pub enum Icon {
     Line,
     Freehand,
     Highlighter,
+    HighlightOff,
     Text,
     Math,
     Frame,
@@ -172,6 +173,10 @@ impl Pen<'_> {
 /// is black-ish on the light one and white-ish on the dark one (and white on the accent of a selected button).
 const NEUTRAL_BAR: f32 = 0.5;
 
+/// The strike-through of [`Icon::HighlightOff`]: a diagonal from the top left to the bottom right, against the lean of
+/// the marker, in the ink colour.
+const STRIKE: ((f32, f32), (f32, f32)) = ((4.0, 4.0), (20.0, 20.0));
+
 /// Draws the highlighter icon with `bar` under the marker, instead of the neutral grey.
 pub fn paint_highlighter(painter: &Painter, rect: Rect, ink: Color32, bar: Color32) {
     let s = rect.width().min(rect.height()) / 24.0;
@@ -233,6 +238,10 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             pen.curve((13.0, 12.0), (16.0, 3.0), (18.0, 8.0), (20.5, 9.0));
         }
         Icon::Highlighter => pen.marker(color.gamma_multiply(NEUTRAL_BAR)),
+        Icon::HighlightOff => {
+            pen.marker(color.gamma_multiply(NEUTRAL_BAR));
+            pen.line(STRIKE.0, STRIKE.1);
+        }
         Icon::Text => {
             pen.line((6.0, 6.0), (18.0, 6.0));
             pen.line((12.0, 6.0), (12.0, 19.5));
@@ -649,7 +658,7 @@ pub fn hue(h: f32) -> Color32 {
 
 #[cfg(test)]
 mod tests {
-    use egui::{Context, Rect, Shape, pos2};
+    use egui::{Context, Pos2, Rect, Shape, pos2};
 
     use super::*;
 
@@ -705,6 +714,57 @@ mod tests {
                 assert!((px - px.round()).abs() < 1e-3, "{edge} at {ppp} pixels per point is {px} pixels");
             }
             assert!(rect.height() * ppp >= 1.0 - 1e-3, "at least one pixel tall at {ppp}");
+        }
+    }
+
+    /// The straight segments that `draw` paints, with their colour.
+    fn segments(draw: impl FnOnce(&Painter, Rect)) -> Vec<([Pos2; 2], Color32)> {
+        let ctx = Context::default();
+        let mut draw = Some(draw);
+        let mut full = ctx.run_ui(egui::RawInput::default(), |ui| {
+            if let Some(draw) = draw.take() {
+                draw(ui.painter(), Rect::from_min_size(pos2(10.0, 10.0), egui::vec2(24.0, 24.0)));
+            }
+        });
+        full.textures_delta.clear();
+        let mut out = Vec::new();
+        let mut stack: Vec<Shape> = full.shapes.into_iter().map(|c| c.shape).collect();
+        while let Some(shape) = stack.pop() {
+            match shape {
+                Shape::Vec(v) => stack.extend(v),
+                Shape::LineSegment { points, stroke } => out.push((points, stroke.color)),
+                _ => {}
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn the_strike_through_is_a_diagonal_across_the_marker_in_the_ink_colour_in_both_themes() {
+        for ink in [Color32::from_rgb(30, 30, 30), Color32::from_rgb(235, 235, 235)] {
+            let plain = segments(|p, r| paint(p, r, Icon::Highlighter, ink));
+            let struck = segments(|p, r| paint(p, r, Icon::HighlightOff, ink));
+            assert_eq!(struck.len(), plain.len() + 1, "the marker plus one stroke");
+            let strike = struck.iter().find(|s| !plain.contains(s)).expect("a stroke the marker does not have");
+            let ([a, b], color) = strike;
+            assert_eq!(*color, ink, "the ink, not a dimmed share of it");
+            let (dx, dy) = ((b.x - a.x).abs(), (b.y - a.y).abs());
+            assert!((dx - dy).abs() < 1e-3 && dx > 12.0, "a 45 degree line across most of the icon: {a:?} {b:?}");
+            assert!((b.x - a.x) * (b.y - a.y) > 0.0, "it runs against the lean of the marker");
+        }
+    }
+
+    #[test]
+    fn the_struck_marker_keeps_the_bar_crisp_on_whole_pixels() {
+        for ppp in [1.0, 1.5, 2.0, 3.0] {
+            let plain = bar(ppp, Color32::BLACK);
+            let found = rects(ppp, |p, r| paint(p, r, Icon::HighlightOff, Color32::BLACK));
+            assert_eq!(found.last().copied(), Some(plain), "the same bar as the highlighter's at {ppp}");
+            let (rect, _) = plain;
+            for edge in [rect.min.x, rect.min.y, rect.max.x, rect.max.y] {
+                let px = edge * ppp;
+                assert!((px - px.round()).abs() < 1e-3, "{edge} at {ppp} pixels per point is {px} pixels");
+            }
         }
     }
 

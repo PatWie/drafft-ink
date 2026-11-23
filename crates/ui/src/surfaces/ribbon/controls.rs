@@ -641,7 +641,9 @@ fn compose(ui: &mut Ui, cx: &mut Cx<'_>) {
 }
 
 /// The link (`Edit the link` opens the dialog, `Open the link` follows it; both grey out with the engine's text
-/// while their command is refused) and delete.
+/// while their command is refused), the button that takes the highlight off, and delete. The highlight button is
+/// there while some selected element can carry a highlight, and greyed out (`highlight.clear` says why) while
+/// none has one. In a text edit it takes the highlight off the selected characters (the editor holds them).
 fn link_and_delete(ui: &mut Ui, cx: &mut Cx<'_>) {
     let side = cx.layout.small_side();
     let reason = cx.refusal("element.set_link");
@@ -652,6 +654,10 @@ fn link_and_delete(ui: &mut Ui, cx: &mut Cx<'_>) {
     };
     cx.verb_button_gated(ui, Verb::OpenLinkEditor, Icon::Link, side, &tip, link.is_some(), reason);
     cx.icon_button(ui, &Ctl::new("element.open_link").label("Open the link"), Icon::Open, side);
+    if cx.model.style.applies("highlight") {
+        let remove = Ctl::new("highlight.clear").label("Remove highlight").editor_props(json!({ "highlight": null }));
+        cx.icon_button(ui, &remove, Icon::HighlightOff, side);
+    }
     cx.icon_button(ui, &Ctl::new("element.delete"), Icon::Delete, side);
 }
 
