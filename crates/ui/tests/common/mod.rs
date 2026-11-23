@@ -107,6 +107,19 @@ pub fn harness(fixture: Fixture) -> Harness<'static, Fixture> {
     )
 }
 
+/// Like [`harness`], with 10 ms between the frames. The harness keeps its own clock (a frame is a quarter of a second
+/// by default), and egui counts a double-click when two presses are less than 0.3 s apart, so a test of a
+/// double-click needs frames this short.
+pub fn quick_harness(fixture: Fixture) -> Harness<'static, Fixture> {
+    Harness::builder().with_size(egui::vec2(1280.0, 800.0)).with_step_dt(0.01).build_ui_state(
+        |ui, f: &mut Fixture| {
+            let acts = draw(ui, &f.model, &mut f.state);
+            f.actions.extend(acts);
+        },
+        fixture,
+    )
+}
+
 /// Clicks the control with this accessible name and returns the command calls it produced.
 pub fn click(h: &mut Harness<'static, Fixture>, label: &str) -> Vec<Call> {
     h.state_mut().clear();

@@ -49,7 +49,7 @@ fn a_narrow_window_gets_larger_targets_by_itself() {
     h.run();
     assert!(height_of(&h, "Rectangle tool") >= 44.0, "{}", height_of(&h, "Rectangle tool"));
     assert!(height_of(&h, "Undo") >= 40.0);
-    assert!(height_of(&h, "Sticky note") >= 44.0);
+    assert!(height_of(&h, "Sticky note tool") >= 44.0);
 }
 
 #[test]

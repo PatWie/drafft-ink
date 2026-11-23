@@ -9,6 +9,7 @@ use serde_json::{Value, json};
 use crate::refusal::Refusal;
 use crate::ring::Origin;
 use crate::session::Session;
+use crate::state::Tool;
 use crate::testing;
 
 const ID: &str = "element.create_sticky";
@@ -159,6 +160,23 @@ fn select_false_leaves_the_selection_and_edit_true_starts_the_label_edit() {
     let out = run(&mut s, json!({"edit": true}));
     assert!(s.text_edit.is_some(), "the edit of the new note's label has begun");
     assert_eq!(s.selection().iter().map(ElementId::as_str).collect::<Vec<_>>(), vec![out["id"].as_str().unwrap()]);
+}
+
+#[test]
+fn from_tool_returns_the_tool_to_select_unless_it_is_locked() {
+    let mut s = testing::headless_session();
+    s.tool.active = Tool::Sticky;
+    run(&mut s, json!({"from_tool": true}));
+    assert_eq!(s.tool.active, Tool::Select);
+    s.tool.active = Tool::Sticky;
+    s.tool.lock = true;
+    run(&mut s, json!({"from_tool": true}));
+    assert_eq!(s.tool.active, Tool::Sticky, "the lock keeps the tool");
+    // Without `from_tool` (the key N, the menu, an agent) the tool is left alone.
+    s.tool.active = Tool::Rectangle;
+    s.tool.lock = false;
+    run(&mut s, json!({}));
+    assert_eq!(s.tool.active, Tool::Rectangle);
 }
 
 // ---- undo ---------------------------------------------------------------------------------------------------

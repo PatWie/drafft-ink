@@ -445,8 +445,9 @@ fn a_selected_picture_has_edit_picture_next_to_crop_in_the_strip() {
     assert!(strip > 300, "the strip is drawn ({strip})");
 }
 
-/// The More button and the colour button of the one-row strip of a phone.
-const PHONE_MORE: Pos2 = Pos2::new(360.0, 25.0);
+/// The More button and the colour button of the one-row strip of a phone. The library button is at the right end,
+/// so More stands left of it: x 270 to 334 at 390 points wide.
+const PHONE_MORE: Pos2 = Pos2::new(302.0, 25.0);
 const PHONE_COLOUR: Pos2 = Pos2::new(206.0, 25.0);
 
 #[test]

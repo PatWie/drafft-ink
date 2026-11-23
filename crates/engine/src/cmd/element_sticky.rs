@@ -21,6 +21,7 @@ use super::view::RectArg;
 use crate::args;
 use crate::refusal::Refusal;
 use crate::session::Session;
+use crate::state::Tool;
 use crate::spec::{
     Batch, Binding, CommandSpec, Facts, Gate, Mutates, PortSet, Redraw, RingMode, Scope, Selection, TextGate, Typed, Undo,
 };
@@ -75,6 +76,9 @@ pub struct StickyArgs {
     /// Start typing into the note right away (as `text.edit_begin`). Default false.
     #[serde(default, skip_serializing_if = "is_false")]
     pub edit: bool,
+    /// Passed by the sticky tool: afterwards the tool returns to select unless the tool is locked.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub from_tool: bool,
 }
 
 /// What `element.create_sticky` made.
@@ -190,6 +194,9 @@ fn create_sticky(s: &mut Session, a: StickyArgs) -> Result<StickyOut, Refusal> {
     }
     if a.edit {
         s.run_nested("text.edit_begin", json!({ "id": note.id.as_str() }))?;
+    }
+    if a.from_tool && !s.tool.lock {
+        s.tool.active = Tool::Select;
     }
     Ok(StickyOut {
         id: note.id.as_str().to_owned(),

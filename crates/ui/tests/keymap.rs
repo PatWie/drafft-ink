@@ -127,6 +127,24 @@ fn letters_match_the_logical_key_so_azerty_users_get_the_letter_they_see() {
 }
 
 #[test]
+fn q_toggles_the_tool_lock_and_no_other_command_or_verb_has_that_key() {
+    // The lock has no button: the double-click on a tool and this key are how a person reaches it.
+    let m = model(false);
+    let st = UiState::new();
+    let q = one(&m, &st, press(Key::Q, Some(Key::Q), Modifiers::NONE)).unwrap();
+    assert_eq!(call(&q), ("tool.lock", &json!({}), Origin::Shortcut));
+    let plain_q = |c: &Chord| c.key == Key::Q && !(c.mod_key || c.ctrl || c.alt || c.shift);
+    let commands = m.commands.iter().filter(|c| c.shortcuts.iter().any(|s| s.chords.iter().any(plain_q)));
+    assert_eq!(commands.map(|c| c.id).collect::<Vec<_>>(), ["tool.lock"]);
+    let verbs: Vec<Verb> = VERB_BINDINGS
+        .iter()
+        .filter(|b| b.keys.iter().filter_map(|k| parse_chord(k)).any(|c| plain_q(&c)))
+        .map(|b| b.verb)
+        .collect();
+    assert_eq!(verbs, []);
+}
+
+#[test]
 fn digits_and_shifted_digits_match_the_physical_key() {
     let m = model(false);
     let st = UiState::new();

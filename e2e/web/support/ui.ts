@@ -22,20 +22,20 @@ export const STRIP = {
 
 /** The tools of the column, top to bottom: `TOOLS` in `crates/ui/src/surfaces/toolbar.rs`, by `Tool::name`. */
 const TOOL_COLUMN = [
-  "select", "lasso", "hand", "rectangle", "diamond", "ellipse", "arrow", "line", "freehand", "highlighter", "text", "math", "frame", "eraser", "laser",
+  "select", "lasso", "hand", "rectangle", "diamond", "ellipse", "arrow", "line", "freehand", "highlighter", "text", "sticky", "math", "frame", "eraser", "laser",
 ] as const;
 export type ColumnTool = (typeof TOOL_COLUMN)[number];
 
 /**
- * The centre of a tool button. The column is a panel anchored left and centred on the window, and with its 15 tools,
- * the sticky note, the lock and the library button it is taller than the room under the strip, so it is clamped to
- * `2 * (800 / 2 - 72 - 8) = 640` points (`ChromeRects::centred_panel_height`) and scrolls: it spans y 80..720.
- * The buttons start 8 points inside it (`PANEL_INSET_Y`), are 34 square (`Control::Tool`) and 3 apart (`space::XS`);
- * the panel is `MARGIN` (12) from the left edge and its buttons are inset by 11, so the centres are at x 12 + 11 + 17 = 40.
+ * The centre of a tool button. The column holds the 16 tools and nothing else: a panel anchored left and centred on the
+ * window, 16 * 34 + 15 * 3 + 2 * 8 = 605 points tall (`Control::Tool` 34, `space::XS` 3 between, `PANEL_INSET_Y` 8), which
+ * fits under the strip, so it does not scroll. It spans y 97.5..702.5 and egui snaps the first button's centre
+ * (97.5 + 8 + 17 = 122.5) to the pixel, 123. The panel is `MARGIN` (12) from the left edge and its buttons are inset by
+ * 11, so the centres are at x 12 + 11 + 17 = 40. `crates/ui/tests/toolbar.rs` pins both numbers.
  */
 export function toolButton(tool: ColumnTool): Pt {
-  const column = { top: 72 + 8, inset: 8, side: 34, gap: 3 };
-  return { x: 40, y: column.top + column.inset + column.side / 2 + TOOL_COLUMN.indexOf(tool) * (column.side + column.gap) };
+  const column = { firstCentre: 123, side: 34, gap: 3 };
+  return { x: 40, y: column.firstCentre + TOOL_COLUMN.indexOf(tool) * (column.side + column.gap) };
 }
 
 /** The first row of the main menu, "New tab" (under the "File" heading): x 23..255, y 110..138. */

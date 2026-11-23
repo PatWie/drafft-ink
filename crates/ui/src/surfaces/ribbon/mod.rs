@@ -48,6 +48,8 @@ fn tool_shows(tool: Tool, prop: &str) -> bool {
             matches!(prop, "stroke_width" | "freehand_style" | "tip" | "pressure_mode" | "opacity" | "fill_pattern")
         }
         Tool::Text | Tool::Math => TEXT.contains(&prop) || matches!(prop, "line_height" | "opacity"),
+        // A note has its own paper and ink; the defaults give it the font of its label and its opacity.
+        Tool::Sticky => matches!(prop, "font_family" | "font_weight" | "opacity"),
         Tool::Select | Tool::Lasso | Tool::Hand | Tool::Highlighter | Tool::Eraser | Tool::Laser => false,
     }
 }

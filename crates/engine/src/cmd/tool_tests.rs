@@ -289,7 +289,7 @@ fn in_view_only_mode_only_select_hand_and_laser_are_available() {
     for t in ["select", "hand", "laser"] {
         run(&mut s, "tool.set", json!({"tool": t}));
     }
-    for t in ["rectangle", "diamond", "ellipse", "arrow", "line", "freehand", "highlighter", "text", "math", "frame", "eraser"] {
+    for t in ["rectangle", "diamond", "ellipse", "arrow", "line", "freehand", "highlighter", "text", "sticky", "math", "frame", "eraser"] {
         let before = s.fingerprint();
         let r = refuse(&mut s, "tool.set", json!({"tool": t}));
         assert_eq!(r.code, "view_only_tool", "{t}");
@@ -355,6 +355,21 @@ fn the_keys_of_the_tool_bindings_are_the_ones_of_section_6_1() {
     for (tool, keys) in expect {
         assert!(seen.iter().any(|(t, k)| t == tool && k == keys), "{tool}: {keys:?}");
     }
+}
+
+#[test]
+fn the_sticky_tool_is_a_tool_with_no_key_and_n_still_places_a_note_at_the_pointer() {
+    let mut s = testing::headless_session();
+    let out = run(&mut s, "tool.set", json!({"tool": "sticky"}));
+    assert_eq!((out["tool"].clone(), out["active"].clone()), (json!("sticky"), json!("sticky")));
+    assert_eq!(s.active_tool(), Tool::Sticky);
+    assert_eq!(Tool::Sticky.name(), "sticky");
+    // No free letter reads as "note": `N` is the key of the note at the pointer, and the digits belong to the first
+    // ten tools. So the sticky tool has no key.
+    let spec = s.spec("tool.set").unwrap();
+    assert!(spec.shortcuts.iter().all(|b| !b.args.contains("sticky")));
+    let note = s.spec("element.create_sticky").unwrap();
+    assert_eq!(note.shortcuts[0].keys, &["N"]);
 }
 
 // ---- style defaults for new elements ----

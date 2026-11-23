@@ -2,14 +2,17 @@
 //! rows tall (one on a phone). The height depends on the layout only, never on what is selected.
 //!
 //! ```text
-//! | menu rooms | stroke  ... ... | width ...  | font ...   |        | More v |
-//! | title      | fill    ... ... | style ...  | weight ... |        |        |
-//!   left        colour group       contextual groups, each in two rows   overflow
+//! | menu rooms | stroke  ... ... | width ...  | font ...   |        | Library |
+//! | title      | fill    ... ... | style ...  | weight ... |        | More v  |
+//!   left        colour group       contextual groups, each in two rows   right
 //! ```
 //!
 //! * The left cluster is `menu::buttons`, the colour group is `topbar::style_rows`, and the contextual groups
 //!   are `ribbon::Group`s. Thin dividers stand between them. A group is two rows of controls; its rows line up
 //!   with the rows of every other group.
+//! * The library button (`ui.toggle_library`) is in the top right corner of the window, in the first row. It is
+//!   always there. The "More" button is under it in the second row, so the two share the width; on the one-row
+//!   strip of a narrow window they stand side by side and the button takes room of its own.
 //! * What does not fit goes behind the "More" button at the right end (`ribbon::fit` plans it from widths measured
 //!   in a hidden pass, so the plan is right in the same frame). When even the colour group does not fit, it
 //!   collapses into one style button that opens a popover with the same controls; a phone (one row, narrow) puts
@@ -29,8 +32,10 @@ use egui::{
 };
 use serde_json::Value;
 
+use crate::action::Verb;
 use crate::chrome::GAP;
 use crate::colors;
+use crate::icons::Icon;
 use crate::state::UiState;
 use crate::surfaces::color::{PopoverKey, forget_anchor};
 use crate::surfaces::ribbon::{self, DIVIDER_WIDTH, Group, MORE_BUTTON_WIDTH, Widths};
@@ -78,6 +83,11 @@ fn bands(ui: &mut Ui, rect: Rect, cx: &mut Cx<'_>, st: &mut UiState) -> Drawn {
     let button = cx.layout.small_side();
     let groups = ribbon::visible_groups(cx);
 
+    // The library button is at the right end of the first row. In a two-row strip the "More" button is in the
+    // second row under it, so the two share the width; in the one-row strip they stand side by side.
+    let stacked = cx.layout.strip_rows() == 2;
+    // The room the button takes from the groups, with the gap that keeps it off "More" when they stand side by side.
+    let end_w = if stacked { button } else { button + space::SM };
     let left_w = measure(ui, inner, |ui| menu::buttons(ui, cx, st));
     let colour_w = measure(ui, inner, |ui| topbar::style_rows(ui, cx, st));
     let widths: Vec<f32> = groups.iter().map(|g| measure(ui, inner, |ui| g.draw(ui, cx, st))).collect();
@@ -88,6 +98,8 @@ fn bands(ui: &mut Ui, rect: Rect, cx: &mut Cx<'_>, st: &mut UiState) -> Drawn {
             groups: &widths,
             more_button: MORE_BUTTON_WIDTH,
             extras: ribbon::has_extras(cx),
+            end_button: end_w,
+            stacked,
         },
         DIVIDER_WIDTH,
         inner.width() - left_w,
@@ -98,7 +110,12 @@ fn bands(ui: &mut Ui, rect: Rect, cx: &mut Cx<'_>, st: &mut UiState) -> Drawn {
     place(ui, "strip_left", left, Layout::top_down(Align::Min), |ui| menu::buttons(ui, cx, st));
 
     let band = inner.height();
-    let content = Rect::from_min_max(pos2(inner.left() + left_w, inner.top()), inner.max);
+    let right = Rect::from_min_max(pos2(inner.right() - button, inner.top()), inner.max);
+    place(ui, "strip_right", right, Layout::top_down(Align::Max), |ui| library_button(ui, cx, st));
+    // Where the groups may reach: the whole way when the end button stands over "More" (the plan has made room for
+    // it), else short of the end button. The sideways scroll is the last resort and always stops short of it.
+    let reach = if stacked && !plan.scroll { inner.right() } else { inner.right() - end_w };
+    let content = Rect::from_min_max(pos2(inner.left() + left_w, inner.top()), pos2(reach, inner.bottom()));
     let (inline, overflow) = groups.split_at(plan.shown);
     let items = |ui: &mut Ui, cx: &mut Cx<'_>, st: &mut UiState| {
         ui.spacing_mut().item_spacing.x = 0.0;
@@ -130,11 +147,19 @@ fn bands(ui: &mut Ui, rect: Rect, cx: &mut Cx<'_>, st: &mut UiState) -> Drawn {
     } else {
         place(ui, "strip_content", content, Layout::left_to_right(Align::Min), |ui| items(ui, cx, st));
         if plan.more {
-            let right = Rect::from_min_max(pos2(inner.right() - MORE_BUTTON_WIDTH - 1.0, inner.top()), inner.max);
-            place(ui, "strip_more", right, Layout::right_to_left(Align::Center), |ui| ribbon::more_button(ui, cx, st));
+            // Under the end button when stacked: the second row; else in the band, left of the end button.
+            let top = if stacked { inner.top() + button + space::SM } else { inner.top() };
+            let more = Rect::from_min_max(pos2(content.right() - MORE_BUTTON_WIDTH - 1.0, top), content.max);
+            place(ui, "strip_more", more, Layout::right_to_left(Align::Center), |ui| ribbon::more_button(ui, cx, st));
         }
     }
     Drawn { colour_inline: plan.colour_inline, overflow: overflow.to_vec() }
+}
+
+/// The library button: it shows or hides the library drawer, and is on while the drawer is open.
+fn library_button(ui: &mut Ui, cx: &mut Cx<'_>, st: &UiState) {
+    let side = cx.layout.small_side();
+    cx.verb_button(ui, Verb::ToggleLibrary, Icon::Library, side, "Library", st.library_open);
 }
 
 /// A divider between two parts of the strip: space, a hairline as tall as the two rows less a little, space.
