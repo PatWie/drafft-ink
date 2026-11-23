@@ -106,6 +106,7 @@ export class Room extends DurableObject<Env> {
         case "image":
           return await this.#image(request, request.method === "PUT" ? ImageCall.Put : ImageCall.Get, route.name);
         case "status":
+        case "legacy_socket":
         case "unknown":
           return failure(404, "not_found", "There is nothing at this address.");
       }
