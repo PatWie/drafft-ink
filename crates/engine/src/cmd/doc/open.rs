@@ -774,6 +774,14 @@ fn classify(bytes: &[u8], scene_png: ScenePng) -> Class {
     }
 }
 
+/// Whether a dropped file is a document that `doc.drop` would open (a drafft.ink or Excalidraw file, or a PNG or SVG
+/// that carries a scene), as opposed to a picture or a library. A shell asks this before a drop on a room's tab, to
+/// offer "add to this room" instead of the new tab a document opens in.
+#[must_use]
+pub fn holds_document(bytes: &[u8]) -> bool {
+    matches!(classify(bytes, ScenePng::Open), Class::Document)
+}
+
 /// The codes of a refusal that say the document itself cannot be read (not where it would go).
 const SCENE_UNREADABLE: [&str; 3] = ["parse_failed", "newer_version", "limit_exceeded"];
 
@@ -871,6 +879,7 @@ pub(super) fn drop_files(s: &mut Session, a: DropArgs) -> Result<DropOut, Refusa
     if replace {
         guard_replace(s, id, a.on_unsaved, Alternative::Documents)?;
     }
+    let mut refused_docs: Option<String> = None;
     let mut out = DropOut { changed: false, documents: 0, images: 0, library_items: 0, skipped, scene_fallbacks: Vec::new() };
     let mode = match a.documents {
         DropDocs::NewTab => Mode::NewTab,
@@ -899,6 +908,7 @@ pub(super) fn drop_files(s: &mut Session, a: DropArgs) -> Result<DropOut, Refusa
             Err(r) => {
                 s.warn(format!("`{}` was skipped: {}", echo(&loaded.name), r.message));
                 out.skipped += 1;
+                refused_docs.get_or_insert(r.message);
             }
         }
     }
@@ -942,7 +952,10 @@ pub(super) fn drop_files(s: &mut Session, a: DropArgs) -> Result<DropOut, Refusa
         }
     }
     if !out.changed {
-        let why = refused_images.map(|m| format!(": {}", m.trim_end_matches('.'))).unwrap_or_default();
+        let why = refused_images
+            .or(refused_docs)
+            .map(|m| format!(": {}", m.trim_end_matches('.')))
+            .unwrap_or_default();
         return Err(Refusal::nothing_to_do(id, "open", &format!("none of the {n} dropped files could be opened{why}")));
     }
     Ok(out)

@@ -69,6 +69,21 @@ pub(crate) fn join_call(room: &str, token: &str) -> Call {
     call("collab.join_room", Value::Object(args))
 }
 
+/// `collab.join_room` for a new private room that starts with the content of this tab (`on_local=merge`). A new room
+/// is empty, so merging only seeds it and changes no one else's work.
+pub(crate) fn share_call(token: &str) -> Call {
+    let mut c = join_call("", token);
+    if let Value::Object(args) = &mut c.args {
+        args.insert("on_local".to_owned(), json!("merge"));
+    }
+    c
+}
+
+/// `tab.new`, the first step of a new empty room in a new tab.
+pub(crate) fn new_tab_call() -> Call {
+    call("tab.new", json!({}))
+}
+
 /// What the room field holds, for the hint under it. Only the look of the dialog: the engine reads the text and
 /// decides (a bare room id, a damaged link and a bad name are its refusals).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -94,7 +109,7 @@ impl RoomEntry {
         }
     }
 
-    /// The text of the button.
+    /// The text of the button on a tab without content. A tab with content offers [`SHARE_BUTTON`] instead.
     pub(crate) fn button(self) -> &'static str {
         match self {
             Self::New => "Start a private room",
@@ -102,9 +117,12 @@ impl RoomEntry {
         }
     }
 
-    /// One sentence under the field that says what the button will do.
-    pub(crate) fn hint(self) -> &'static str {
+    /// One sentence under the field that says what the button will do. `has_content`: the tab already holds elements.
+    pub(crate) fn hint(self, has_content: bool) -> &'static str {
         match self {
+            Self::New if has_content => {
+                "Empty shares this canvas in a new private room, end-to-end encrypted. To join one, paste its invite link here."
+            }
             Self::New => "Empty starts a private room, end-to-end encrypted. To join one, paste its invite link here.",
             Self::Link => "Joins the private room of this invite link.",
             Self::PlainName => {
@@ -113,6 +131,14 @@ impl RoomEntry {
         }
     }
 }
+
+/// The button that starts a private room with the content of this tab.
+pub(crate) const SHARE_BUTTON: &str = "Share this canvas";
+/// The button that starts a private room that is empty, in a tab of its own.
+pub(crate) const EMPTY_ROOM_BUTTON: &str = "Start a new empty room in a new tab";
+/// The line under the share button. Joining builds the tab's store again, which clears its undo history.
+pub(crate) const SHARE_HINT: &str =
+    "Puts this canvas into a new private room. The undo history of this tab is cleared.";
 
 /// The server as the field shows it: the page's own server in full when the setting is the relative `/ws`, so the
 /// dialog never says `localhost` on a page that has a server of its own.
@@ -309,13 +335,19 @@ fn body(ui: &mut Ui, cx: &mut Cx<'_>, draft: &mut Draft) {
                 None,
                 "Room",
             );
-            ui.label(RichText::new(entry.hint()).size(TextSize::Small.points()).color(pal.muted));
+            ui.label(
+                RichText::new(entry.hint(cx.model.tab_has_content)).size(TextSize::Small.points()).color(pal.muted),
+            );
             ui.add_space(6.0);
             section_label(ui, &pal, "Access token");
             secret_field(ui, &mut draft.token, "Only if the server asks for one", reason, None, "Access token");
             ui.add_space(6.0);
-            let c = join_call(&draft.room, &draft.token);
-            cx.text_button(ui, &Ctl::new(&c.id).args(c.args.clone()), entry.button(), true);
+            if entry == RoomEntry::New && cx.model.tab_has_content {
+                share_buttons(ui, cx, &draft.token);
+            } else {
+                let c = join_call(&draft.room, &draft.token);
+                cx.text_button(ui, &Ctl::new(&c.id).args(c.args.clone()), entry.button(), true);
+            }
         }
     }
 
@@ -325,6 +357,20 @@ fn body(ui: &mut Ui, cx: &mut Cx<'_>, draft: &mut Draft) {
     ui.add_space(10.0);
     section_label(ui, &pal, "Your profile");
     profile(ui, cx, &mut draft.name, &mut draft.name_sent);
+}
+
+/// The two ways to start a room from a tab that has content: put the canvas into it, or leave the canvas alone and
+/// start empty in a new tab.
+fn share_buttons(ui: &mut Ui, cx: &mut Cx<'_>, token: &str) {
+    let pal = cx.pal;
+    let share = share_call(token);
+    cx.text_button(ui, &Ctl::new(&share.id).args(share.args.clone()), SHARE_BUTTON, true);
+    ui.label(RichText::new(SHARE_HINT).size(TextSize::Small.points()).color(pal.muted));
+    ui.add_space(6.0);
+    let (tab, join) = (new_tab_call(), join_call("", token));
+    if cx.text_button(ui, &Ctl::new(&tab.id).args(tab.args.clone()), EMPTY_ROOM_BUTTON, false).clicked() {
+        cx.run(&join.id, join.args);
+    }
 }
 
 /// The invite link of a private room and the button that copies it. The link holds the key: it is shown only here, to

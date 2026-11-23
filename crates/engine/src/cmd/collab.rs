@@ -43,7 +43,9 @@ use crate::cmd::tab::{RoomBinding, SealedBinding};
 use crate::ports::PortKind;
 use crate::refusal::{Refusal, echo};
 use crate::session::Session;
-use crate::spec::{Batch, CommandSpec, Facts, Gate, Mutates, NoArgs, PortSet, Redraw, RingMode, TextGate, Typed};
+use crate::spec::{
+    Batch, CommandSpec, Facts, Gate, Mutates, NoArgs, PortSet, Redraw, RingMode, TextGate, Typed, Variant,
+};
 
 pub use self::address::RoomLink;
 pub use self::connection::{IfMissing, OnLocal};
@@ -887,6 +889,7 @@ pub const COMMANDS: &[CommandSpec] = &[
     .available(require_connected_and_roomless)
     .refusals(&["not_connected", "already_in_room", "local_content", "bad_room_link", "local_too_large_for_room"])
     .secret_args(&["token", "room"])
+    .variants(&[Variant::new(r#"{"on_local":"merge"}"#, "Share this canvas")])
     .example(r#"{"room":"team-sync","on_local":"merge"}"#),
     CommandSpec::new(
         "collab.leave_room",

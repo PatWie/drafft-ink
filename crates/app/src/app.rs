@@ -718,6 +718,15 @@ impl App {
     /// Opens, inserts or imports dropped files with `doc.drop`; `pointer` is where the drop happened, if known.
     fn drop_files_at(&mut self, files: &[DroppedFile], pointer: Option<Point>) -> Repaint {
         let args = crate::drop::drop_args(files, pointer);
+        // A document dropped on a tab in a room would open a new tab and leave the room as it was. The person dropped
+        // it here on purpose, so ask: add it to the room (at the drop point), or open it in a new tab.
+        if self.session.collab_view().room.is_some() {
+            let names = crate::drop::document_names(files);
+            if !names.is_empty() {
+                self.ui.state.ask_drop_in_room(drafftink_ui::Call::new(Origin::Ui, "doc.drop", args), names);
+                return Repaint::Now(RedrawReason::Load);
+            }
+        }
         let dropped = self.run(Origin::Ui, "doc.drop", args);
         // A PNG whose scene could not be read became a plain picture: say so, so it is not mistaken for the scene.
         let fallbacks = dropped.as_ref().and_then(|out| out.get("scene_fallbacks")).and_then(Value::as_array);

@@ -507,6 +507,10 @@ impl UiState {
             self.ask_confirm(call.clone(), refusal.message.clone());
             return;
         }
+        if let Some(kind) = crate::surfaces::room_choice::asked_by(call, refusal.code) {
+            self.room_choice = Some(crate::state::RoomChoice { kind, call: call.clone() });
+            return;
+        }
         // An export says why it did nothing, also from the keyboard: Mod+E on an empty drawing is not a stray key.
         if call.origin == Origin::Shortcut
             && quiet_from_keyboard(refusal.code)

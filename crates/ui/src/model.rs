@@ -557,6 +557,8 @@ pub struct Model {
     pub view_only: bool,
     /// A text edit is running.
     pub text_editing: bool,
+    /// The active tab holds at least one element: joining a room from it needs a decision about that content.
+    pub tab_has_content: bool,
     /// A gesture is running.
     pub gesture_running: bool,
     /// A tool is held with a key (Space for the hand): releasing the key ends it.
@@ -644,6 +646,7 @@ impl Default for Model {
             selection_count: 0,
             view_only: false,
             text_editing: false,
+            tab_has_content: false,
             gesture_running: false,
             tool_held: false,
             point_selected: false,
@@ -820,6 +823,7 @@ impl Model {
         self.tool_held = s.tool.temporary.is_some();
         self.tool_lock = s.tool.lock;
         let t = s.tab();
+        self.tab_has_content = t.doc.store().iter().next().is_some();
         self.selection_count = t.observed.selection.len();
         self.point_selected = t.observed.linear_editor.as_ref().is_some_and(|l| !l.selected_points.is_empty());
         self.crop_editing = t.observed.crop_editor.is_some();

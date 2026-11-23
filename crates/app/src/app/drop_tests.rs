@@ -299,3 +299,58 @@ fn several_files_in_one_drop_are_one_command() {
     assert!(app.ui.state.toasts.is_empty(), "{:?}", app.ui.state.toasts);
     assert_eq!(app.session.tabs.len(), 2);
 }
+
+// ---- a drop on a tab that is in a room ----
+
+/// An app whose active tab has joined a new private room (the fake network accepts it).
+fn app_in_a_room() -> App {
+    let mut app = app();
+    app.session.execute("collab.connect", json!({ "url": "ws://127.0.0.1:3030/ws" })).expect("a server");
+    app.session.execute("collab.join_room", json!({})).expect("a new room");
+    app
+}
+
+#[test]
+fn a_document_dropped_on_a_room_tab_asks_where_it_goes_and_adding_is_one_undo_step_at_the_drop_point() {
+    let documents = [
+        file("plan.drafftink", "application/json", &drafftink_json()),
+        file("sketch.excalidraw", "", EXCALIDRAW),
+        file("scene.png", "image/png", &drafftink_scene_png()),
+    ];
+    for doc in documents {
+        let name = doc.name.clone();
+        let mut app = app_in_a_room();
+        drop_files(&mut app, vec![doc], true);
+        assert_eq!(app.session.tabs.len(), 1, "{name}: nothing opened before the answer");
+        assert_eq!(app.session.store().len(), 0, "{name}");
+        let choice = app.ui.state.room_choice.clone().unwrap_or_else(|| panic!("{name}: no question was asked"));
+        assert_eq!(choice.kind, drafftink_ui::RoomChoiceKind::DocumentInRoom { names: vec![name.clone()] });
+        assert_eq!(choice.call.id, "doc.drop");
+        assert_eq!(choice.call.args["at"], json!([120.0, 80.0]), "{name}: the drop point is kept");
+        // The answer "Add to this room" is the held call with `documents=merge`.
+        let mut args = choice.call.args.clone();
+        args["documents"] = json!("merge");
+        app.session.execute("doc.drop", args).expect("the merge");
+        assert_eq!(app.session.tabs.len(), 1, "{name}: still one tab");
+        let added = app.session.store().len();
+        assert!(added > 0, "{name}");
+        app.session.execute("history.undo", json!({})).expect("one undo step");
+        assert_eq!(app.session.store().len(), 0, "{name}: one step takes it all back");
+    }
+}
+
+#[test]
+fn a_picture_or_a_library_dropped_on_a_room_tab_needs_no_question() {
+    for dropped in [file("photo.png", "image/png", &png_1x1()), file("shapes.excalidrawlib", "", LIBRARY)] {
+        let mut app = app_in_a_room();
+        drop_files(&mut app, vec![dropped], true);
+        assert!(app.ui.state.room_choice.is_none());
+    }
+}
+
+#[test]
+fn a_document_dropped_on_a_tab_outside_a_room_still_opens_in_a_new_tab_without_a_question() {
+    let (effect, app) = drop_one(file("plan.drafftink", "application/json", &drafftink_json()), true);
+    assert!(app.ui.state.room_choice.is_none());
+    assert_eq!(effect.tabs, 2);
+}

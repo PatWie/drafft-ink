@@ -537,3 +537,90 @@ fn a_shell_without_http_runs_the_room_and_says_once_that_pictures_do_not_work() 
     w.settle();
     assert_eq!(run(w.s(0), "collab.status", json!({}))["state"], "connected");
 }
+
+/// A drafft.ink file, as the app saves it, with `rectangles` rectangles and one picture.
+fn document_file_with_a_picture(bytes: &[u8], rectangles: usize) -> (String, FileId) {
+    let (mut s, _fakes) = testing::session();
+    for i in 0..rectangles {
+        let bounds = json!({"x": 100 * i, "y": 0, "w": 50, "h": 40});
+        run(&mut s, "element.create", json!({"kind": "rectangle", "bounds": bounds}));
+    }
+    let (_, id) = insert(&mut s, bytes, [0.0, 200.0]);
+    (export_json(&mut s), id)
+}
+
+/// A drafft.ink file with a picture over the room's limit, put in without the command's gate as an import would.
+fn document_file_with_an_oversize_picture() -> String {
+    let (mut s, _fakes) = testing::session();
+    let big: Vec<u8> = (0..MAX_IMAGE_BYTES + 1).map(|i| (i % 251) as u8).collect();
+    let entry = FileEntry { mime: "image/png".to_owned(), bytes: big.into() };
+    let id = FileId::of(&entry.bytes);
+    let kind = ElementKind::Image(drafftink_scene::ImageData { file_id: Some(id), natural_width: 10, natural_height: 10, crop: None, paint: Default::default() });
+    testing::add(&mut s, kind, 300.0, 0.0, 50.0, 50.0).unwrap();
+    s.tab_mut().doc.edit::<(), drafftink_scene::StoreError>(|tx| tx.put_file(entry).map(|_| ())).unwrap();
+    export_json(&mut s)
+}
+
+fn export_json(s: &mut Session) -> String {
+    let out = run(s, "doc.export", json!({"format": "json", "scope": "all"}));
+    out["bytes"]["base64"].as_str().expect("inline bytes").to_owned()
+}
+
+#[test]
+fn a_shared_canvas_with_fifty_elements_and_a_picture_reaches_the_person_who_joins() {
+    let mut w = World::new(2);
+    let bytes = noise_png(20, 40, 30);
+    for i in 0..50 {
+        let bounds = json!({"x": 60 * (i % 10), "y": 60 * (i / 10), "w": 50, "h": 40});
+        run(w.s(0), "element.create", json!({"kind": "rectangle", "bounds": bounds}));
+    }
+    let (_, id) = insert(w.s(0), &bytes, [0.0, 400.0]);
+    assert_eq!(elements(w.s(0)), 51);
+    // What the dialog's "Share this canvas" runs: a new private room that starts with this tab's content.
+    run(w.s(0), "collab.connect", json!({"url": URL}));
+    let out = run(w.s(0), "collab.join_room", json!({"on_local": "merge"}));
+    assert_eq!(out["e2e"], true);
+    w.settle();
+    assert_eq!(run(w.s(0), "collab.status", json!({}))["unsynced"], false, "the picture is up");
+    assert_eq!(w.s(0).tab().doc.undo_depth(), 0, "joining clears the undo history of the tab");
+    let link = run(w.s(0), "collab.share_link", json!({"copy": false, "reveal": true}))["link"].as_str().unwrap().to_owned();
+    w.join(1, &link, json!({}));
+    w.settle();
+    assert_eq!(elements(w.s(1)), 51, "every element arrived");
+    assert!(has_bytes(w.s(1), &id), "and the picture");
+    assert_eq!(&*w.s(1).store().file(&id).unwrap().bytes, &bytes[..]);
+}
+
+#[test]
+fn a_dropped_file_merged_in_a_room_is_one_undo_step_and_its_picture_reaches_the_other_person() {
+    let mut w = two_in_a_room();
+    let bytes = noise_png(21, 40, 30);
+    let (file, id) = document_file_with_a_picture(&bytes, 3);
+    let before = elements(w.s(0));
+    let drop = json!({"items": [{"name": "plan.drafftink", "bytes": {"base64": file, "name": "plan.drafftink"}}], "at": [500.0, 500.0], "documents": "merge"});
+    let out = run(w.s(0), "doc.drop", drop);
+    assert_eq!((out["documents"].clone(), out["changed"].clone()), (json!(1), json!(true)), "{out}");
+    assert_eq!(elements(w.s(0)), before + 4, "three rectangles and the picture");
+    assert_eq!(w.s(0).tabs.len(), 1, "no new tab");
+    w.settle();
+    assert_eq!(run(w.s(0), "collab.status", json!({}))["unsynced"], false, "the picture is up");
+    assert_eq!(elements(w.s(1)), before + 4, "the other person sees all of it");
+    assert!(has_bytes(w.s(1), &id), "and the picture");
+    assert_eq!(w.relay.sealed_pictures().len(), 1);
+    // One undo step takes the whole file back, for the other person as well.
+    run(w.s(0), "history.undo", json!({}));
+    w.settle();
+    assert_eq!((elements(w.s(0)), elements(w.s(1))), (before, before));
+}
+
+#[test]
+fn a_dropped_file_whose_picture_the_room_cannot_hold_is_refused_in_plain_words() {
+    let mut w = two_in_a_room();
+    let file = document_file_with_an_oversize_picture();
+    let before = elements(w.s(0));
+    let drop = json!({"items": [{"name": "big.drafftink", "bytes": {"base64": file, "name": "big.drafftink"}}], "documents": "merge"});
+    let r = refuse(w.s(0), "doc.drop", drop);
+    assert_eq!(r.code, "nothing_to_do");
+    assert!(r.message.contains("at most 4 MB"), "the reason is in the message: {}", r.message);
+    assert_eq!(elements(w.s(0)), before, "nothing was added");
+}

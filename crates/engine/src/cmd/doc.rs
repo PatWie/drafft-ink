@@ -18,7 +18,7 @@ mod list;
 mod save;
 
 pub use files::{AUTOSAVE_NAME, SaveTarget, save_target, set_save_target, use_stored_default_target};
-pub use open::intro_document;
+pub use open::{holds_document, intro_document};
 
 use crate::spec::{Host, HostEffect};
 use crate::spec::{

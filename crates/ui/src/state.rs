@@ -178,6 +178,39 @@ pub struct Confirm {
     pub message: String,
 }
 
+/// A decision the person makes before a command that others cannot take back, or that would replace the shared
+/// document, runs: the refused or held call, and what it is about.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RoomChoice {
+    /// What is being decided.
+    pub kind: RoomChoiceKind,
+    /// The call to repeat with the answer filled in.
+    pub call: Call,
+}
+
+/// What a [`RoomChoice`] asks.
+#[derive(Debug, Clone, PartialEq)]
+pub enum RoomChoiceKind {
+    /// A room link was entered on a tab that has content (`local_content`): add the canvas to the room, or open the
+    /// room in a new tab.
+    JoinWithContent,
+    /// A document (`.drafftink`, `.excalidraw`, a PNG with a scene) was dropped or opened on a tab in a room: add it
+    /// to the room, or open it in a new tab. `names` are the files, for the question.
+    DocumentInRoom {
+        /// The file names shown in the question.
+        names: Vec<String>,
+    },
+}
+
+impl RoomChoiceKind {
+    /// Whether "add it to the room" is the default answer. It is for a file the person dropped on the room on purpose.
+    /// It is not for a room link, where adding cannot be taken back by the others and a new tab leaves everything as it was.
+    #[must_use]
+    pub fn adds_by_default(&self) -> bool {
+        matches!(self, Self::DocumentInRoom { .. })
+    }
+}
+
 /// One element a search found.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SearchHit {
@@ -579,6 +612,8 @@ pub struct UiState {
     pub recent_open: bool,
     /// A pending question.
     pub confirm: Option<Confirm>,
+    /// A pending choice about a room: where a canvas or a file goes.
+    pub room_choice: Option<RoomChoice>,
     /// The rename dialog, when open.
     pub rename: Option<RenameState>,
     /// The field over the name label of a frame, when open.
@@ -678,6 +713,7 @@ impl UiState {
             || self.context_menu.is_some()
             || self.recent_open
             || self.confirm.is_some()
+            || self.room_choice.is_some()
             || self.rename.is_some()
             || self.frame_name.is_some()
             || self.library_remove.is_some()
@@ -710,6 +746,7 @@ impl UiState {
             || self.equation.is_some()
             || self.link_editor.is_some()
             || self.confirm.is_some()
+            || self.room_choice.is_some()
             || self.search_open
             || self.rename.is_some()
             || self.library_remove.is_some()
@@ -739,6 +776,7 @@ impl UiState {
         self.context_menu = None;
         self.recent_open = false;
         self.confirm = None;
+        self.room_choice = None;
         self.rename = None;
         self.frame_name = None;
         self.library_remove = None;
@@ -989,6 +1027,12 @@ impl UiState {
 
     pub(crate) fn ask_confirm(&mut self, call: Call, message: String) {
         self.confirm = Some(Confirm { call, message });
+    }
+
+    /// Asks where dropped documents go, when the tab is in a room: `call` is the `doc.drop` that the app held back.
+    /// Both answers repeat it, with `documents` set to `merge` or `new_tab`.
+    pub fn ask_drop_in_room(&mut self, call: Call, names: Vec<String>) {
+        self.room_choice = Some(RoomChoice { kind: RoomChoiceKind::DocumentInRoom { names }, call });
     }
 
     /// The id of the running scrub gesture.
