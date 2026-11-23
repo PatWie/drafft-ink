@@ -4,8 +4,13 @@
 
 mod common;
 
-use common::{Fixture, click, harness};
+use common::{Fixture, click, harness, quick_harness};
 use drafftink_engine::Origin;
+use drafftink_engine::state::Tool;
+use drafftink_ui::Call;
+use drafftink_ui::state::LayoutPreference;
+use drafftink_ui::surfaces::toolbar::TOOLS;
+use egui_kittest::Harness;
 use serde_json::json;
 
 #[test]
@@ -48,6 +53,7 @@ fn every_tool_button_runs_tool_set_with_its_tool() {
         ("Line tool", "line"),
         ("Freehand tool", "freehand"),
         ("Text tool", "text"),
+        ("Sticky note tool", "sticky"),
         ("Math tool", "math"),
         ("Frame tool", "frame"),
         ("Eraser tool", "eraser"),
@@ -59,13 +65,193 @@ fn every_tool_button_runs_tool_set_with_its_tool() {
     }
 }
 
+/// Two quick clicks on a tool button, with the frames in between that the app runs its dispatch in. Returns the
+/// calls of each click.
+fn double_click(h: &mut Harness<'static, Fixture>, label: &str) -> (Vec<Call>, Vec<Call>) {
+    let first = click_and_take(h, label);
+    let second = click_and_take(h, label);
+    (first, second)
+}
+
+/// One click, then the app runs what the frame returned and the model catches up. The calls come back.
+fn click_and_take(h: &mut Harness<'static, Fixture>, label: &str) -> Vec<Call> {
+    h.state_mut().clear();
+    h.get_by_label(label).click();
+    h.run();
+    let calls = h.state().calls().into_iter().cloned().collect();
+    h.state_mut().dispatch();
+    h.run();
+    calls
+}
+
+/// Lets the clock of the harness pass the double-click delay of egui, so that the next click is a first click.
+fn wait_out_the_double_click(h: &mut Harness<'static, Fixture>) {
+    h.run_steps(40);
+}
+
+fn ids(calls: &[Call]) -> Vec<(&str, &serde_json::Value)> {
+    calls.iter().map(|c| (c.id.as_str(), &c.args)).collect()
+}
+
 #[test]
-fn tool_lock_button_runs_tool_lock() {
+fn a_double_click_on_a_tool_sets_it_once_and_then_keeps_it_with_the_lock() {
+    let mut h = quick_harness(Fixture::new());
+    h.run();
+    let (first, second) = double_click(&mut h, "Rectangle tool");
+    assert_eq!(ids(&first), [("tool.set", &json!({ "tool": "rectangle" }))], "the first click is a plain click");
+    assert_eq!(ids(&second), [("tool.lock", &json!({ "on": true }))], "the second keeps the tool");
+    assert_eq!(h.state().model.tool, Tool::Rectangle);
+    assert!(h.state().model.tool_lock);
+    assert!(second.iter().chain(&first).all(|c| c.origin == Origin::Ui));
+}
+
+#[test]
+fn a_single_click_on_any_tool_clears_the_lock() {
+    let mut h = quick_harness(Fixture::new());
+    h.run();
+    double_click(&mut h, "Rectangle tool");
+    assert!(h.state().model.tool_lock);
+    wait_out_the_double_click(&mut h);
+    let calls = click_and_take(&mut h, "Ellipse tool");
+    assert_eq!(
+        ids(&calls),
+        [("tool.set", &json!({ "tool": "ellipse" })), ("tool.lock", &json!({ "on": false }))],
+        "the tool, then the lock off"
+    );
+    assert!(!h.state().model.tool_lock);
+    assert_eq!(h.state().model.tool, Tool::Ellipse);
+    // A click when no lock is on says nothing about the lock.
+    let calls = click_and_take(&mut h, "Line tool");
+    assert_eq!(ids(&calls), [("tool.set", &json!({ "tool": "line" }))]);
+}
+
+#[test]
+fn a_double_click_on_the_tool_that_is_already_locked_leaves_it_locked() {
+    // The first click of the pair clears the lock and the second sets it again: the badge blinks between the
+    // clicks (the one flicker left, only on a tool that is locked already).
+    let mut h = quick_harness(Fixture::new());
+    h.run();
+    double_click(&mut h, "Diamond tool");
+    wait_out_the_double_click(&mut h);
+    let (first, second) = double_click(&mut h, "Diamond tool");
+    assert_eq!(ids(&first), [("tool.set", &json!({ "tool": "diamond" })), ("tool.lock", &json!({ "on": false }))]);
+    assert_eq!(ids(&second), [("tool.lock", &json!({ "on": true }))]);
+    assert_eq!((h.state().model.tool, h.state().model.tool_lock), (Tool::Diamond, true));
+}
+
+#[test]
+fn a_click_on_the_locked_tool_itself_unlocks_it() {
+    let mut h = quick_harness(Fixture::new());
+    h.run();
+    double_click(&mut h, "Diamond tool");
+    wait_out_the_double_click(&mut h);
+    let calls = click_and_take(&mut h, "Diamond tool");
+    assert_eq!(ids(&calls).last(), Some(&("tool.lock", &json!({ "on": false }))));
+    assert!(!h.state().model.tool_lock);
+    assert_eq!(h.state().model.tool, Tool::Diamond);
+}
+
+#[test]
+fn a_double_click_on_the_lasso_keeps_the_lasso_and_does_not_toggle_it_off() {
+    let mut h = quick_harness(Fixture::new());
+    h.run();
+    let (first, second) = double_click(&mut h, "Lasso tool");
+    assert_eq!(ids(&first), [("tool.set", &json!({ "tool": "lasso" }))]);
+    assert_eq!(ids(&second), [("tool.lock", &json!({ "on": true }))]);
+    assert_eq!((h.state().model.tool, h.state().model.tool_lock), (Tool::Lasso, true));
+    // From the active, unlocked lasso: the first click toggles it to select, the second takes it back and locks it.
+    wait_out_the_double_click(&mut h);
+    click_and_take(&mut h, "Lasso tool");
+    assert_eq!((h.state().model.tool, h.state().model.tool_lock), (Tool::Select, false));
+    wait_out_the_double_click(&mut h);
+    let (first, second) = double_click(&mut h, "Lasso tool");
+    assert_eq!(ids(&first), [("tool.set", &json!({ "tool": "lasso" }))]);
+    assert_eq!(ids(&second), [("tool.lock", &json!({ "on": true }))]);
+}
+
+#[test]
+fn a_double_click_before_the_model_has_the_tool_sets_it_again_so_the_lock_lands_on_it() {
+    // Two clicks inside one frame of the app: the model still has the old tool at the second click.
+    let mut h = quick_harness(Fixture::new());
+    h.run();
+    h.state_mut().clear();
+    h.get_by_label("Frame tool").click();
+    h.get_by_label("Frame tool").click();
+    h.run();
+    let calls: Vec<Call> = h.state().calls().into_iter().cloned().collect();
+    h.state_mut().dispatch();
+    h.run();
+    assert_eq!(h.state().model.tool, Tool::Frame, "{calls:?}");
+    assert!(h.state().model.tool_lock);
+}
+
+#[test]
+fn the_double_click_works_in_the_touch_layout_too() {
+    let mut f = Fixture::new();
+    f.state.layout = LayoutPreference::Touch;
+    let mut h = quick_harness(f);
+    h.run();
+    assert!(h.get_by_label("Rectangle tool").rect().height() >= 44.0, "the touch layout");
+    let (first, second) = double_click(&mut h, "Rectangle tool");
+    assert_eq!(ids(&first), [("tool.set", &json!({ "tool": "rectangle" }))]);
+    assert_eq!(ids(&second), [("tool.lock", &json!({ "on": true }))]);
+    assert!(h.state().model.tool_lock);
+}
+
+#[test]
+fn two_slow_clicks_are_two_single_clicks_and_never_lock() {
     let mut h = harness(Fixture::new());
     h.run();
-    let calls = click(&mut h, "Keep tool active");
-    assert_eq!(calls.len(), 1);
-    assert_eq!((calls[0].id.as_str(), &calls[0].args), ("tool.lock", &json!({})));
+    click_and_take(&mut h, "Rectangle tool");
+    // The frames of this harness are a quarter of a second apart, past the double-click delay of egui (0.3 s): the
+    // next press counts as a first click again.
+    let calls = click_and_take(&mut h, "Rectangle tool");
+    assert_eq!(ids(&calls), [("tool.set", &json!({ "tool": "rectangle" }))]);
+    assert!(!h.state().model.tool_lock);
+}
+
+#[test]
+fn there_is_no_lock_button_in_the_column() {
+    let mut h = harness(Fixture::new());
+    h.run();
+    assert!(h.query_by_label("Keep tool active").is_none());
+}
+
+#[test]
+fn every_tool_button_says_how_to_keep_the_tool_active() {
+    let mut h = harness(Fixture::new());
+    h.run();
+    for (tool, _) in TOOLS {
+        let name = h.get_by_label(&format!("{} tool", label_of(*tool))).rect().center();
+        h.hover_at(name);
+        // The tooltip of egui comes up after a short delay, and one step of the harness is a quarter second.
+        h.run_steps(8);
+        assert!(h.query_by_label_contains("Double-click to keep it active").is_some(), "{tool:?}");
+        h.hover_at(egui::pos2(900.0, 500.0));
+        h.run_steps(2);
+    }
+}
+
+/// The word before "tool" in the name of a tool button.
+fn label_of(tool: Tool) -> &'static str {
+    match tool {
+        Tool::Select => "Select",
+        Tool::Lasso => "Lasso",
+        Tool::Hand => "Hand",
+        Tool::Rectangle => "Rectangle",
+        Tool::Diamond => "Diamond",
+        Tool::Ellipse => "Ellipse",
+        Tool::Arrow => "Arrow",
+        Tool::Line => "Line",
+        Tool::Freehand => "Freehand",
+        Tool::Highlighter => "Highlighter",
+        Tool::Text => "Text",
+        Tool::Sticky => "Sticky note",
+        Tool::Math => "Math",
+        Tool::Frame => "Frame",
+        Tool::Eraser => "Eraser",
+        Tool::Laser => "Laser",
+    }
 }
 
 #[test]
@@ -376,8 +562,6 @@ fn clicking_a_tool_changes_the_tool_of_the_session() {
     click_and_run(&mut h, "Rectangle tool");
     assert_eq!(h.state().session.active_tool(), drafftink_engine::state::Tool::Rectangle);
     assert_eq!(h.state().model.tool, drafftink_engine::state::Tool::Rectangle);
-    click_and_run(&mut h, "Keep tool active");
-    assert!(h.state().model.tool_lock);
 }
 
 #[test]

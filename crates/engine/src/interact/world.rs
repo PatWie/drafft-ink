@@ -33,6 +33,7 @@ pub(super) fn pointer_mode(tool: Tool) -> drafftink_canvas::PointerMode {
         | Tool::Line
         | Tool::Freehand
         | Tool::Highlighter
+        | Tool::Sticky
         | Tool::Frame
         | Tool::Eraser
         | Tool::Laser => PointerMode::Draw,

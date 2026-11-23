@@ -42,12 +42,14 @@ pub struct Ctl<'a> {
     /// Greys the control for a reason the registry does not know (a property that does not apply to the
     /// selected elements). The registry's refusal text wins when both apply.
     pub blocked: Option<String>,
+    /// A second line of the tooltip, for what the click does not say by itself.
+    pub note: Option<&'static str>,
 }
 
 impl<'a> Ctl<'a> {
     /// A control for a command with no arguments.
     pub fn new(id: &'a str) -> Self {
-        Self { id, args: json!({}), label: String::new(), selected: false, blocked: None }
+        Self { id, args: json!({}), label: String::new(), selected: false, blocked: None, note: None }
     }
 
     /// With arguments.
@@ -68,6 +70,13 @@ impl<'a> Ctl<'a> {
     #[must_use]
     pub fn blocked(mut self, reason: Option<String>) -> Self {
         self.blocked = reason;
+        self
+    }
+
+    /// Adds a second line to the tooltip.
+    #[must_use]
+    pub fn note(mut self, note: &'static str) -> Self {
+        self.note = Some(note);
         self
     }
 
@@ -235,6 +244,23 @@ impl<'a> Cx<'a> {
         tooltip: bool,
         paint: impl FnOnce(&Painter, Rect, Look),
     ) -> Response {
+        let (resp, editor_takes_it) = self.command_response(ui, ctl, size, tooltip, paint);
+        if resp.clicked() {
+            self.run_click(ctl, editor_takes_it);
+        }
+        resp
+    }
+
+    /// Allocates, paints, describes and gates a command control, and returns its response without running the
+    /// command. The flag says that the text editor takes the control's call (see [`Cx::run_click`]).
+    fn command_response(
+        &mut self,
+        ui: &mut Ui,
+        ctl: &Ctl<'_>,
+        size: Vec2,
+        tooltip: bool,
+        paint: impl FnOnce(&Painter, Rect, Look),
+    ) -> (Response, bool) {
         // While a text edit runs, a style choice goes to the text editor, which applies it to the selected range
         // or to the element and hands the result to `text.edit_end` (docs/exceptions.md E16). `style.set`
         // itself would refuse with `text_editing`, so the control must not grey out for that.
@@ -268,7 +294,7 @@ impl<'a> Cx<'a> {
             Some(r) => resp.on_disabled_hover_text(r),
             None if !tooltip => resp,
             None => {
-                let tip = if ctl.label.is_empty() {
+                let mut tip = if ctl.label.is_empty() {
                     self.model.tooltip(ctl.id, &ctl.args)
                 } else {
                     match self.model.shortcut_label(ctl.id, &ctl.args) {
@@ -276,22 +302,28 @@ impl<'a> Cx<'a> {
                         None => ctl.label.clone(),
                     }
                 };
+                if let Some(note) = ctl.note {
+                    tip.push('\n');
+                    tip.push_str(note);
+                }
                 resp.on_hover_text(tip)
             }
         };
-        if resp.clicked() {
-            if editor_takes_it {
-                // `style.set` carries its properties under `props`; `text.format` has bold and italic as they are.
-                let request = match ctl.args.get("props") {
-                    Some(props) => HostRequest::TextEditStyle(props.clone()),
-                    None => HostRequest::TextEditFormat(ctl.args.clone()),
-                };
-                self.emit(UiAction::Host(request));
-            } else {
-                self.run(ctl.id, ctl.args.clone());
-            }
+        (resp, editor_takes_it)
+    }
+
+    /// The call of a click on a command control.
+    fn run_click(&mut self, ctl: &Ctl<'_>, editor_takes_it: bool) {
+        if editor_takes_it {
+            // `style.set` carries its properties under `props`; `text.format` has bold and italic as they are.
+            let request = match ctl.args.get("props") {
+                Some(props) => HostRequest::TextEditStyle(props.clone()),
+                None => HostRequest::TextEditFormat(ctl.args.clone()),
+            };
+            self.emit(UiAction::Host(request));
+        } else {
+            self.run(ctl.id, ctl.args.clone());
         }
-        resp
     }
 
     /// A square icon button; the selected one is filled with the accent colour (tools).
@@ -304,23 +336,25 @@ impl<'a> Cx<'a> {
         })
     }
 
-    /// The big tool button.
-    pub fn tool_button(&mut self, ui: &mut Ui, ctl: &Ctl<'_>, icon: Icon) -> Response {
-        self.icon_button(ui, ctl, icon, self.layout.tool_side())
-    }
-
-    /// The tool button of the highlighter, with `bar` as the colour of the bar under its marker (the neutral grey
-    /// when `None`).
-    pub fn highlighter_button(&mut self, ui: &mut Ui, ctl: &Ctl<'_>, bar: Option<Color32>) -> Response {
+    /// The big tool button. It runs nothing: the click is the caller's (`surfaces::toolbar` decides what a click, a
+    /// double-click and the tool lock mean), and the response says what happened.
+    pub fn tool_button(&mut self, ui: &mut Ui, ctl: &Ctl<'_>, face: ToolFace) -> Response {
         let (pal, side) = (self.pal, self.layout.tool_side());
-        self.command_widget(ui, ctl, vec2(side, side), move |p, rect, look| {
+        let ToolFace { icon, marker, locked } = face;
+        self.command_response(ui, ctl, vec2(side, side), true, move |p, rect, look| {
             paint_button_bg(p, rect, look, &pal, true);
             let ink = icon_color(look, &pal);
-            match bar {
-                Some(bar) => icons::paint_highlighter(p, rect.shrink(side * 0.2), ink, bar),
-                None => icons::paint(p, rect.shrink(side * 0.2), Icon::Highlighter, ink),
+            let at = rect.shrink(side * 0.2);
+            match marker {
+                // The highlighter: `marker` is the colour of the bar under its marker (the neutral grey when `None`).
+                Some(bar) if icon == Icon::Highlighter => icons::paint_highlighter(p, at, ink, bar),
+                _ => icons::paint(p, at, icon, ink),
+            }
+            if locked {
+                paint_lock_badge(p, rect, look, &pal);
             }
         })
+        .0
     }
 
     /// A small text toggle for a property value (`Architect`, `Dashed`): filled with the accent when selected.
@@ -501,6 +535,68 @@ impl<'a> Cx<'a> {
         }
     }
 }
+
+/// What a tool button shows.
+#[derive(Debug, Clone, Copy)]
+pub struct ToolFace {
+    /// The icon.
+    pub icon: Icon,
+    /// For the highlighter icon: the colour of the bar under the marker. `None`: the neutral grey.
+    pub marker: Option<Color32>,
+    /// The tool lock is on and this is the tool it keeps: the button wears a small lock in its corner.
+    pub locked: bool,
+}
+
+impl ToolFace {
+    /// A tool button with `icon`, not locked.
+    pub const fn new(icon: Icon) -> Self {
+        Self { icon, marker: None, locked: false }
+    }
+
+    /// The same face with the lock badge on or off.
+    #[must_use]
+    pub const fn locked(mut self, locked: bool) -> Self {
+        self.locked = locked;
+        self
+    }
+
+    /// The same face with the highlighter bar in `marker`.
+    #[must_use]
+    pub const fn marker(mut self, marker: Option<Color32>) -> Self {
+        self.marker = marker;
+        self
+    }
+}
+
+/// The lock badge of a tool button: a disc in the corner at the bottom right, in the colour of the icon, with a
+/// small padlock in the colour of the button. A locked tool is the selected one, so the two colours are the accent
+/// pair of the theme (`on_accent` on `accent`) and read in both themes and on the larger touch buttons.
+fn paint_lock_badge(p: &Painter, rect: Rect, look: Look, pal: &Palette) {
+    let side = rect.width().min(rect.height());
+    let radius = side * BADGE_RADIUS;
+    let centre = rect.right_bottom() - vec2(radius + BADGE_INSET, radius + BADGE_INSET);
+    p.circle_filled(centre, radius, icon_color(look, pal));
+    let ground = if look.selected { pal.accent } else { pal.panel };
+    // The shackle: the upper half of a circle on the top edge of the body.
+    let hinge = centre + vec2(0.0, -0.05 * radius);
+    let arc: Vec<_> = (0..=SHACKLE_STEPS)
+        .map(|i| {
+            let angle = std::f32::consts::PI * (1.0 + i as f32 / SHACKLE_STEPS as f32);
+            hinge + 0.36 * radius * vec2(angle.cos(), angle.sin() * 1.15)
+        })
+        .collect();
+    p.add(egui::Shape::line(arc, Stroke::new((radius * 0.2).max(1.0), ground)));
+    let body =
+        Rect::from_min_max(centre + vec2(-0.52 * radius, -0.05 * radius), centre + vec2(0.52 * radius, 0.6 * radius));
+    p.rect_filled(body, CornerRadius::same(1), ground);
+}
+
+/// The radius of the lock badge, as a fraction of the side of the button.
+const BADGE_RADIUS: f32 = 0.23;
+/// How far the badge is from the edges of the button, in points.
+const BADGE_INSET: f32 = 1.0;
+/// Segments of the shackle of the badge.
+const SHACKLE_STEPS: usize = 8;
 
 /// The background of a button.
 /// `flat` buttons (icons) have no fill at rest; the others (text toggles) rest on a light fill.

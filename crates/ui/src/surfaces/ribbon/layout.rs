@@ -15,6 +15,11 @@ pub(crate) struct Widths<'a> {
     /// The "More" menu has properties of its own (sloppiness, line height and the like), so the button stays even
     /// when every group fits.
     pub extras: bool,
+    /// The button at the right end of the strip (the library).
+    pub end_button: f32,
+    /// The end button stands over the "More" button, in the first row of a two-row strip, so that the two share
+    /// the width; else it stands beside it and takes room of its own.
+    pub stacked: bool,
 }
 
 /// What is drawn inline, and what goes behind the "More" button.
@@ -30,7 +35,8 @@ pub(crate) struct Fit {
     pub scroll: bool,
 }
 
-/// Plans the strip for `room` points (the width right of the left cluster), with `divider` before every part.
+/// Plans the strip for `room` points (the width right of the left cluster), with `divider` before every part. The
+/// end button always takes its room first.
 ///
 /// The groups keep their order. When they do not fit, the ones at the right end go to the "More" popover first.
 /// When the colour group does not fit with the "More" button, it collapses to the style button. A phone-sized
@@ -39,10 +45,16 @@ pub(crate) fn fit(widths: Widths<'_>, divider: f32, room: f32, narrow: bool) -> 
     let n = widths.groups.len();
     let more_cost = divider + widths.more_button;
     let has_more = |shown: usize| shown < n || widths.extras;
+    // What the right end of the strip takes: the end button, the "More" button, or both side by side.
+    let end = |shown: usize| -> f32 {
+        let more = if has_more(shown) { more_cost } else { 0.0 };
+        let button = divider + widths.end_button;
+        if widths.stacked { more.max(button) } else { more + button }
+    };
     // What the strip takes with `colour` before the groups and `shown` groups after it.
     let need = |colour: f32, shown: usize| -> f32 {
         let groups: f32 = widths.groups[..shown].iter().map(|w| divider + w).sum();
-        divider + colour + groups + if has_more(shown) { more_cost } else { 0.0 }
+        divider + colour + groups + end(shown)
     };
     let colour_inline = !narrow && need(widths.colour, 0) <= room;
     let colour = if colour_inline { widths.colour } else { widths.colour_button };
@@ -56,9 +68,11 @@ mod tests {
 
     const DIVIDER: f32 = 13.0;
     const MORE: f32 = 64.0;
+    const END: f32 = 28.0;
 
+    /// A two-row strip: the end button stands over the "More" button.
     fn widths(groups: &[f32], extras: bool) -> Widths<'_> {
-        Widths { colour: 250.0, colour_button: 28.0, groups, more_button: MORE, extras }
+        Widths { colour: 250.0, colour_button: 28.0, groups, more_button: MORE, extras, end_button: END, stacked: true }
     }
 
     #[test]
@@ -106,5 +120,25 @@ mod tests {
     fn no_groups_and_no_extras_leave_no_more_button() {
         let fit = fit(widths(&[], false), DIVIDER, 1000.0, false);
         assert_eq!(fit, Fit { colour_inline: true, shown: 0, more: false, scroll: false });
+    }
+
+    #[test]
+    fn the_end_button_over_more_costs_no_room_while_more_is_there() {
+        // Colour 250 + 13, one group 100 + 13, More 64 + 13: 453. The end button (28 + 13) stands over More.
+        let with_more = fit(widths(&[100.0, 100.0], false), DIVIDER, 453.0, false);
+        assert_eq!((with_more.shown, with_more.colour_inline), (1, true), "{with_more:?}");
+        // Without More (every group fits) the end button needs its own 41: 263 + 113 + 41 = 417.
+        let alone = fit(widths(&[100.0], false), DIVIDER, 417.0, false);
+        assert_eq!((alone.shown, alone.more, alone.scroll), (1, false, false), "{alone:?}");
+        let short = fit(widths(&[100.0], false), DIVIDER, 416.0, false);
+        assert_eq!(short.shown, 0, "one point less and the group goes behind More: {short:?}");
+    }
+
+    #[test]
+    fn beside_more_the_end_button_takes_room_of_its_own() {
+        // The one-row strip: More 77 and the end button 41 side by side. 263 + 113 + 77 + 41 = 494.
+        let beside = |room| fit(Widths { stacked: false, ..widths(&[100.0, 100.0], false) }, DIVIDER, room, false);
+        assert_eq!(beside(494.0).shown, 1);
+        assert_eq!(beside(493.0).shown, 0);
     }
 }

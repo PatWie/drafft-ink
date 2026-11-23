@@ -3078,6 +3078,8 @@ export namespace ElementCreateSticky {
     font_size?: number | null;
     /** `"auto"` (default): join the frame under the note's centre. An id or `@name`: join that frame. `null`: no frame. */
     frame?: A_FrameArg;
+    /** Passed by the sticky tool: afterwards the tool returns to select unless the tool is locked. */
+    from_tool?: boolean;
     /** The id of the new note. Default: a fresh id. */
     id?: string | null;
     /** A unique name, so that agents can address the note as `@name`. */
@@ -7713,14 +7715,14 @@ export namespace ToolCancel {
 /** Activates a tool until `tool.release`, for Space-drag panning. A repeat of the same hold changes nothing. */
 export namespace ToolHold {
   /** The drawing tools (docs/commands.md §2 `Tool`). */
-  type A_Tool = "select" | "lasso" | "hand" | "rectangle" | "diamond" | "ellipse" | "arrow" | "line" | "freehand" | "highlighter" | "text" | "math" | "frame" | "eraser" | "laser";
+  type A_Tool = "select" | "lasso" | "hand" | "rectangle" | "diamond" | "ellipse" | "arrow" | "line" | "freehand" | "highlighter" | "text" | "sticky" | "math" | "frame" | "eraser" | "laser";
   /** Arguments of `tool.hold`. */
   export type Args = {
     /** The tool to use until `tool.release`. Default: the hand tool. */
     tool?: A_Tool;
   };
   /** The drawing tools (docs/commands.md §2 `Tool`). */
-  type O_Tool = "select" | "lasso" | "hand" | "rectangle" | "diamond" | "ellipse" | "arrow" | "line" | "freehand" | "highlighter" | "text" | "math" | "frame" | "eraser" | "laser";
+  type O_Tool = "select" | "lasso" | "hand" | "rectangle" | "diamond" | "ellipse" | "arrow" | "line" | "freehand" | "highlighter" | "text" | "sticky" | "math" | "frame" | "eraser" | "laser";
   /** The tool state after a tool command. */
   export type Output = {
     /** The tool that returns when a held tool is released. */
@@ -7753,7 +7755,7 @@ export namespace ToolLock {
     on?: boolean | null;
   };
   /** The drawing tools (docs/commands.md §2 `Tool`). */
-  type O_Tool = "select" | "lasso" | "hand" | "rectangle" | "diamond" | "ellipse" | "arrow" | "line" | "freehand" | "highlighter" | "text" | "math" | "frame" | "eraser" | "laser";
+  type O_Tool = "select" | "lasso" | "hand" | "rectangle" | "diamond" | "ellipse" | "arrow" | "line" | "freehand" | "highlighter" | "text" | "sticky" | "math" | "frame" | "eraser" | "laser";
   /** The tool state after a tool command. */
   export type Output = {
     /** The tool that returns when a held tool is released. */
@@ -7783,7 +7785,7 @@ export namespace ToolRelease {
   /** An argument struct with no fields, for commands that take none. */
   export type Args = Record<string, never>;
   /** The drawing tools (docs/commands.md §2 `Tool`). */
-  type O_Tool = "select" | "lasso" | "hand" | "rectangle" | "diamond" | "ellipse" | "arrow" | "line" | "freehand" | "highlighter" | "text" | "math" | "frame" | "eraser" | "laser";
+  type O_Tool = "select" | "lasso" | "hand" | "rectangle" | "diamond" | "ellipse" | "arrow" | "line" | "freehand" | "highlighter" | "text" | "sticky" | "math" | "frame" | "eraser" | "laser";
   /** The tool state after a tool command. */
   export type Output = {
     /** The tool that returns when a held tool is released. */
@@ -7811,7 +7813,7 @@ export namespace ToolRelease {
 /** Switches to a tool: ends a text edit, leaves the point editor and, for a drawing tool, clears the selection. */
 export namespace ToolSet {
   /** The drawing tools (docs/commands.md §2 `Tool`). */
-  type A_Tool = "select" | "lasso" | "hand" | "rectangle" | "diamond" | "ellipse" | "arrow" | "line" | "freehand" | "highlighter" | "text" | "math" | "frame" | "eraser" | "laser";
+  type A_Tool = "select" | "lasso" | "hand" | "rectangle" | "diamond" | "ellipse" | "arrow" | "line" | "freehand" | "highlighter" | "text" | "sticky" | "math" | "frame" | "eraser" | "laser";
   /** Arguments of `tool.set`. */
   export type Args = {
     /** Keep the current selection. Default: true for `select` and `hand`, false for the drawing tools. */
@@ -7820,7 +7822,7 @@ export namespace ToolSet {
     tool: A_Tool;
   };
   /** The drawing tools (docs/commands.md §2 `Tool`). */
-  type O_Tool = "select" | "lasso" | "hand" | "rectangle" | "diamond" | "ellipse" | "arrow" | "line" | "freehand" | "highlighter" | "text" | "math" | "frame" | "eraser" | "laser";
+  type O_Tool = "select" | "lasso" | "hand" | "rectangle" | "diamond" | "ellipse" | "arrow" | "line" | "freehand" | "highlighter" | "text" | "sticky" | "math" | "frame" | "eraser" | "laser";
   /** The tool state after a tool command. */
   export type Output = {
     /** The tool that returns when a held tool is released. */

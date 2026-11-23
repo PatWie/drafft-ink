@@ -98,6 +98,7 @@ fn menu_rows(ui: &mut egui::Ui, cx: &mut Cx<'_>, debug_open: bool) -> bool {
         m.heading("Insert");
         m.verb(Verb::InsertImage, "Insert image", Row::new().icon(Icon::Image).dialog(), None);
         m.host(HostRequest::PickLibrary, "Open a library as a tab", Row::new().icon(Icon::Library).dialog());
+        m.command(Ctl::new("element.create_sticky").args(json!({ "edit": true })), Row::new().icon(Icon::Sticky));
         m.command(Ctl::new("diagram.import_mermaid").args(json!({ "source": "clipboard" })), Row::new());
 
         m.heading("View");

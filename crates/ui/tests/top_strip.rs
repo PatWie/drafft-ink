@@ -104,11 +104,16 @@ fn the_colour_group_follows_the_left_cluster_and_nothing_else_is_in_the_strip_wh
         let strip = chrome(&h).strip.unwrap();
         let wheel = rect(&h, "Pick the fill colour").max.x.max(rect(&h, "Pick the stroke colour").max.x);
         assert!(wheel < width / 2.0, "the colour group is at the left, not centred: ends at {wheel}");
-        let past = h
+        let past: Vec<Rect> = h
             .query_all_by_role(egui::accesskit::Role::Button)
             .filter(|n| n.rect().max.y <= strip.max.y && n.rect().min.x > wheel + 1.0)
-            .count();
-        assert_eq!(past, 0, "no groups and no More button: nothing right of the colour group");
+            .map(|n| n.rect())
+            .collect();
+        // No groups and no More button: the library button at the top right corner is the only one past the wheels.
+        let library = rect(&h, "Show or hide the library");
+        assert_eq!(past, [library], "nothing right of the colour group but the library button");
+        assert_eq!(library.max.x, width - 12.0, "at the right edge of the strip, as far in as the menu at the left");
+        assert_eq!(library.min.y, rect(&h, MENU).min.y, "on the first row");
     }
 }
 
@@ -156,12 +161,12 @@ fn the_side_panels_start_under_the_strip_even_in_a_short_window() {
 fn a_tall_window_keeps_the_tool_column_whole_and_a_short_one_scrolls_it() {
     let tall = at(vec2(1280.0, 800.0), dialog::fixture());
     let first = rect(&tall, "Select tool");
-    let last = rect(&tall, "Keep tool active");
+    let last = rect(&tall, "Laser tool");
     let tools = chrome(&tall).tools.unwrap();
     assert!(tools.contains_rect(first) && tools.contains_rect(last), "all tools fit at 800 high");
     let short = at(vec2(1280.0, 400.0), dialog::fixture());
     let tools = chrome(&short).tools.unwrap();
-    let last = rect(&short, "Keep tool active");
+    let last = rect(&short, "Laser tool");
     assert!(!tools.contains_rect(last), "the last button is scrolled out of the short column: {last:?} vs {tools:?}");
 }
 

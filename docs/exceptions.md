@@ -264,6 +264,18 @@ Rules that hold for all classes:
 | Cancel | Drop the path and the preview. |
 | Test | `exception_E19_a_highlighter_drag_equals_the_plain_command`. |
 
+### E20 Placing a sticky note
+
+| | |
+|---|---|
+| Input | With the sticky tool: a click on the canvas, or press, drag and release. |
+| Class | B |
+| What happens | The recognizer holds nothing but the fact that a press is down; the document is untouched. A click places the note at its point. A drag does not size the note (there is no drag-to-size): the note is placed where the pointer is let go, as a library item is (E14). Esc, a second finger or a blur drop the drag and place nothing. A refusal (view-only, a locked frame under the note) is shown as a toast and the tool stays. |
+| Reason | The note does not exist until the pointer is let go, so a press that turns into a drag does not leave a note behind that the next pointer move would have to move. One command, one undo step, one change for collaborators. The row is here because the drag has no command of its own: it decides the `at` of the one command. |
+| Final state | `element.create_sticky { at, edit: true, from_tool: true }`. The tool returns to select unless `tool.lock` is on. |
+| Cancel | Drop the drag. |
+| Test | `exception_E20_a_sticky_click_equals_the_plain_command`. |
+
 ## 3. Things that look like exceptions but are commands
 
 | Input | Why it is not an exception |

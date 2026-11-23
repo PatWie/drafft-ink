@@ -130,8 +130,9 @@ The overlay (`InteractionOverlay::paint`, a `PaintView`) carries the image as it
 | Laser | drag | local trail of up to 50 points, faded by the clock; `collab.laser` at most every 33 ms; nothing is stored | E12 |
 | Text | click | `text.edit_begin {at | id}` and `OpenTextEditor` | |
 | Math | click on empty canvas | `element.create {kind: math, at, from_tool}` | |
+| Sticky note | click, or drag | `element.create_sticky {at, edit: true, from_tool}`: a 250 point note centred on the point, selected and open for typing. A drag sizes nothing: the note goes where the pointer is let go (Esc cancels it). A click over an element places the note there too | E20 |
 
-`from_tool: true` returns the tool to select after the element exists, unless `tool.lock` is on (the engine does it in the same undo step).
+`from_tool: true` returns the tool to select after the element exists, unless `tool.lock` is on (the engine does it in the same undo step). The same holds for `element.create_sticky`, which has the argument too.
 
 ### View (class C)
 

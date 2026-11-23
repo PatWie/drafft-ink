@@ -205,11 +205,24 @@ fn the_model_exposes_what_the_canvas_overlay_needs_about_a_link() {
 }
 
 #[test]
-fn the_sticky_note_button_creates_a_note_open_for_typing() {
+fn the_sticky_note_tool_button_sets_the_tool_and_makes_no_note_by_itself() {
     let mut h = started(dialog::fixture());
     let before = dialog::element_count(h.state_mut());
-    let call = press(&mut h, "Sticky note");
-    assert_eq!(call, Call::new(Origin::Ui, "element.create_sticky", json!({ "edit": true })));
+    let call = press(&mut h, "Sticky note tool");
+    assert_eq!(call, Call::new(Origin::Ui, "tool.set", json!({ "tool": "sticky" })));
+    assert_eq!(h.state().model.tool, drafftink_engine::state::Tool::Sticky);
+    assert_eq!(dialog::element_count(h.state_mut()), before, "the note comes with the click on the canvas");
+    assert!(h.state().session.text_edit.is_none());
+}
+
+#[test]
+fn the_insert_menu_makes_a_sticky_note_open_for_typing() {
+    let mut f = dialog::fixture();
+    f.state.menu_open = true;
+    let mut h = started(f);
+    let before = dialog::element_count(h.state_mut());
+    let call = press(&mut h, "Add sticky note");
+    assert_eq!(call, Call::new(Origin::Menu, "element.create_sticky", json!({ "edit": true })));
     assert_eq!(dialog::element_count(h.state_mut()), before + 1);
     assert!(h.state().session.text_edit.is_some(), "the note is open for typing");
 }
@@ -226,15 +239,38 @@ fn the_lasso_button_is_a_toggle_between_lasso_and_select() {
 }
 
 #[test]
-fn the_library_button_toggles_the_panel() {
-    // Taller than the default window: with the two-row strip the tool column of an 800 point window scrolls and
-    // its last button (the library) is not on screen.
-    let mut h = dialog::sized(dialog::fixture(), egui::vec2(1280.0, 900.0), egui::Theme::Light);
-    h.run();
+fn the_library_button_in_the_top_right_corner_toggles_the_panel() {
+    let mut h = started(dialog::fixture());
+    let button = h.get_by_label("Show or hide the library").rect();
+    let strip = h.state().state.chrome.strip.expect("the strip");
+    assert!(
+        strip.contains_rect(button) && button.max.x == 1280.0 - 12.0 && button.min.y < strip.center().y,
+        "the first row of the strip, at its right end: {button:?} in {strip:?}"
+    );
+    assert_eq!(h.get_all_by_label("Show or hide the library").count(), 1, "none left in the tool column");
+    let tools = h.state().state.chrome.tools.expect("the tool column");
+    assert!(!tools.intersects(button), "{button:?} is not in the tool column {tools:?}");
     h.state_mut().clear();
     h.get_by_label("Show or hide the library").click();
     h.run();
     assert_eq!(dialog::verbs(h.state()), vec![Verb::ToggleLibrary]);
+}
+
+#[test]
+fn the_library_button_shows_whether_the_drawer_is_open() {
+    let mut h = started(dialog::fixture());
+    // The drawer has a close button with the same name, lower on the screen: the button of the strip is the top one.
+    let on = |h: &H| {
+        let button = h
+            .get_all_by_label("Show or hide the library")
+            .min_by(|a, b| a.rect().min.y.total_cmp(&b.rect().min.y))
+            .expect("the library button");
+        button.accesskit_node().toggled() == Some(egui::accesskit::Toggled::True)
+    };
+    assert!(!on(&h));
+    h.state_mut().state.apply_verb(Verb::ToggleLibrary, &mut Vec::new());
+    h.run();
+    assert!(on(&h));
 }
 
 #[test]

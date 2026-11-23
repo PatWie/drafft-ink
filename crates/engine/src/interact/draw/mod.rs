@@ -1,4 +1,4 @@
-//! The drawing tools: shapes, lines and arrows, freehand, eraser, laser, text and math.
+//! The drawing tools: shapes, lines and arrows, freehand, eraser, laser, text, sticky notes and math.
 //!
 //! Every tool here is class B or E of `docs/exceptions.md`. The document is untouched while the pointer is
 //! down. A preview (an `Element` built with the session's style defaults), the faded elements of the eraser,
@@ -14,10 +14,11 @@
 //! | eraser | drag, or a click | `element.erase` with the swept `path` |
 //! | laser | drag | `collab.laser` (throttled, never stored) |
 //! | text | click, or drag for a fixed-width box | `text.edit_begin` (with `width` for a drag), then the shell opens the editor |
+//! | sticky | click, or drag (the note goes where the pointer is released) | `element.create_sticky` with `at`, `edit` and `from_tool`, then the shell opens the editor |
 //! | math | click | `element.create` kind math, or `text.edit_begin` on an existing formula |
 //!
-//! Every `element.create` carries `from_tool: true`, so the engine returns the tool to select unless the tool
-//! is locked.
+//! Every `element.create` and `element.create_sticky` carries `from_tool: true`, so the engine returns the tool
+//! to select unless the tool is locked.
 
 mod eraser;
 mod laser;
@@ -26,6 +27,7 @@ mod marker;
 mod preview;
 mod shape;
 mod snap;
+mod sticky;
 mod stroke;
 mod text;
 
@@ -35,6 +37,9 @@ mod line_tests;
 #[cfg(test)]
 #[path = "../draw_marker_tests.rs"]
 mod marker_tests;
+#[cfg(test)]
+#[path = "../draw_sticky_tests.rs"]
+mod sticky_tests;
 #[cfg(test)]
 #[path = "../draw_stroke_tests.rs"]
 mod stroke_tests;
@@ -58,6 +63,8 @@ enum Gesture {
     Laser,
     /// A drag of the text or math tool on empty canvas: when it ends the text tool opens a box as wide as the drag, the math tool places at the origin.
     Place,
+    /// A drag of the sticky tool: it sizes nothing, and the note is placed where the pointer is released.
+    Note,
 }
 
 /// State of the drawing tools between pointer events.
@@ -79,6 +86,7 @@ impl DrawTools {
             Tool::Freehand => stroke::dot(cx, ev),
             Tool::Eraser => eraser::tap(cx, ev),
             Tool::Text | Tool::Math => text::click(cx, ev),
+            Tool::Sticky => sticky::place(cx, ev.at.world),
             Tool::Select
             | Tool::Lasso
             | Tool::Hand
@@ -121,6 +129,7 @@ impl DrawTools {
                 self.gesture = Some(Gesture::Laser);
             }
             Tool::Text | Tool::Math => self.gesture = Some(Gesture::Place),
+            Tool::Sticky => self.gesture = Some(Gesture::Note),
             Tool::Select | Tool::Lasso | Tool::Hand => {}
         }
         self.drag_update(cx, ev);
@@ -145,7 +154,7 @@ impl DrawTools {
                 self.shown = true;
             }
             Some(Gesture::Laser) => self.laser.update(cx, ev),
-            Some(Gesture::Place) => {}
+            Some(Gesture::Place | Gesture::Note) => {}
             None => {
                 if matches!(cx.tool(), Tool::Line | Tool::Arrow) {
                     self.linear.drag_update(cx, ev, &mut self.shown);
@@ -184,6 +193,11 @@ impl DrawTools {
             Some(Gesture::Place) => {
                 if !cancelled {
                     text::drag_box(cx, ev.origin.world, ev.at.world);
+                }
+            }
+            Some(Gesture::Note) => {
+                if !cancelled {
+                    sticky::place(cx, ev.at.world);
                 }
             }
             None => {
