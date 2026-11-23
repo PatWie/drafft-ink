@@ -658,10 +658,12 @@ What the band covers: the outline of a rectangle, diamond or ellipse (not the in
 | id | title | undo | keys | source |
 |---|---|---|---|---|
 | `highlight.apply` | Highlight | Undoable | none | NEW |
+| `highlight.clear` | Remove highlight | Undoable | none | NEW |
 
 | id | args | availability and refusals | effect |
 |---|---|---|---|
 | `highlight.apply` | `color?: MarkerColor \| null` (null or absent takes it off; `MarkerColor` as in `tool.set_marker`), `ids?: Refs` (default: the selection when `ranges` is empty), `ranges?: {id: Ref, start: int, end: int}[]` | Always available (not in view-only mode). Execute: `bad_args` when neither `ids` nor `ranges` is given and nothing is selected; `not_applicable` when the targets are only frames; `bad_range`: as in `text.style_range`, for a range that is empty or past the end of its text; `wrong_kind` for a range of something that is not a text; `locked`, `not_found`. All of it is checked before anything is written. | Sets, or takes off, the highlight of the elements as a whole (a text named in `ids` is highlighted all over, and the highlights its runs had of their own go) and of the character ranges (`start..end` counts Unicode characters from 0, `end` exclusive, as `text.style_range`). One call is one transaction: one undo step and one sync change however many targets it names. A character shows the highlight of its run when the run has one (a colour, or `none`), and the text's own otherwise; the runs record only what differs from the text's own. During a text edit the editor takes the choice (`text_editing` otherwise) and applies it to its selection. Output `{changed, highlighted: [id], unchanged: [id], skipped: [id]}`. |
+| `highlight.clear` | `ids?: Refs` (default: the selection when `ranges` is empty), `ranges?: {id: Ref, start: int, end: int}[]` | Available while something selected has a highlight, an element's own or some of a text's characters; otherwise `nothing_to_do`: "Nothing selected is highlighted." (this is what greys the ribbon's button). With `ids` or `ranges` it is never refused for having nothing to clear. Execute: as `highlight.apply` (`not_applicable`, `bad_range`, `wrong_kind`, `locked`, `not_found`). | `highlight.apply` with no colour, with the same output: takes the marker band off the elements as a whole (a text's characters lose theirs too) and, for `ranges`, off those characters (they opt out of the text's own highlight, as `highlight.apply` with `color: null`). One call is one undo step. During a text edit the ribbon's button does not call it (it is refused with `text_editing`, like `style.set`): the button hands `highlight: null` to the editor, which takes the highlight off the selected characters (or off what is typed next) and commits with `text.edit_end` (docs/exceptions.md E16). |
 
 ### 2.8 `text`: text, labels and math
 
@@ -1744,6 +1746,7 @@ Legend:
 | `style.get` | - | soft | - | ok | ok | ok | ok | - | always | n | y |
 | `style.apply_theme` | D,T,S | soft | - | ok | no | no | no | scene | always | y | y |
 | `highlight.apply` | D | soft | - | ok | no | no | no | scene | always | n | y |
+| `highlight.clear` | D | soft | - | ok | no | no | no | scene | always | n | y |
 | `style.list_themes` | - | - | - | ok | ok | ok | ok | - | always | n | y |
 | `text.set` | D | - | - | ok | no | no | no | scene | always | n | y |
 | `text.set_latex` | D | - | - | ok | no | no | no | scene | always | n | y |
@@ -1908,6 +1911,7 @@ Four more facts of a registration, kept apart from the table above because most 
 | `style.set` | edit | - | show | repeats | y | n |
 | `text.format` | edit | - | show | repeats | y | n |
 | `highlight.apply` | edit | - | show | repeats | y | n |
+| `highlight.clear` | edit | - | show | repeats | y | n |
 | `tab.rename` | edit | completes_rename | show | repeats | n | n |
 | `text.edit_end` | edit | ends_equation_edit | show | repeats | n | n |
 | `tool.hold` | not_document | - | show | first_press_only | n | n |

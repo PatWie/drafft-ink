@@ -44,12 +44,23 @@ pub struct Ctl<'a> {
     pub blocked: Option<String>,
     /// A second line of the tooltip, for what the click does not say by itself.
     pub note: Option<&'static str>,
+    /// The style properties the text editor takes while a text is edited, in place of the call. Only for a
+    /// command that has no `props` of its own to hand over (`highlight.clear`).
+    pub editor_props: Option<Value>,
 }
 
 impl<'a> Ctl<'a> {
     /// A control for a command with no arguments.
     pub fn new(id: &'a str) -> Self {
-        Self { id, args: json!({}), label: String::new(), selected: false, blocked: None, note: None }
+        Self {
+            id,
+            args: json!({}),
+            label: String::new(),
+            selected: false,
+            blocked: None,
+            note: None,
+            editor_props: None,
+        }
     }
 
     /// With arguments.
@@ -77,6 +88,13 @@ impl<'a> Ctl<'a> {
     #[must_use]
     pub fn note(mut self, note: &'static str) -> Self {
         self.note = Some(note);
+        self
+    }
+
+    /// While a text is edited, hands `props` (as `style.set` takes them) to the editor instead of making the call.
+    #[must_use]
+    pub fn editor_props(mut self, props: Value) -> Self {
+        self.editor_props = Some(props);
         self
     }
 
@@ -316,7 +334,7 @@ impl<'a> Cx<'a> {
     fn run_click(&mut self, ctl: &Ctl<'_>, editor_takes_it: bool) {
         if editor_takes_it {
             // `style.set` carries its properties under `props`; `text.format` has bold and italic as they are.
-            let request = match ctl.args.get("props") {
+            let request = match ctl.editor_props.as_ref().or_else(|| ctl.args.get("props")) {
                 Some(props) => HostRequest::TextEditStyle(props.clone()),
                 None => HostRequest::TextEditFormat(ctl.args.clone()),
             };

@@ -283,3 +283,69 @@ fn a_custom_colour_and_a_pale_shade_mark_ranges_of_a_text() {
     run(&mut f.s, "highlight.apply", json!({"color": "blue-25", "ranges": [{"id": f.text.as_str(), "start": 3, "end": 4}]}));
     assert!(runs(&f.s, &f.text).iter().any(|r| r.highlight == SpanHighlight::On(MarkerColor::from_name("blue-25").unwrap())));
 }
+
+#[test]
+fn clear_takes_the_highlight_off_elements_and_characters_in_one_undo_step() {
+    let mut f = fixture();
+    run(&mut f.s, "highlight.apply", json!({"color": "yellow", "ids": [f.rect.as_str()]}));
+    run(&mut f.s, "highlight.apply", json!({"color": "blue", "ranges": [{"id": f.text.as_str(), "start": 0, "end": 5}]}));
+    testing::select(&mut f.s, &[f.rect.clone(), f.text.clone(), f.frame.clone()]);
+    let before = f.s.tab().doc.undo_depth();
+    let out = run(&mut f.s, "highlight.clear", json!({}));
+    assert_eq!(out["highlighted"], json!([f.rect.as_str(), f.text.as_str()]));
+    assert_eq!(out["skipped"], json!([f.frame.as_str()]));
+    assert_eq!(highlight(&f.s, &f.rect), None);
+    assert!(runs(&f.s, &f.text).is_empty(), "the characters' own highlight goes with the element's");
+    assert_eq!(f.s.tab().doc.undo_depth(), before + 1, "one undo step");
+    // One undo brings back both the element's and the characters' highlight.
+    f.s.undo_steps(1).unwrap();
+    assert_eq!(highlight(&f.s, &f.rect), Some(MarkerColor::YELLOW));
+    assert_eq!(runs(&f.s, &f.text).len(), 1);
+}
+
+#[test]
+fn clear_takes_off_the_highlight_of_a_text_that_only_its_characters_have() {
+    let mut f = fixture();
+    run(&mut f.s, "highlight.apply", json!({"color": "pink", "ranges": [{"id": f.text.as_str(), "start": 1, "end": 3}]}));
+    testing::select(&mut f.s, std::slice::from_ref(&f.text));
+    assert_eq!(highlight(&f.s, &f.text), None);
+    assert!(f.s.availability("highlight.clear").is_ok());
+    let out = run(&mut f.s, "highlight.clear", json!({}));
+    assert_eq!(out["changed"], true);
+    assert!(runs(&f.s, &f.text).is_empty());
+}
+
+#[test]
+fn clear_is_refused_while_nothing_selected_is_highlighted_and_changes_nothing() {
+    let mut f = fixture();
+    let reason = f.s.availability("highlight.clear").unwrap_err();
+    assert_eq!((reason.code, reason.message.as_str()), ("nothing_to_do", "Nothing selected is highlighted."));
+    assert_eq!(refuse_clean(&mut f.s, "highlight.clear", json!({})).message, reason.message);
+    // Nothing selected is refused for the same reason: there is nothing to act on.
+    testing::select(&mut f.s, &[]);
+    assert!(f.s.availability("highlight.clear").is_err());
+    // A highlight elsewhere does not count, and a frame cannot carry one.
+    run(&mut f.s, "highlight.apply", json!({"color": "green", "ids": [f.arrow.as_str()]}));
+    testing::select(&mut f.s, &[f.rect.clone(), f.frame.clone()]);
+    assert!(f.s.availability("highlight.clear").is_err());
+    testing::select(&mut f.s, &[f.rect.clone(), f.arrow.clone()]);
+    assert!(f.s.availability("highlight.clear").is_ok());
+}
+
+#[test]
+fn clear_takes_ids_and_ranges_and_never_refuses_for_having_nothing_to_clear() {
+    let mut f = fixture();
+    run(&mut f.s, "highlight.apply", json!({"color": "orange", "ids": [f.text.as_str()]}));
+    let out = run(&mut f.s, "highlight.clear", json!({"ranges": [{"id": f.text.as_str(), "start": 0, "end": 5}]}));
+    assert_eq!(out["changed"], true);
+    assert_eq!(runs(&f.s, &f.text)[0].highlight, SpanHighlight::Off, "the characters opt out of the whole text's");
+    let out = run(&mut f.s, "highlight.clear", json!({"ids": [f.arrow.as_str()]}));
+    assert_eq!((out["changed"].clone(), out["unchanged"].clone()), (json!(false), json!([f.arrow.as_str()])));
+    assert!(refuse_clean(&mut f.s, "highlight.clear", json!({"ids": [f.frame.as_str()]})).message.contains("highlight"));
+}
+
+#[test]
+fn highlight_apply_stays_available_with_nothing_highlighted() {
+    let f = fixture();
+    assert!(f.s.availability("highlight.apply").is_ok());
+}

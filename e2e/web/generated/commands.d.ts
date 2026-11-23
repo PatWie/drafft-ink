@@ -4625,6 +4625,51 @@ export namespace HighlightApply {
   };
 }
 
+/** Takes the marker band off elements, and off character ranges of texts. Refused while nothing selected is highlighted. One undo step. */
+export namespace HighlightClear {
+  /** A range of characters of one text. */
+  type A_RangeArg = {
+    /** One past the last character. Above `start`, and at most the number of characters of the text. */
+    end: number;
+    /** The text element, or a label (which is a text element). An id or `@name`. */
+    id: A_Ref;
+    /** First character, counted in Unicode characters (not bytes, not UTF-16 units) from 0. */
+    start: number;
+  };
+  /** An element reference in arguments: an id, or `"@name"` for the name set with `element.set_name`. */
+  type A_Ref = string;
+  /** Arguments of `highlight.clear`. */
+  export type Args = {
+    /**
+     * Elements to take the highlight off, as a whole (the highlights of the characters of a text go too). Default:
+     * the selection when no `ranges` are given, and none when they are.
+     */
+    ids?: A_Ref[] | null;
+    /** Character ranges of texts to take the highlight off. */
+    ranges?: A_RangeArg[];
+  };
+  /** Output of `highlight.apply`. */
+  export type Output = {
+    /** False when everything already looked as asked. */
+    changed: boolean;
+    /** Ids of elements the command made. */
+    created?: string[];
+    /** Ids of elements the command removed. */
+    deleted?: string[];
+    /** Elements and texts whose highlight changed. */
+    highlighted: string[];
+    /** Elements that cannot be highlighted (frames). */
+    skipped: string[];
+    /** Elements and texts that already looked as asked. */
+    unchanged: string[];
+    /** The label of the undo step the command pushed. */
+    undo_label?: string;
+    /** Non-fatal notes. */
+    warnings?: string[];
+    [key: string]: unknown;
+  };
+}
+
 /** Drops the undo and redo stacks of the active tab. The document stays as it is. */
 export namespace HistoryClear {
   /** An argument struct with no fields, for commands that take none. */
@@ -8720,6 +8765,7 @@ export interface CommandTable {
   "group.set_name": { args: GroupSetName.Args; output: GroupSetName.Output };
   "group.ungroup": { args: GroupUngroup.Args; output: GroupUngroup.Output };
   "highlight.apply": { args: HighlightApply.Args; output: HighlightApply.Output };
+  "highlight.clear": { args: HighlightClear.Args; output: HighlightClear.Output };
   "history.clear": { args: HistoryClear.Args; output: HistoryClear.Output };
   "history.redo": { args: HistoryRedo.Args; output: HistoryRedo.Output };
   "history.state": { args: HistoryState.Args; output: HistoryState.Output };
@@ -8812,7 +8858,7 @@ export interface CommandTable {
 export type CommandId = keyof CommandTable;
 
 /** Commands whose arguments may all be left out. */
-export type OptionalArgsId = "arrow.delete_point" | "arrow.edit_points" | "arrow.reroute" | "arrow.swap_heads" | "clipboard.copy" | "clipboard.copy_as" | "clipboard.copy_style" | "clipboard.cut" | "clipboard.paste" | "clipboard.paste_style" | "collab.clear_access" | "collab.connect" | "collab.delete_room" | "collab.disconnect" | "collab.follow" | "collab.join_room" | "collab.leave_room" | "collab.set_pointer" | "collab.set_user" | "collab.share_link" | "collab.status" | "doc.autosave" | "doc.clear" | "doc.export" | "doc.inspect" | "doc.list" | "doc.new" | "doc.outline" | "doc.save" | "doc.show_intro" | "element.convert" | "element.create_sticky" | "element.delete" | "element.duplicate" | "element.lock" | "element.move" | "element.open_link" | "element.query" | "element.set_bounds" | "element.set_link" | "element.unlock_all" | "engine.commands" | "engine.recent" | "engine.state" | "frame.remove" | "frame.select_children" | "frame.unwrap" | "frame.wrap" | "gesture.cancel" | "gesture.end" | "group.create" | "group.enter" | "group.exit" | "group.set_name" | "group.ungroup" | "highlight.apply" | "history.clear" | "history.redo" | "history.state" | "history.undo" | "image.crop" | "image.crop_begin" | "image.crop_end" | "image.paint" | "image.paint_begin" | "image.paint_brush" | "image.paint_end" | "image.reset_crop" | "image.reset_paint" | "layout.apply" | "library.add" | "library.export" | "library.list" | "library.remove" | "perf.stats" | "selection.all" | "selection.clear" | "selection.get" | "selection.select" | "settings.get" | "settings.reset" | "style.get" | "style.list_themes" | "tab.close" | "tab.duplicate" | "tab.list" | "tab.new" | "text.edit_begin" | "text.edit_end" | "text.format" | "text.wrap_in_container" | "tool.cancel" | "tool.hold" | "tool.lock" | "tool.release" | "tool.set_arrow" | "tool.set_marker" | "version.list" | "view.center" | "view.get" | "view.screenshot" | "view.set" | "view.set_view_only" | "view.zoom_at" | "view.zoom_in" | "view.zoom_out" | "view.zoom_reset" | "view.zoom_to_fit";
+export type OptionalArgsId = "arrow.delete_point" | "arrow.edit_points" | "arrow.reroute" | "arrow.swap_heads" | "clipboard.copy" | "clipboard.copy_as" | "clipboard.copy_style" | "clipboard.cut" | "clipboard.paste" | "clipboard.paste_style" | "collab.clear_access" | "collab.connect" | "collab.delete_room" | "collab.disconnect" | "collab.follow" | "collab.join_room" | "collab.leave_room" | "collab.set_pointer" | "collab.set_user" | "collab.share_link" | "collab.status" | "doc.autosave" | "doc.clear" | "doc.export" | "doc.inspect" | "doc.list" | "doc.new" | "doc.outline" | "doc.save" | "doc.show_intro" | "element.convert" | "element.create_sticky" | "element.delete" | "element.duplicate" | "element.lock" | "element.move" | "element.open_link" | "element.query" | "element.set_bounds" | "element.set_link" | "element.unlock_all" | "engine.commands" | "engine.recent" | "engine.state" | "frame.remove" | "frame.select_children" | "frame.unwrap" | "frame.wrap" | "gesture.cancel" | "gesture.end" | "group.create" | "group.enter" | "group.exit" | "group.set_name" | "group.ungroup" | "highlight.apply" | "highlight.clear" | "history.clear" | "history.redo" | "history.state" | "history.undo" | "image.crop" | "image.crop_begin" | "image.crop_end" | "image.paint" | "image.paint_begin" | "image.paint_brush" | "image.paint_end" | "image.reset_crop" | "image.reset_paint" | "layout.apply" | "library.add" | "library.export" | "library.list" | "library.remove" | "perf.stats" | "selection.all" | "selection.clear" | "selection.get" | "selection.select" | "settings.get" | "settings.reset" | "style.get" | "style.list_themes" | "tab.close" | "tab.duplicate" | "tab.list" | "tab.new" | "text.edit_begin" | "text.edit_end" | "text.format" | "text.wrap_in_container" | "tool.cancel" | "tool.hold" | "tool.lock" | "tool.release" | "tool.set_arrow" | "tool.set_marker" | "version.list" | "view.center" | "view.get" | "view.screenshot" | "view.set" | "view.set_view_only" | "view.zoom_at" | "view.zoom_in" | "view.zoom_out" | "view.zoom_reset" | "view.zoom_to_fit";
 
 /** The registry size when the types were made; a spec can compare it with `commands()`. */
-export declare const COMMAND_COUNT: 178;
+export declare const COMMAND_COUNT: 179;

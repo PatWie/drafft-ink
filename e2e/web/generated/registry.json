@@ -1,5 +1,5 @@
 {
- "count": 178,
+ "count": 179,
  "families": [
   "arrange",
   "arrow",
@@ -119,6 +119,7 @@
   "group.set_name",
   "group.ungroup",
   "highlight.apply",
+  "highlight.clear",
   "history.clear",
   "history.redo",
   "history.state",

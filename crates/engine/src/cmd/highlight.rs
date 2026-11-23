@@ -4,13 +4,17 @@
 //! control, the highlighter tool and agents use it. A call is one transaction, so it is one undo step and one sync
 //! change however many elements and ranges it names. The rules are in `drafftink_edit::highlight`.
 //!
+//! `highlight.clear` is the same call with no colour, for the control that takes highlights off: it is refused, and so
+//! greyed out, while nothing selected has one. `highlight.apply` is never refused for that, because it is also how
+//! a highlight is put on.
+//!
 //! The whole element is also a style property (`style.set` with `{"props": {"highlight": "yellow-400"}}`); that is the
 //! way to set it together with other properties and for the defaults. `highlight.apply` is the way to take it
 //! to ranges of characters, and to many targets with their ranges at once.
 
 use drafftink_edit::highlight::{self, CharRange, HighlightError};
 use drafftink_edit::style::{Prop, StyleError};
-use drafftink_scene::{ElementId, MarkerColor};
+use drafftink_scene::{ElementId, MarkerColor, has_highlight};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -66,18 +70,57 @@ pub struct ApplyOut {
 }
 
 fn apply(s: &mut Session, a: ApplyArgs) -> Result<ApplyOut, Refusal> {
+    write(s, a.color, a.ids.as_deref(), &a.ranges)
+}
+
+/// Arguments of `highlight.clear`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct ClearArgs {
+    /// Elements to take the highlight off, as a whole (the highlights of the characters of a text go too). Default:
+    /// the selection when no `ranges` are given, and none when they are.
+    pub ids: Option<Vec<Ref>>,
+    /// Character ranges of texts to take the highlight off.
+    pub ranges: Vec<RangeArg>,
+}
+
+fn clear(s: &mut Session, a: ClearArgs) -> Result<ApplyOut, Refusal> {
+    // Without `ids` and `ranges` the call is about the selection, and `default_targets` has said whether anything
+    // of it is highlighted: the answer is the same here.
+    if a.ids.is_none() && a.ranges.is_empty() {
+        selection_highlighted(s)?;
+    }
+    write(s, None, a.ids.as_deref(), &a.ranges)
+}
+
+/// `nothing_to_do` unless something of the selection is highlighted (an element, or characters of a text).
+fn selection_highlighted(s: &Session) -> Result<(), Refusal> {
+    let highlighted = s.selection().iter().filter_map(|id| s.element(id)).any(has_highlight);
+    if highlighted {
+        Ok(())
+    } else {
+        Err(Refusal::custom("nothing_to_do", s.cmd(), "Nothing selected is highlighted."))
+    }
+}
+
+/// The call both commands make: the elements and ranges to write, `color` or none.
+fn write(
+    s: &mut Session,
+    color: Option<MarkerColor>,
+    ids: Option<&[Ref]>,
+    ranges: &[RangeArg],
+) -> Result<ApplyOut, Refusal> {
     let cmd = s.cmd();
-    let elements: Vec<ElementId> = match (a.ids.as_deref(), a.ranges.is_empty()) {
+    let elements: Vec<ElementId> = match (ids, ranges.is_empty()) {
         (Some(refs), _) => s.targets(Some(refs))?,
         (None, true) => s.targets(None)?,
         (None, false) => Vec::new(),
     };
-    let ranges = a
-        .ranges
+    let ranges = ranges
         .iter()
         .map(|r| Ok(CharRange { id: s.resolve_ref(&r.id)?, start: r.start, end: r.end }))
         .collect::<Result<Vec<_>, Refusal>>()?;
-    let report = with_doc(s, |tx, _m, _math, _ids| highlight::apply(tx, a.color, &elements, &ranges))
+    let report = with_doc(s, |tx, _m, _math, _ids| highlight::apply(tx, color, &elements, &ranges))
         .map_err(|e| refusal(cmd, e))?;
     Ok(ApplyOut {
         changed: !report.changed.is_empty(),
@@ -121,7 +164,8 @@ const DOC: Facts = Facts {
 };
 
 /// The highlight family.
-pub const COMMANDS: &[CommandSpec] = &[CommandSpec::new(
+pub const COMMANDS: &[CommandSpec] = &[
+    CommandSpec::new(
     "highlight.apply",
     "highlight",
     "Highlight",
@@ -131,7 +175,20 @@ pub const COMMANDS: &[CommandSpec] = &[CommandSpec::new(
 )
 .host(Host::text_editor_takes_style())
 .refusals(&["bad_range", "not_applicable"])
-.example(r#"{"color":"yellow-400","ids":["@box"],"ranges":[{"id":"@title","start":0,"end":5}]}"#)];
+.example(r#"{"color":"yellow-400","ids":["@box"],"ranges":[{"id":"@title","start":0,"end":5}]}"#),
+    CommandSpec::new(
+        "highlight.clear",
+        "highlight",
+        "Remove highlight",
+        "Takes the marker band off elements, and off character ranges of texts. Refused while nothing selected is highlighted. One undo step.",
+        &Typed::new(clear),
+        DOC,
+    )
+    .host(Host::text_editor_takes_style())
+    .default_targets(selection_highlighted)
+    .refusals(&["bad_range", "not_applicable", "nothing_to_do"])
+    .example(r#"{"ids":["@box"]}"#),
+];
 
 #[cfg(test)]
 #[path = "highlight_tests.rs"]

@@ -1370,3 +1370,112 @@ fn the_stroke_key_opens_the_markers_while_the_highlighter_is_active() {
     h.get_by_label("Highlight colour");
     assert!(!has(&h, "Stroke colour"), "the stroke popover would write to the selection");
 }
+
+// ---- the button that takes the highlight off ----
+
+const REMOVE_HIGHLIGHT: &str = "Remove highlight";
+
+/// A window wide enough for every group of a text or an arrow, so that none goes behind "More".
+fn wide(f: Fixture) -> H {
+    at(vec2(2000.0, 800.0), egui::Theme::Light, f)
+}
+
+/// A selected rectangle, highlighted when `marked` is set.
+fn highlighted_rect(marked: bool) -> (Fixture, ElementId) {
+    let mut f = dialog::fixture();
+    let a = add_rect(&mut f.session, 0.0, 0.0, 100.0, 60.0).unwrap();
+    if marked {
+        dialog::run(&mut f, "highlight.apply", json!({ "color": "yellow", "ids": [a.as_str()] }));
+    }
+    selecting(&mut f, std::slice::from_ref(&a));
+    (f, a)
+}
+
+#[test]
+fn the_remove_highlight_button_is_the_one_before_delete_and_as_big_as_it() {
+    let h = wide(highlighted_rect(true).0);
+    let (off, delete, open) = (rect(&h, REMOVE_HIGHLIGHT), rect(&h, "Delete"), rect(&h, "Open the link"));
+    assert_eq!(off.size(), delete.size(), "the same size");
+    assert!((off.center().y - delete.center().y).abs() < 0.5, "on the row of Delete: {off:?} {delete:?}");
+    assert!(open.max.x <= off.min.x + 0.5 && off.max.x <= delete.min.x + 0.5, "{open:?} {off:?} {delete:?}");
+    let gap = delete.min.x - off.max.x;
+    assert!((gap - (off.min.x - open.max.x)).abs() < 0.5, "the same gap as between the other buttons: {gap}");
+}
+
+#[test]
+fn the_remove_highlight_button_shows_for_what_can_be_highlighted_and_not_for_a_frame() {
+    for (name, f) in [("a shape", one_rect()), ("a text", free_text()), ("an arrow", arrow()), ("a stroke", freehand())]
+    {
+        let h = wide(f);
+        assert!(has(&h, REMOVE_HIGHLIGHT), "{name}");
+    }
+    let mut f = dialog::fixture();
+    let frame = create(&mut f, json!({ "kind": "frame", "bounds": { "x": 0, "y": 0, "w": 200, "h": 120 } }));
+    selecting(&mut f, &[frame]);
+    let h = wide(f);
+    assert!(!has(&h, REMOVE_HIGHLIGHT), "a frame cannot carry a highlight");
+    assert!(has(&h, "Delete"));
+    // With a frame and a shape the shape can.
+    let (mut f, rect_id) = highlighted_rect(false);
+    let frame = create(&mut f, json!({ "kind": "frame", "bounds": { "x": 400, "y": 0, "w": 200, "h": 120 } }));
+    selecting(&mut f, &[rect_id, frame]);
+    assert!(has(&wide(f), REMOVE_HIGHLIGHT));
+    assert!(!has(&wide(dialog::fixture()), REMOVE_HIGHLIGHT), "nothing selected");
+}
+
+#[test]
+fn the_remove_highlight_button_is_greyed_with_the_engine_text_while_nothing_is_highlighted() {
+    let (f, _) = highlighted_rect(false);
+    let h = wide(f);
+    let button = h.get_by_label(REMOVE_HIGHLIGHT);
+    assert!(button.accesskit_node().is_disabled());
+    assert_eq!(h.state().model.refusal_text("highlight.clear").as_deref(), Some("Nothing selected is highlighted."));
+    let (f, _) = highlighted_rect(true);
+    let h = wide(f);
+    assert!(!h.get_by_label(REMOVE_HIGHLIGHT).accesskit_node().is_disabled());
+    assert_eq!(h.state().model.refusal_text("highlight.clear"), None);
+}
+
+#[test]
+fn the_remove_highlight_button_clears_the_element_and_its_characters_in_one_undo_step() {
+    let mut f = dialog::fixture();
+    let t = create(&mut f, json!({ "kind": "text", "text": "hello world", "at": [0, 0] }));
+    dialog::run(
+        &mut f,
+        "highlight.apply",
+        json!({ "color": "blue", "ranges": [{ "id": t.as_str(), "start": 0, "end": 5 }] }),
+    );
+    let r = add_rect(&mut f.session, 200.0, 0.0, 100.0, 60.0).unwrap();
+    dialog::run(&mut f, "highlight.apply", json!({ "color": "yellow", "ids": [r.as_str()] }));
+    selecting(&mut f, &[t.clone(), r.clone()]);
+    let mut h = wide(f);
+    let calls = click_and_apply(&mut h, REMOVE_HIGHLIGHT);
+    assert_eq!(calls.last().map(|c| (c.id.as_str(), c.args.clone())), Some(("highlight.clear", json!({}))));
+    let s = &h.state().session;
+    let marked =
+        |id: &ElementId| drafftink_scene::has_highlight(drafftink_scene::SceneRead::get(s.store(), id).unwrap());
+    assert!(!marked(&t) && !marked(&r), "the characters' and the shape's highlights are gone");
+    assert!(h.get_by_label(REMOVE_HIGHLIGHT).accesskit_node().is_disabled(), "and the button says there is none left");
+    // One undo step brings both back.
+    let mut h = h;
+    h.state_mut().session.undo_steps(1).unwrap();
+    let s = &h.state().session;
+    assert!(drafftink_scene::has_highlight(drafftink_scene::SceneRead::get(s.store(), &t).unwrap()));
+    assert!(drafftink_scene::has_highlight(drafftink_scene::SceneRead::get(s.store(), &r).unwrap()));
+}
+
+#[test]
+fn while_a_text_is_edited_the_remove_highlight_button_hands_the_choice_to_the_editor() {
+    let mut f = free_text();
+    f.model.text_editing = true;
+    let mut h = wide(f);
+    assert!(!h.get_by_label(REMOVE_HIGHLIGHT).accesskit_node().is_disabled(), "the editor knows what is selected");
+    h.state_mut().clear();
+    h.get_by_label(REMOVE_HIGHLIGHT).click();
+    h.run();
+    assert!(h.state().calls().is_empty(), "no command: {:?}", h.state().actions);
+    assert_eq!(
+        h.state().actions,
+        vec![drafftink_ui::UiAction::Host(drafftink_ui::HostRequest::TextEditStyle(json!({ "highlight": null })))]
+    );
+}
