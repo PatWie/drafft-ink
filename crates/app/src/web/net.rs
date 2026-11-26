@@ -5,7 +5,7 @@ use drafftink_collab::{BlobTransport, Transport, WakeFn, WebBlobTransport, WebTr
 use drafftink_engine::PortError;
 use drafftink_engine::ports::Net;
 
-use super::pure::{is_loopback_host, same_origin_ws_url};
+use super::pure::{CollabMode, is_loopback_host, same_origin_ws_url};
 use super::rng::random_u64;
 
 /// The browser network.
@@ -14,16 +14,19 @@ pub(crate) struct WebNet {
     protocol: String,
     host: String,
     loopback: bool,
+    rooms: bool,
 }
 
 impl WebNet {
-    /// `wake` is called whenever a socket event arrives. `location` is where the page came from.
-    pub(crate) fn new(wake: WakeFn, location: &web_sys::Location) -> Self {
+    /// `wake` is called whenever a socket event arrives. `location` is where the page came from. `mode` says whether
+    /// this deployment has a relay.
+    pub(crate) fn new(wake: WakeFn, location: &web_sys::Location, mode: CollabMode) -> Self {
         Self {
             wake,
             protocol: location.protocol().unwrap_or_default(),
             host: location.host().unwrap_or_default(),
             loopback: is_loopback_host(&location.hostname().unwrap_or_default()),
+            rooms: mode.rooms(),
         }
     }
 }
@@ -53,5 +56,9 @@ impl Net for WebNet {
     fn allow_insecure(&self) -> bool {
         // A page served from this machine may use plain ws:// to its own server. Everything else needs wss://.
         self.loopback
+    }
+
+    fn rooms_available(&self) -> bool {
+        self.rooms
     }
 }

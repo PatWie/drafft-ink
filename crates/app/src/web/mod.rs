@@ -97,6 +97,8 @@ pub struct WebOptions {
     pub page_url: String,
     /// Apple platform: `Mod` is Cmd.
     pub is_mac: bool,
+    /// Whether this deployment has a relay (the `drafftink-collab` meta tag of the page).
+    collab: pure::CollabMode,
 }
 
 impl WebOptions {
@@ -108,7 +110,14 @@ impl WebOptions {
         let page_url = location.href().map_err(|e| WebError::Browser(dom::js_error(&e)))?;
         let platform = navigator.platform().unwrap_or_default();
         let user_agent = navigator.user_agent().unwrap_or_default();
-        Ok(Self { canvas_id: canvas_id.into(), page_url, is_mac: pure::is_mac_platform(&platform, &user_agent) })
+        let meta = dom::meta_content("drafftink-collab");
+        let collab = pure::CollabMode::from_page(meta.as_deref(), &location.hostname().unwrap_or_default());
+        Ok(Self {
+            canvas_id: canvas_id.into(),
+            page_url,
+            is_mac: pure::is_mac_platform(&platform, &user_agent),
+            collab,
+        })
     }
 
     /// The room to join, if the address names one.
@@ -148,7 +157,7 @@ pub async fn platform(opts: WebOptions) -> Result<WebPlatform, WebError> {
     let wake = WakeCell::new();
     let clipboard = SharedClipboard::new();
     let location = dom::window()?.location();
-    let net = WebNet::new(wake.hook(RedrawReason::Collab), &location);
+    let net = WebNet::new(wake.hook(RedrawReason::Collab), &location, opts.collab);
     let typesetter = drafftink_engine::services::LazyTypesetter::shared();
     let ports = Ports::new(Box::new(AppClock::new()), Box::new(RandomIds(CryptoRng)))
         .with_clipboard(Box::new(clipboard.clone()))

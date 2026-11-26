@@ -9,6 +9,9 @@
 #   --features LIST    more cargo features of drafftink-web, e.g. `scenarios` for the perf driver (not for shipping).
 #                      `hand-fonts` (GelPen, GelPen Serif, Vanilla Extract) is always on: the web app is built from the repo
 # env: DIST_DIR=folder   write the build there instead of dist/
+#      DRAFFTINK_COLLAB=off|same-origin   whether this deployment has a relay for rooms (default same-origin: the page's own
+#                      server, as `drafftink-headless serve` and the Cloudflare Worker provide). A site without a relay, such as
+#                      the demo on GitHub Pages, builds with `off`: it shows no collaboration button and never connects.
 # needs: rustup target add wasm32-unknown-unknown
 #        wasm-bindgen CLI, the same version as the wasm-bindgen crate (cargo install wasm-bindgen-cli --version 0.2.130 --locked)
 #        wasm-opt (binaryen >= 117) on PATH or in ~/.cargo/tools/binaryen-version_*/bin
@@ -33,6 +36,12 @@ while [ $# -gt 0 ]; do
     *) echo "unknown argument: $1 (see --help)" >&2; exit 2 ;;
   esac
 done
+
+COLLAB="${DRAFFTINK_COLLAB:-same-origin}"
+case "$COLLAB" in
+  off|same-origin) ;;
+  *) echo "DRAFFTINK_COLLAB must be off or same-origin, not '$COLLAB'" >&2; exit 2 ;;
+esac
 
 TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/target}"
 DIST="${DIST_DIR:-dist}"   # DIST_DIR: another output folder, e.g. the scenario build of `cargo xtask perf --app web`
@@ -151,7 +160,7 @@ BUILD="$(cat "$OUT" "$DIST/pkg/$NAME.js" | sha256sum | cut -c1-12)"
 BUILD_GL=none
 [ "$FALLBACK" = 1 ] && BUILD_GL="$(cat "$DIST/pkg-gl/${NAME}_bg.wasm" "$DIST/pkg-gl/$NAME.js" | sha256sum | cut -c1-12)"
 cp web/manifest.webmanifest web/favicon.svg web/icon-192.png web/icon-512.png web/icon-maskable-512.png "$DIST/"
-sed -e "s/__BUILD__/$BUILD/g" -e "s/__BUILD_GL__/$BUILD_GL/g" -e "s|__ASSETS__|$ASSETS_JSON|" \
+sed -e "s/__BUILD__/$BUILD/g" -e "s/__BUILD_GL__/$BUILD_GL/g" -e "s/__COLLAB__/$COLLAB/g" -e "s|__ASSETS__|$ASSETS_JSON|" \
     -e "s|__PRELOAD__|<link rel=\"preload\" as=\"fetch\" crossorigin href=\"$FIRST_FONT\"><link rel=\"preload\" as=\"fetch\" crossorigin href=\"$MATH_FONT\"><link rel=\"preload\" as=\"fetch\" crossorigin href=\"$SCHEMAS_FILE\">|" web/index.html > "$DIST/index.html"
 sed -e "s/__BUILD__/$BUILD/g" -e "s/__BUILD_GL__/$BUILD_GL/g" -e "s|__SHELL_FONTS__|[\"$FIRST_FONT\"]|" web/sw.js > "$DIST/sw.js"
 echo "$BUILD" > "$DIST/BUILD"
@@ -164,7 +173,7 @@ brotli_size() {
 GZ=$(gzip -9 -c "$OUT" | wc -c)
 BR=$(brotli_size "$OUT" 2>/dev/null || echo "?")
 mb() { awk -v n="$1" 'BEGIN { if (n == "?") print "n/a"; else printf "%.2f MB", n/1048576 }'; }
-echo "build $BUILD ($PROFILE)"
+echo "build $BUILD ($PROFILE), rooms: $COLLAB"
 printf 'wasm: raw %s | wasm-opt %s | gzip -9 %s | brotli -11 %s\n' "$(mb "$RAW")" "$(mb "$OPTSIZE")" "$(mb "$GZ")" "$(mb "$BR")"
 SCHEMAS_BR=$(brotli_size "$DIST/$SCHEMAS_FILE" 2>/dev/null || echo 0)
 if [ "$FALLBACK" = 1 ]; then

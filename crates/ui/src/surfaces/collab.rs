@@ -49,6 +49,11 @@ pub(crate) fn connect_call(url: &str) -> Call {
     call("collab.connect", if url.is_empty() { json!({}) } else { json!({ "url": url }) })
 }
 
+/// `collab.resume_room`: reconnect this tab to the private room it is the copy of.
+pub(crate) fn resume_call() -> Call {
+    call("collab.resume_room", json!({}))
+}
+
 /// `collab.disconnect`.
 pub(crate) fn disconnect_call() -> Call {
     call("collab.disconnect", json!({}))
@@ -256,7 +261,7 @@ pub(crate) fn dot(ui: &mut Ui, color: Color32, diameter: f32) {
 /// Draws the dialog.
 pub fn show(ctx: &Context, cx: &mut Cx<'_>, st: &mut UiState) {
     let key = Id::unique("collab_draft");
-    if !st.collab_open {
+    if !st.collab_open || !cx.model.rooms_available {
         ctx.data_mut(|d| d.remove_temp::<Draft>(key));
         return;
     }
@@ -286,6 +291,16 @@ fn body(ui: &mut Ui, cx: &mut Cx<'_>, draft: &mut Draft) {
     });
     if let Some(people) = people_line(&collab) {
         ui.label(RichText::new(people).size(TextSize::Small.points()).color(pal.muted));
+    }
+    if let Some(server) = &collab.reconnect {
+        ui.add_space(6.0);
+        ui.label(
+            RichText::new(format!("This tab is a copy of a private room on {server}. It is not connected."))
+                .size(TextSize::Small.points())
+                .color(pal.muted),
+        );
+        let c = resume_call();
+        cx.text_button(ui, &Ctl::new(&c.id).args(c.args.clone()), "Reconnect", true);
     }
     ui.add_space(10.0);
 

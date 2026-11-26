@@ -1,5 +1,5 @@
 {
- "count": 179,
+ "count": 180,
  "families": [
   "arrange",
   "arrow",
@@ -57,6 +57,7 @@
   "collab.join_room",
   "collab.laser",
   "collab.leave_room",
+  "collab.resume_room",
   "collab.set_access",
   "collab.set_pointer",
   "collab.set_user",

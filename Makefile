@@ -64,8 +64,8 @@ cf_render = $(WORKER_DIR)/scripts/render-config.sh $(1) $(CF_DIR)/$(1)/wrangler.
 help: ## List the targets
 	@grep -hE '^[a-zA-Z0-9_-]+:.*## ' $(firstword $(MAKEFILE_LIST)) | awk -F':.*## ' '{printf "  %-20s %s\n", $$1, $$2}'
 
-web: ## Build the web app into dist/ (no .br/.gz files: Cloudflare compresses by itself)
-	scripts/build-web.sh --no-precompress
+web: ## Build the web app into dist/ (no .br/.gz files: Cloudflare compresses by itself); rooms on: the Worker is the relay
+	DRAFFTINK_COLLAB=same-origin scripts/build-web.sh --no-precompress
 
 cf-login: ## Log in to Cloudflare in the browser (not needed with an API token in .env)
 	@$(cf_npm)

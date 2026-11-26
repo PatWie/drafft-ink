@@ -79,6 +79,31 @@ fn a_room_link_joins_the_room_at_start() {
 }
 
 #[test]
+fn a_room_tab_that_an_earlier_visit_saved_comes_back_local_on_a_site_without_rooms() {
+    let fakes = Fakes::new();
+    {
+        // The visit that had a relay: a private room, saved with its key when the app is dropped.
+        let mut app = App::new(platform(&fakes), AppConfig::default());
+        app.session_mut().execute("collab.connect", json!({ "url": "ws://localhost:3030/ws" })).unwrap();
+        app.session_mut().execute("collab.join_room", json!({ "on_local": "merge" })).unwrap();
+        app.session_mut().save_workspace().unwrap();
+    }
+    let record = |fakes: &Fakes| {
+        String::from_utf8(fakes.storage.bytes(drafftink_engine::ports::Ns::Autosave, "workspace").unwrap()).unwrap()
+    };
+    assert!(record(&fakes).contains("#room="), "the earlier visit stored the room with its key");
+    let connections = fakes.net.servers().len();
+
+    fakes.net.set_rooms_available(false);
+    let mut app = App::new(platform(&fakes), AppConfig::default());
+    assert_eq!(fakes.net.servers().len(), connections, "the room is not reconnected");
+    assert!(app.session_mut().sealed_room_id().is_none(), "a plain local tab");
+    assert_eq!(app.session_mut().collab_view().state, ConnectionState::Disconnected);
+    assert!(app.session_mut().flush_workspace(), "the record is written again at once, by itself");
+    assert!(!record(&fakes).contains("#room="), "the key is no longer kept in the workspace");
+}
+
+#[test]
 fn an_unreadable_server_in_the_link_is_a_refusal_not_a_crash() {
     let fakes = Fakes::new();
     let config = AppConfig {

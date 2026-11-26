@@ -40,7 +40,7 @@ wrangler only during its own deploy.
 | Command | What it does |
 |---|---|
 | `make help` | Lists the targets. |
-| `make web` | Builds the web app into `dist/` (`scripts/build-web.sh --no-precompress`; Cloudflare compresses by itself). |
+| `make web` | Builds the web app into `dist/` (`DRAFFTINK_COLLAB=same-origin scripts/build-web.sh --no-precompress`; Cloudflare compresses by itself). Rooms are on: the Worker is the relay. A `dist/` built with `DRAFFTINK_COLLAB=off` (the GitHub Pages demo) shows no collaboration. |
 | `make cf-dev` | Runs the web app and the relay locally with `wrangler dev` on http://127.0.0.1:8787. Demo settings; `CF_ENV=private` for the private ones (**without Cloudflare Access**, see below), `CF_PORT=N` for another port. Builds `dist/` and the Worker's wasm if they are missing. Uses no Cloudflare login and sends nothing. |
 | `make cf-config-demo`, `make cf-config-private` | Writes `target/cloudflare/<env>/wrangler.toml` from `.env`. |
 | `make cf-check-demo`, `make cf-check-private` | Builds what is missing, writes the config, and runs `wrangler deploy --dry-run`. No login, and an empty `.env` is enough. |

@@ -244,6 +244,11 @@ pub struct CollabView {
     /// The room this tab was in was deleted on request (`collab.delete_room`). The tab is a local copy now. Cleared by
     /// the next `collab.connect` or `collab.disconnect`.
     pub room_deleted: bool,
+    /// The active tab is the copy of a private room that is not connected, and `collab.resume_room` reconnects it. The
+    /// server it is on, as the person reads it (`https://canvas.example.com`). A page does not reconnect a room on
+    /// another server by itself: the person confirms.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reconnect: Option<String>,
 }
 
 impl CollabView {
@@ -266,6 +271,7 @@ impl CollabView {
             expiring: false,
             access: AccessView::None,
             room_deleted: false,
+            reconnect: None,
         }
     }
 }

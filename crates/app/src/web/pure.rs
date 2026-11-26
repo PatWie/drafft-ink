@@ -44,6 +44,36 @@ pub(crate) fn is_loopback_host(hostname: &str) -> bool {
         || name.parse::<std::net::Ipv4Addr>().is_ok_and(|ip| ip.is_loopback())
 }
 
+/// Whether this deployment of the web app offers rooms. It is decided when the page is built or deployed (the
+/// `drafftink-collab` meta tag that `scripts/build-web.sh` writes from `DRAFFTINK_COLLAB`), so the page needs no network
+/// call to know it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CollabMode {
+    /// No rooms: the site has no relay (the demo on GitHub Pages).
+    Off,
+    /// Rooms on the server that delivered the page (`/ws`).
+    SameOrigin,
+}
+
+impl CollabMode {
+    /// The mode named by the `content` of the meta tag, or by nothing: a missing tag, an empty one or one the build
+    /// script did not fill in (`__COLLAB__`) is off on every host except this machine, where `drafftink-headless serve`
+    /// may be running. A value this build does not know is read the same way, so a typo never turns rooms on.
+    pub(crate) fn from_page(content: Option<&str>, hostname: &str) -> Self {
+        match content.map(|c| c.trim().to_ascii_lowercase()).as_deref() {
+            Some("off") => Self::Off,
+            Some("same-origin") => Self::SameOrigin,
+            _ if is_loopback_host(hostname) => Self::SameOrigin,
+            _ => Self::Off,
+        }
+    }
+
+    /// True when the page may use rooms.
+    pub(crate) const fn rooms(self) -> bool {
+        matches!(self, Self::SameOrigin)
+    }
+}
+
 /// True for Apple platforms, where `Mod` is Cmd. An iPad with a keyboard counts.
 pub(crate) fn is_mac_platform(platform: &str, user_agent: &str) -> bool {
     let platform = platform.to_ascii_lowercase();
@@ -188,6 +218,46 @@ mod tests {
         for h in ["example.com", "192.168.1.5", "localhost.evil.com", "10.0.0.1", "", "127.0.0.1.evil.com"] {
             assert!(!is_loopback_host(h), "{h}");
         }
+    }
+
+    #[test]
+    fn the_collab_switch_is_read_from_the_page() {
+        assert_eq!(CollabMode::from_page(Some("off"), "drafft.ink"), CollabMode::Off);
+        assert_eq!(CollabMode::from_page(Some("same-origin"), "canvas.patwie.com"), CollabMode::SameOrigin);
+        assert_eq!(CollabMode::from_page(Some(" Same-Origin "), "canvas.patwie.com"), CollabMode::SameOrigin);
+        assert_eq!(
+            CollabMode::from_page(Some("off"), "localhost"),
+            CollabMode::Off,
+            "a page that says off is off, also here"
+        );
+        assert!(CollabMode::SameOrigin.rooms() && !CollabMode::Off.rooms());
+    }
+
+    #[test]
+    fn a_page_without_the_switch_has_no_rooms_except_on_this_machine() {
+        for missing in [None, Some(""), Some("__COLLAB__"), Some("on"), Some("yes"), Some("true")] {
+            assert_eq!(CollabMode::from_page(missing, "drafft.ink"), CollabMode::Off, "{missing:?}");
+            assert_eq!(CollabMode::from_page(missing, "192.168.1.5"), CollabMode::Off, "{missing:?}");
+            assert_eq!(CollabMode::from_page(missing, "localhost"), CollabMode::SameOrigin, "{missing:?}");
+            assert_eq!(CollabMode::from_page(missing, "127.0.0.1"), CollabMode::SameOrigin, "{missing:?}");
+        }
+    }
+
+    #[test]
+    fn the_page_template_carries_the_switch_for_the_build_script_to_fill_in() {
+        let page = include_str!("../../../../web/index.html");
+        assert!(page.contains(r#"<meta name="drafftink-collab" content="__COLLAB__">"#));
+        let script = include_str!("../../../../scripts/build-web.sh");
+        assert!(script.contains("__COLLAB__") && script.contains("DRAFFTINK_COLLAB"));
+    }
+
+    #[test]
+    fn the_public_demo_is_deployed_with_rooms_off_and_the_cloudflare_builds_with_rooms_on() {
+        let deploy = include_str!("../../../../.github/workflows/deploy-web.yml");
+        assert!(deploy.contains("DRAFFTINK_COLLAB: off"), "drafft.ink on GitHub Pages has no relay");
+        let makefile = include_str!("../../../../Makefile");
+        let web = makefile.lines().skip_while(|l| !l.starts_with("web:")).take(3).collect::<Vec<_>>().join("\n");
+        assert!(web.contains("DRAFFTINK_COLLAB=same-origin"), "the Worker serves the relay: {web}");
     }
 
     #[test]

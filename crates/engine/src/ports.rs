@@ -270,6 +270,13 @@ pub trait Net {
     fn allow_insecure(&self) -> bool {
         false
     }
+
+    /// False when this deployment offers no rooms (the demo on GitHub Pages has no relay). Every `collab.*` command
+    /// that needs a room refuses, a restored room tab comes back as a local copy without its key, and the shell hides
+    /// the collaboration button. True by default: a shell that has a network has a relay to talk to.
+    fn rooms_available(&self) -> bool {
+        true
+    }
 }
 
 /// Where the service tokens of private servers are kept (`docs/design/collab-e2e.md` section 19.6). One token per
@@ -801,6 +808,7 @@ pub mod fake {
         rng: SplitMix64,
         origin: Option<String>,
         fail_open: bool,
+        rooms_off: bool,
     }
 
     impl std::fmt::Debug for FakeNet {
@@ -829,6 +837,7 @@ pub mod fake {
                     rng: SplitMix64::new(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15)),
                     origin: None,
                     fail_open: false,
+                    rooms_off: false,
                 })),
             }
         }
@@ -851,6 +860,11 @@ pub mod fake {
         /// Makes `same_origin_url("/ws")` answer as a web shell would (`ws://page.example`).
         pub fn set_origin(&self, origin: &str) {
             lock(&self.state).origin = Some(origin.to_owned());
+        }
+
+        /// Makes the network say that this deployment has no rooms (`Net::rooms_available`), as the demo page does.
+        pub fn set_rooms_available(&self, on: bool) {
+            lock(&self.state).rooms_off = !on;
         }
 
         /// Makes the next `open_transport` calls fail, as a shell without sockets would.
@@ -888,6 +902,10 @@ pub mod fake {
 
         fn default_server(&self) -> Option<String> {
             lock(&self.state).origin.as_ref().map(|_| "/ws".to_owned())
+        }
+
+        fn rooms_available(&self) -> bool {
+            !lock(&self.state).rooms_off
         }
     }
 

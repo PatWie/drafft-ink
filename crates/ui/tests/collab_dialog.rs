@@ -37,6 +37,7 @@ fn view(status: CollabStatus, room: Option<&str>, peers: usize) -> CollabView {
         loading: None,
         e2e: false,
         invite_link: None,
+        reconnect: None,
     }
 }
 
@@ -766,4 +767,53 @@ fn opening_a_file_in_a_room_tab_asks_instead_of_a_refusal_toast() {
     let report = h.state_mut().dispatch();
     assert_eq!(report.refusals().count(), 0, "{:?}", report.ran);
     assert_eq!(dialog::element_count(h.state_mut()), 2);
+}
+
+#[test]
+fn a_site_without_rooms_has_no_collaboration_button_and_no_dialog() {
+    let mut f = dialog::fixture();
+    f.model.rooms_available = false;
+    f.state.collab_open = true;
+    let mut h = dialog::harness(f);
+    h.run();
+    assert!(h.query_by_label("Collaboration").is_none(), "no button");
+    assert!(h.query_by_label("Collaborate").is_none(), "no dialog, even when the state says it is open");
+    // The same fixture with rooms has both.
+    let mut f = dialog::fixture();
+    f.state.collab_open = true;
+    let mut h = dialog::harness(f);
+    h.run();
+    h.get_by_label("Collaboration");
+    h.get_by_label("Collaborate");
+}
+
+#[test]
+fn a_tab_that_is_a_rooms_copy_but_not_connected_offers_to_reconnect_and_says_where() {
+    // A private room on another server than the page's, saved and restored: the page does not reconnect by itself.
+    let mut f = dialog::fixture();
+    dialog::run(&mut f, "collab.connect", json!({ "url": "ws://127.0.0.1:3030/ws" }));
+    dialog::run(&mut f, "collab.join_room", json!({}));
+    f.session.save_workspace().unwrap();
+    f.fakes.net.set_origin("wss://canvas.example.com");
+    f.session = drafftink_engine::Session::with_services(f.fakes.ports(), drafftink_engine::Services::fake());
+    f.session.restore_workspace().unwrap();
+    f.refresh();
+    f.model.collab = drafftink_ui::CollabView::from_status(&f.session.query("collab.status", json!({})).unwrap());
+    assert_eq!(f.model.collab.reconnect.as_deref(), Some("http://127.0.0.1:3030"));
+    f.state.collab_open = true;
+    let mut h = dialog::harness(f);
+    h.run();
+    h.get_by_label_contains("private room on http://127.0.0.1:3030");
+    h.get_by_label("Reconnect").click();
+    h.run();
+    assert_eq!(calls(&h), [("collab.resume_room".to_owned(), json!({}), Origin::Ui)]);
+    let report = h.state_mut().dispatch();
+    assert_eq!(report.refusals().count(), 0, "{:?}", report.ran);
+    assert_eq!(status(h.state_mut())["state"], json!("connecting"), "the connection starts");
+    // Without such a room there is nothing to offer.
+    let mut f = dialog::fixture();
+    f.state.collab_open = true;
+    let mut h = dialog::harness(f);
+    h.run();
+    assert!(h.query_by_label("Reconnect").is_none());
 }
