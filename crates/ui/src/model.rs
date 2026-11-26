@@ -468,6 +468,9 @@ pub struct CollabView {
     /// The invite link of that room, `https://<server>/#room=<id>,<key>`. It holds the key, so the app fills it in only
     /// while the collaboration dialog is open.
     pub invite_link: Option<String>,
+    /// The active tab is the copy of a private room that is not connected: the server it is on. The dialog offers to
+    /// reconnect (`collab.resume_room`); a page does not do that by itself for a room on another server.
+    pub reconnect: Option<String>,
 }
 
 impl CollabView {
@@ -497,6 +500,7 @@ impl CollabView {
             server_chosen: text("state") == Some("ready"),
             e2e: out.get("e2e").and_then(Value::as_bool).unwrap_or(false),
             invite_link: None,
+            reconnect: text("reconnect").map(str::to_owned),
         }
     }
 }
@@ -610,6 +614,9 @@ pub struct Model {
     pub settings: BTreeMap<String, Value>,
     /// The WebSocket address of the server that delivered the page (`wss://host/ws`), on the web; `None` elsewhere.
     pub page_server: Option<String>,
+    /// This deployment offers rooms. False on a site without a relay (the demo): the collaboration button and dialog
+    /// are not shown.
+    pub rooms_available: bool,
     /// The tabs.
     pub tabs: Vec<TabView>,
     /// Undo and redo labels.
@@ -671,6 +678,7 @@ impl Default for Model {
             style: StyleView::default(),
             settings: BTreeMap::new(),
             page_server: None,
+            rooms_available: true,
             tabs: Vec::new(),
             history: HistoryView::default(),
             zoom_percent: 100.0,
@@ -858,6 +866,7 @@ impl Model {
         self.gesture_running = s.gesture_running();
         self.settings = s.settings.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
         self.page_server = s.page_server_url();
+        self.rooms_available = !s.rooms_disabled();
         let read = read_selection(s);
         self.selection_bounds = read.bounds;
         self.selection_link = match read.items.as_slice() {

@@ -6,6 +6,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="description" content="An infinite canvas whiteboard. Draw first, sign up never.">
 <meta name="referrer" content="no-referrer">
+<!-- Whether this deployment has a relay for rooms: `off` or `same-origin`. scripts/build-web.sh writes it from DRAFFTINK_COLLAB.
+     A page without it (or with an unknown value) has no rooms, except on localhost. -->
+<meta name="drafftink-collab" content="__COLLAB__">
 <meta name="theme-color" content="#ffffff">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="apple-touch-icon" href="icon-192.png">

@@ -38,7 +38,10 @@ fn menu_and_rooms(ui: &mut egui::Ui, cx: &mut Cx<'_>, st: &mut UiState) {
     let side = cx.layout.small_side();
     let r = cx.verb_button(ui, Verb::ToggleMenu, Icon::Menu, side, "Menu", st.menu_open);
     st.chrome.menu_button = Some(r.rect);
-    collab_button(ui, cx, st);
+    // A site without rooms has no collaboration button, as a browser without an eyedropper has no eyedropper button.
+    if cx.model.rooms_available {
+        collab_button(ui, cx, st);
+    }
 }
 
 /// Draws the menu, when open.

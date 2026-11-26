@@ -88,7 +88,11 @@ impl Session {
     pub fn collab_view(&self) -> CollabView {
         let now = self.ports.clock.mono_ms();
         let Some(state) = self.ext.get::<CollabState>() else {
-            return CollabView { access: self.access_view(), ..CollabView::disconnected() };
+            return CollabView {
+                access: self.access_view(),
+                reconnect: self.reconnect_offer(),
+                ..CollabView::disconnected()
+            };
         };
         let mut view = match (&state.live, &state.server) {
             (Some(live), _) => {
@@ -107,6 +111,7 @@ impl Session {
         view.laser = state.laser.dots(now).collect();
         view.access = self.access_view();
         view.room_deleted = state.room_deleted.is_some();
+        view.reconnect = self.reconnect_offer();
         view
     }
 

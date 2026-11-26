@@ -193,6 +193,7 @@ const READS: &[&str] = &[
     "now_ms",
     "query",
     "page_server_url",
+    "rooms_disabled",
 ];
 
 #[test]

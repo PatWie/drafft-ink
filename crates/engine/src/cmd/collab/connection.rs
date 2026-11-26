@@ -348,9 +348,26 @@ pub(super) fn keep_pictures(s: &mut Session, tab: TabId) {
     }
 }
 
+/// Where a restored room waits: the server of the room, as the person reads it.
+fn shown_origin(server: &ServerUrl) -> String {
+    drafftink_collab::AccessOrigin::of(server).to_string()
+}
+
+/// What a restored room does at start.
+enum Restored {
+    /// Reconnect it now.
+    Reconnect(SealedRoom, ServerUrl),
+    /// It is on another server than the page's: the person decides.
+    Ask(ServerUrl),
+}
+
 impl Session {
     /// After the workspace was restored: reconnects the room of a restored encrypted tab, so that a reload comes
     /// back to the same tab and the same room. The active tab goes first. Only one room runs per session.
+    ///
+    /// A room on another server than the page's own is not reconnected: the sign-in of a private server is a cookie
+    /// that does not travel across sites, and a page must not open connections the person did not ask for. The tab
+    /// stays the copy of its room, a notice says so, and `collab.resume_room` reconnects it.
     pub(crate) fn resume_restored_room(&mut self) {
         if self.ports.net.is_none() {
             return;
@@ -364,12 +381,71 @@ impl Session {
         else {
             return;
         };
-        let policy = drafftink_collab::UrlPolicy { allow_insecure: self.ports.net.as_deref().is_some_and(crate::ports::Net::allow_insecure) };
-        let Ok(server) = ServerUrl::parse(&room.server, policy) else { return };
-        self.set_active_index(index);
-        let target = Target::Sealed { key: room.key, if_missing: IfMissing::Refuse, resume: room.resume };
-        // A room that cannot be reached shows its reason in the collaboration status; the tab stays a local copy.
-        let _ = start(self, server, None, target, OnLocal::Merge);
-        self.set_active_index(active);
+        let Ok(server) = self.parse_room_server(&room.server) else { return };
+        let restored = if self.is_cross_origin(&server) { Restored::Ask(server) } else { Restored::Reconnect(room, server) };
+        match restored {
+            Restored::Ask(server) => {
+                let text = format!(
+                    "This tab was in a private room on {}, which is not this page's server. It stays a local copy until you reconnect: open Collaboration and choose Reconnect.",
+                    shown_origin(&server)
+                );
+                self.collab_notify(CollabNotice::Info(text));
+            }
+            Restored::Reconnect(room, server) => {
+                self.set_active_index(index);
+                let target = Target::Sealed { key: room.key, if_missing: IfMissing::Refuse, resume: room.resume };
+                // A room that cannot be reached shows its reason in the collaboration status; the tab stays a local copy.
+                let _ = start(self, server, None, target, OnLocal::Merge);
+                self.set_active_index(active);
+            }
+        }
     }
+
+    /// The saved server of a room, checked against the shell's rules for addresses.
+    fn parse_room_server(&self, text: &str) -> Result<ServerUrl, drafftink_collab::UrlError> {
+        let policy = drafftink_collab::UrlPolicy { allow_insecure: self.ports.net.as_deref().is_some_and(crate::ports::Net::allow_insecure) };
+        ServerUrl::parse(text, policy)
+    }
+
+    /// True when `server` is not the server that delivered the page. A shell without a page (the desktop app and the
+    /// headless programs) has no page server, so nothing is cross-origin there.
+    fn is_cross_origin(&self, server: &ServerUrl) -> bool {
+        let page = self.ports.net.as_deref().and_then(|n| n.same_origin_url("/ws"));
+        let Some(page) = page.and_then(|p| self.parse_room_server(&p).ok()) else { return false };
+        drafftink_collab::AccessOrigin::of(&page) != drafftink_collab::AccessOrigin::of(server)
+    }
+
+    /// The server of the room the active tab is the copy of, when no connection runs for it: what the dialog offers to
+    /// reconnect to. `None` for a tab that is not a room's copy, or whose room is connected (or connecting).
+    pub(super) fn reconnect_offer(&self) -> Option<String> {
+        if self.rooms_disabled() {
+            return None;
+        }
+        let live_here = self.ext.get::<CollabState>().and_then(|c| c.live.as_ref()).is_some_and(|l| l.tab == self.tab().id);
+        let room = self.tab().ext.get::<SealedBinding>().and_then(|b| b.0.as_ref())?;
+        if live_here {
+            return None;
+        }
+        self.parse_room_server(&room.server).ok().map(|server| shown_origin(&server))
+    }
+}
+
+/// `collab.resume_room`: starts the connection of the active tab to the room it is the copy of.
+pub(super) fn resume_active_tab(s: &mut Session) -> Result<super::ResumeOut, Refusal> {
+    let id = s.cmd();
+    let Some(room) = s.tab().ext.get::<SealedBinding>().and_then(|b| b.0.as_ref()).map(SealedRoom::duplicate) else {
+        return Err(Refusal::custom("not_in_room", id, "This tab is not in a room, so there is nothing to reconnect."));
+    };
+    let server = s.parse_room_server(&room.server).map_err(|e| {
+        Refusal::custom(
+            "invalid_url",
+            id,
+            format!("The saved server of this room (`{}`) cannot be used: {e}. Leave the room and join it again with its link.", crate::refusal::echo(&room.server)),
+        )
+    })?;
+    let url = server.to_string();
+    let room_id = room.key.room_id().to_string();
+    let target = Target::Sealed { key: room.key, if_missing: IfMissing::Refuse, resume: room.resume };
+    start(s, server, None, target, OnLocal::Merge)?;
+    Ok(super::ResumeOut { changed: true, room: room_id, url })
 }

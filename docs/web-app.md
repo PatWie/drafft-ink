@@ -113,7 +113,27 @@ error page.
    stored_default_target: true, .. }` and calls `drafftink_gpu::run`. The web `Net` port answers `/ws` to `Net::default_server`, which becomes the default of the setting
    `collab.server_url` when the settings load: the page's own server, shown in the Collaborate dialog as
    `wss://<page host>/ws`. A server the person chose still wins. The page's address
-   bar shows `#room=<id>,<key>` while the tab is in an encrypted room (`Host::set_location_fragment`, `history.replaceState`).
+   bar shows `#room=<id>,<key>` once the tab has joined an encrypted room, not while it connects (`Host::set_location_fragment`,
+   `history.replaceState`).
+
+### Rooms on or off for a deployment
+
+Whether the site has a relay is decided when the page is built, not by a network call. `scripts/build-web.sh` writes
+`<meta name="drafftink-collab" content="off|same-origin">` into `index.html` from `DRAFFTINK_COLLAB` (default `same-origin`:
+`drafftink-headless serve` and the Cloudflare Worker are the relay). The workflow `deploy-web.yml` (https://drafft.ink on
+GitHub Pages, no relay) sets `off`; `make web` (the Worker builds) sets `same-origin`. A page without the tag, or with a value
+this build does not know, is `off` on every host except loopback (`pure.rs`, `CollabMode::from_page`). The web `Net` port
+answers it through `Net::rooms_available`. With rooms off:
+
+- the collaboration button and dialog are not shown, and every room command refuses with `rooms_unavailable`
+  ("Rooms are not available on this site.");
+- a room tab saved by an earlier visit comes back as a plain local copy; nothing connects, and the next write drops its key
+  from the saved workspace (no action by the person);
+- the page never writes `#room=` to the address bar and removes one that is there;
+- a `#room=` link gets the notice "Rooms are not available on this site. Open the link on the server that created it."
+
+With rooms on, a saved room reconnects by itself only when its server is the page's own. A room on another server comes back
+as the copy of its room, not connected; the dialog offers Reconnect (`collab.resume_room`).
 
 ### Ports in the browser
 

@@ -102,6 +102,9 @@ pub struct WorkspaceRestore {
     pub unreadable: Option<String>,
     /// The record was written by a newer build with this schema. It is not read, and not overwritten.
     pub newer_schema: Option<u32>,
+    /// Room tabs that came back as local copies because this deployment offers no rooms. Their keys are dropped from
+    /// the record by the next write.
+    pub rooms_dropped: usize,
 }
 
 /// Autosave bookkeeping, kept in `Session::ext`.
@@ -240,10 +243,14 @@ impl Session {
         }
         let entries = index.get("tabs").and_then(Value::as_array).cloned().unwrap_or_default();
         let mut restored: Vec<Tab> = Vec::new();
+        let no_rooms = self.rooms_disabled();
         for e in &entries {
             let id = e.get("id").and_then(Value::as_u64).and_then(|n| u32::try_from(n).ok()).unwrap_or(0);
             match self.read_tab(e, id, &restored) {
-                Ok(t) => restored.push(t),
+                Ok(t) => {
+                    report.rooms_dropped += usize::from(no_rooms && e.get("room").is_some());
+                    restored.push(t);
+                }
                 Err(reason) => report.skipped.push(SkippedTab { id, reason }),
             }
         }
@@ -263,12 +270,16 @@ impl Session {
         let written: BTreeMap<TabId, (u64, String)> =
             self.tabs.iter().map(|t| (t.id, (t.doc.revision(), name_of(t)))).collect();
         let sig = signature(self);
+        // A record that names a room this deployment cannot use is written again, in full and soon: the copy that
+        // was a room's has no key any more, and the stored record must say so too.
+        let now = self.ports.clock.mono_ms();
+        let rewrite = report.rooms_dropped > 0;
         self.ext.with::<AutosaveState, _>(|st| {
-            st.written = written;
-            st.written_sig = Some(sig);
+            st.written = if rewrite { BTreeMap::new() } else { written };
+            st.written_sig = if rewrite { None } else { Some(sig) };
             st.seen_sig = Some(sig);
-            st.first_change = None;
-            st.last_change = None;
+            st.first_change = rewrite.then_some(now);
+            st.last_change = rewrite.then_some(now);
         });
         self.mark_dirty(Redraw::Scene);
         self.resume_restored_room();
@@ -335,6 +346,10 @@ impl Session {
     /// is left out: the tab is a local copy, because a document without the room's history must not be merged
     /// into it.
     fn read_room(&self, entry: &Value, id: u32, tab: &mut Tab) {
+        // A deployment without rooms: the tab is a local copy, and nothing of the room is read, so the key goes.
+        if self.rooms_disabled() {
+            return;
+        }
         let Some(room) = entry.get("room") else { return };
         let text = |name: &str| room.get(name).and_then(Value::as_str);
         let Some(link) = text("link").and_then(|l| drafftink_seal::RoomLink::parse(l).ok()) else { return };

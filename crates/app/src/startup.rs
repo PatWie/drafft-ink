@@ -7,6 +7,10 @@ use serde_json::{Value, json};
 
 use crate::config::AppConfig;
 
+/// What the person is told when the page is opened with a room link on a site that has no rooms.
+pub(crate) const LINK_WITHOUT_ROOMS: &str =
+    "Rooms are not available on this site. Open the link on the server that created it.";
+
 /// Loads the settings and the saved workspace (or shows the intro document on a first run), opens the file
 /// named on the command line and joins the room named by the link. Returns notes for the person, in plain
 /// words, for what could not be done.
@@ -28,10 +32,21 @@ pub(crate) fn start(session: &mut Session, config: &AppConfig) -> Vec<String> {
     }
     let mut restored = 0;
     let mut found = false;
+    // A site without rooms ignores the link: nothing connects, and the person is told why.
+    let join = if session.rooms_disabled() { None } else { config.join.link.room.as_ref() };
+    if join.is_none() && !config.join.is_empty() {
+        notes.push(LINK_WITHOUT_ROOMS.to_owned());
+    }
     match session.restore_workspace() {
         Ok(r) => {
             restored = r.restored;
             found = r.found;
+            if r.rooms_dropped > 0 {
+                notes.push(format!(
+                    "{} saved tab(s) were in a room. Rooms are not available on this site, so they are local copies now.",
+                    r.rooms_dropped
+                ));
+            }
             if let Some(why) = &r.unreadable {
                 notes.push(format!("The saved workspace could not be read ({why}). Starting with a blank document."));
             }
@@ -48,10 +63,10 @@ pub(crate) fn start(session: &mut Session, config: &AppConfig) -> Vec<String> {
     if let Some(file) = &config.open {
         let mode = if restored == 0 { "replace" } else { "new_tab" };
         run(session, &mut notes, "doc.open", json!({ "source": file, "mode": mode }));
-    } else if !found && restored == 0 && config.join.link.room.is_none() {
+    } else if !found && restored == 0 && join.is_none() {
         run(session, &mut notes, "doc.show_intro", json!({}));
     }
-    if let Some(room) = &config.join.link.room {
+    if let Some(room) = join {
         let server = config.join.link.server.clone().or_else(|| config.default_server.clone());
         if let Some(tab) = session.room_tab_for_link(room) {
             // The link names a room whose tab was restored: open that tab (it has the room's history) and join again

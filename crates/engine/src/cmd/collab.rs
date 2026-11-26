@@ -115,11 +115,13 @@ fn not_in_room(id: &str) -> Refusal {
 }
 
 fn require_connected(s: &Session) -> Result<(), Refusal> {
+    require_rooms(s)?;
     if target_url(s).is_some() { Ok(()) } else { Err(not_connected(s.cmd())) }
 }
 
 /// The state check of `collab.connect`: the refusal that running it would give while a server is chosen.
 fn require_not_connected(s: &Session) -> Result<(), Refusal> {
+    require_rooms(s)?;
     match target_url(s) {
         Some(url) => Err(already_connected(s.cmd(), &url)),
         None => Ok(()),
@@ -136,6 +138,7 @@ fn require_connected_and_roomless(s: &Session) -> Result<(), Refusal> {
 }
 
 fn require_connected_for_disconnect(s: &Session) -> Result<(), Refusal> {
+    require_rooms(s)?;
     if target_url(s).is_some() {
         Ok(())
     } else {
@@ -144,6 +147,7 @@ fn require_connected_for_disconnect(s: &Session) -> Result<(), Refusal> {
 }
 
 fn require_room_tab(s: &Session) -> Result<(), Refusal> {
+    require_rooms(s)?;
     match s.tab().ext.get::<RoomBinding>() {
         Some(RoomBinding(Some(_))) => Ok(()),
         _ => Err(not_in_room(s.cmd())),
@@ -161,7 +165,21 @@ fn invalid_url(id: &str, text: &str, why: &AddressError) -> Refusal {
     )
 }
 
+/// The refusal of every command that needs a room where the deployment has none (the demo has no relay).
+pub(crate) fn rooms_unavailable(id: &str) -> Refusal {
+    Refusal::custom("rooms_unavailable", id, "Rooms are not available on this site.")
+}
+
+/// `Ok` when this session can use rooms: it has a network, and the deployment offers rooms.
+fn require_rooms(s: &Session) -> Result<(), Refusal> {
+    if s.rooms_disabled() {
+        return Err(rooms_unavailable(s.cmd()));
+    }
+    Ok(())
+}
+
 fn require_net(s: &Session) -> Result<(), Refusal> {
+    require_rooms(s)?;
     s.require_port(PortKind::Net, "a network connection", "Run the app in a shell that provides one, or work on this device only.")
 }
 
@@ -404,6 +422,38 @@ fn join(
             Ok(Started { room: shown, link: None, e2e: true })
         }
     }
+}
+
+// ---- collab.resume_room ----
+
+/// Output of `collab.resume_room`.
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
+pub struct ResumeOut {
+    /// Always true: the connection is starting.
+    pub changed: bool,
+    /// The id of the room (never its key).
+    pub room: String,
+    /// The server the room is on.
+    pub url: String,
+}
+
+/// The state check of `collab.resume_room`: the active tab is the copy of a private room and no room runs.
+fn require_resumable(s: &Session) -> Result<(), Refusal> {
+    require_rooms(s)?;
+    if let Some(room) = live_room(s) {
+        return Err(already_in_room(s.cmd(), &room));
+    }
+    if s.tab().ext.get::<SealedBinding>().is_some_and(|b| b.0.is_some()) {
+        Ok(())
+    } else {
+        Err(not_in_room(s.cmd()))
+    }
+}
+
+fn resume_room(s: &mut Session, _: NoArgs) -> Result<ResumeOut, Refusal> {
+    require_net(s)?;
+    require_resumable(s)?;
+    connection::resume_active_tab(s)
 }
 
 // ---- collab.leave_room ----
@@ -716,6 +766,12 @@ fn invite_text(s: &Session, room: crate::cmd::tab::SealedRoom) -> String {
 }
 
 impl Session {
+    /// True when the shell has a network and says this deployment offers no rooms (the demo has no relay). A session
+    /// without a network port is not "disabled": it simply has no network, and says so when a command needs one.
+    pub fn rooms_disabled(&self) -> bool {
+        self.ports.net.as_deref().is_some_and(|n| !n.rooms_available())
+    }
+
     /// The WebSocket address of the server that delivered the app (`wss://host/ws`), in a web shell; `None` elsewhere.
     pub fn page_server_url(&self) -> Option<String> {
         self.ports.net.as_deref().and_then(|n| n.same_origin_url("/ws"))
@@ -726,6 +782,17 @@ impl Session {
     pub fn sealed_room_id(&self) -> Option<String> {
         let room = self.tab().ext.get::<SealedBinding>().and_then(|b| b.0.as_ref())?;
         Some(room.key.room_id().to_string())
+    }
+
+    /// The id of the encrypted room the active tab has joined: the connection has caught up with the room at least
+    /// once. A room that is still connecting (or was only restored from the workspace) is not joined. The address bar
+    /// shows a room's link only from here on, so a link that cannot be used never replaces the one the person opened.
+    pub fn joined_room_id(&self) -> Option<String> {
+        let live = self.ext.get::<CollabState>()?.live.as_ref()?;
+        if live.tab != self.tab().id || !live.synced_once {
+            return None;
+        }
+        self.sealed_room_id()
     }
 
     /// The fragment `#room=<id>,<key>` of the active tab's encrypted room, for the address bar. It holds the room
@@ -761,6 +828,7 @@ pub struct DeleteRoomOut {
 
 /// The state check of `collab.delete_room`: the active tab is in a room.
 fn require_room_to_delete(s: &Session) -> Result<(), Refusal> {
+    require_rooms(s)?;
     match s.tab().ext.get::<RoomBinding>() {
         Some(RoomBinding(Some(_))) => Ok(()),
         _ => Err(Refusal::custom(
@@ -858,7 +926,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         NET,
     )
     .available(require_not_connected)
-    .refusals(&["invalid_url", "already_connected", "local_content", "bad_room_link", "local_too_large_for_room"])
+    .refusals(&["rooms_unavailable", "invalid_url", "already_connected", "local_content", "bad_room_link", "local_too_large_for_room"])
     .secret_args(&["token", "room"])
     .example(r#"{"url":"wss://draw.example.com/ws","room":"team-sync"}"#),
     CommandSpec::new(
@@ -870,7 +938,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         NET,
     )
     .available(require_connected_for_disconnect)
-    .refusals(&["not_connected"]),
+    .refusals(&["rooms_unavailable", "not_connected"]),
     CommandSpec::new(
         "collab.join_room",
         "collab",
@@ -887,7 +955,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         },
     )
     .available(require_connected_and_roomless)
-    .refusals(&["not_connected", "already_in_room", "local_content", "bad_room_link", "local_too_large_for_room"])
+    .refusals(&["rooms_unavailable", "not_connected", "already_in_room", "local_content", "bad_room_link", "local_too_large_for_room"])
     .secret_args(&["token", "room"])
     .variants(&[Variant::new(r#"{"on_local":"merge"}"#, "Share this canvas")])
     .example(r#"{"room":"team-sync","on_local":"merge"}"#),
@@ -900,7 +968,24 @@ pub const COMMANDS: &[CommandSpec] = &[
         NET,
     )
     .available(require_room_tab)
-    .refusals(&["not_in_room"]),
+    .refusals(&["rooms_unavailable", "not_in_room"]),
+    CommandSpec::new(
+        "collab.resume_room",
+        "collab",
+        "Reconnect to room",
+        "Reconnects this tab to the private room it was in, on the server it was in. A page restores such a room by itself only when the room is on the page's own server; for a room on another server it waits for this command.",
+        &Typed::new(resume_room),
+        Facts {
+            mutates: Mutates::COLLAB.with(Mutates::DOC).with(Mutates::TABS),
+            view_only: Gate::Refused,
+            while_gesture: Gate::Refused,
+            while_text_edit: TextGate::Commit,
+            doc_write: crate::spec::DocWrite::Replaces,
+            ..NET
+        },
+    )
+    .available(require_resumable)
+    .refusals(&["rooms_unavailable", "not_in_room", "already_in_room", "invalid_url"]),
     CommandSpec::new(
         "collab.set_user",
         "collab",
@@ -936,7 +1021,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         Facts { mutates: Mutates::COLLAB.with(Mutates::VIEW), ports: PortSet::NONE, palette: false, ..NET },
     )
     .available(require_room_tab)
-    .refusals(&["not_in_room", "no_such_peer"]),
+    .refusals(&["rooms_unavailable", "not_in_room", "no_such_peer"]),
     CommandSpec::new(
         "collab.share_link",
         "collab",
@@ -956,7 +1041,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         },
     )
     .available(require_room_tab)
-    .refusals(&["not_in_room", "not_e2e"])
+    .refusals(&["rooms_unavailable", "not_in_room", "not_e2e"])
     .example(r#"{"copy":true}"#),
     CommandSpec::new(
         "collab.set_access",
@@ -988,7 +1073,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         Facts { palette: false, agent: false, ..NET },
     )
     .available(require_room_to_delete)
-    .refusals(&["not_in_room", "not_e2e", "not_confirmed", "room_offline"])
+    .refusals(&["rooms_unavailable", "not_in_room", "not_e2e", "not_confirmed", "room_offline"])
     .example(r#"{"confirm":true}"#),
     CommandSpec::new(
         "collab.status",

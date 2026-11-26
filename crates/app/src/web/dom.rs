@@ -14,6 +14,12 @@ pub(crate) fn document() -> Result<web_sys::Document, WebError> {
     window()?.document().ok_or(WebError::NoWindow)
 }
 
+/// The `content` of `<meta name="...">`, if the page has the tag.
+pub(crate) fn meta_content(name: &str) -> Option<String> {
+    let selector = format!("meta[name=\"{name}\"]");
+    document().ok()?.query_selector(&selector).ok().flatten()?.get_attribute("content")
+}
+
 /// Readable text for a thrown JS value (a `DOMException`, an `Error`, a string, anything else).
 pub(crate) fn js_error(value: &JsValue) -> String {
     if let Some(text) = value.as_string() {

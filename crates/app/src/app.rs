@@ -111,6 +111,9 @@ pub struct App {
     in_room: bool,
     /// The encrypted room whose link the address bar shows (the host was told), `None` when it shows none.
     located_room: Option<String>,
+    /// The address the page was opened with names a room (`#room=...`), and the host was not told anything since. The
+    /// first time the app knows that link is not in use, it is taken out of the address bar.
+    opened_with_link: bool,
     last_presence_ms: f64,
     collab_due_ms: Option<u64>,
     /// When the debug panel next refreshes its numbers (ms). Idle frames come from this while it is open.
@@ -193,6 +196,7 @@ impl App {
             overlay_key: None,
             in_room: false,
             located_room: None,
+            opened_with_link: !config.join.is_empty(),
             last_presence_ms: f64::NEG_INFINITY,
             collab_due_ms: Some(0),
             debug_due_ms: f64::NEG_INFINITY,
@@ -781,23 +785,27 @@ impl App {
         shown
     }
 
-    /// Keeps the address bar in step with the room of the active tab: the link of an encrypted room goes in when the
-    /// room is joined or created, and the fragment goes out when the room is left. A host without an address bar
-    /// ignores it. The room id is compared every frame (cheap); the key is read only when the room changes.
+    /// Keeps the address bar in step with the room of the active tab: the link of an encrypted room goes in once the
+    /// room is joined (not while it is still connecting), and the fragment goes out when the room is left. A host
+    /// without an address bar ignores it. The room id is compared every frame (cheap); the key is read only when the
+    /// room changes.
+    ///
+    /// The link the page was opened with stays in the address bar while its room connects, so a failed connection
+    /// does not lose it. It is taken out when nothing uses it: a site without rooms, or a room that was left.
     fn sync_location(&mut self) {
-        let room = self.session.sealed_room_id();
-        if room == self.located_room {
-            return;
-        }
-        match &room {
-            Some(_) => {
+        let joined = self.session.joined_room_id();
+        let connecting = self.session.sealed_room_id().is_some() && !self.session.rooms_disabled();
+        match address_step(joined.as_deref(), self.located_room.as_deref(), self.opened_with_link, connecting) {
+            AddressStep::Keep => return,
+            AddressStep::Show => {
                 if let Some(fragment) = self.session.invite_fragment() {
                     self.host.set_location_fragment(Some(fragment.as_ref()));
                 }
             }
-            None => self.host.set_location_fragment(None),
+            AddressStep::Clear => self.host.set_location_fragment(None),
         }
-        self.located_room = room;
+        self.opened_with_link = false;
+        self.located_room = joined;
     }
 
     /// Esc and Enter belong to the interaction layer while it has something running (a drag, a line draft).
@@ -1239,6 +1247,10 @@ impl ShellApp for App {
         // The UI.
         self.refresh_about();
         self.sync_location();
+        if self.session.rooms_disabled() {
+            // A site without rooms has no collaboration dialog; a verb that opened it is undone at once.
+            self.ui.state.collab_open = false;
+        }
         let collab = collab_view_of(&mut self.session, self.ui.state.collab_open);
         self.ui.set_collab(collab);
         self.ui.set_editor_faces(self.editor.as_ref().map(TextEditor::faces));
@@ -1288,6 +1300,31 @@ impl ShellApp for App {
             stats: measuring,
             times: AppTimes { panel_ns, panel_tessellate_ns: result.debug.tessellate_ns, scene_ns },
         }
+    }
+}
+
+/// What the address bar is told this frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AddressStep {
+    /// Nothing: it shows what it should, or the room it should show is still connecting.
+    Keep,
+    /// Show the link of the joined room.
+    Show,
+    /// Take the room link out.
+    Clear,
+}
+
+/// The rule of [`App::sync_location`]. `joined` is the room the active tab has joined, `located` the room the bar was
+/// told about, `opened_with_link` that the page was opened with a room link the bar still shows, and `connecting`
+/// that the tab is bound to a room that has not joined yet.
+fn address_step(joined: Option<&str>, located: Option<&str>, opened_with_link: bool, connecting: bool) -> AddressStep {
+    match joined {
+        Some(_) if joined == located && !opened_with_link => AddressStep::Keep,
+        Some(_) => AddressStep::Show,
+        // The link that was opened stays while its room connects: if the server is down the link is not lost.
+        None if connecting => AddressStep::Keep,
+        None if located.is_some() || opened_with_link => AddressStep::Clear,
+        None => AddressStep::Keep,
     }
 }
 
